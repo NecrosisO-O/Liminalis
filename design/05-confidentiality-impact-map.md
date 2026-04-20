@@ -168,8 +168,7 @@ It is intentionally broad so the final confidentiality design can be checked aga
 - the three fixed tabs should correspond to secret, confidential, and top secret
 - each level tab should be organized into lifecycle, share availability, user-targeted sharing, password extraction, public links, and live transfer sections
 - the lifecycle section should include default validity, maximum validity, allow-never-expire, allow-validity-extension, visibility to newly added trusted devices, and allow-outward-resharing
-- the share-availability section should include allow-sharing, self-only restriction, allow-recipient-resharing, allow-multiple-outward-shares, and per-method allow toggles for user-targeted sharing, password extraction, and public links
-- the user-targeted-sharing section should include default share validity, maximum share validity, and allow-repeat-download
+- the share-availability section should include allow-outward-sharing, self-only restriction, allow-recipient-resharing, allow-multiple-outward-shares, and per-method allow toggles for user-targeted sharing, password extraction, and public links
 - the user-targeted-sharing section should include default share validity, maximum share validity, allow-repeat-download, and allow-recipient-multi-device access
 - the password-extraction section should include allow-password-extraction, require-system-generated-password, and maximum retrieval count
 - the public-links section should include allow-public-links, maximum public-link validity, and maximum public-link download count

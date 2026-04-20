@@ -14,13 +14,12 @@
 
 - Default validity: 12 hours
 - Maximum validity: never expire allowed
-- Allow outward resharing from the source item: yes
 - Allow validity extension later: yes
 - Newly added trusted devices may view older content: yes
 
 ### Share Availability
 
-- Allow sharing: yes
+- Allow outward sharing: yes
 - Restrict to self only: no
 - Allow recipient resharing: no
 - Allow multiple outward shares from one source item: yes
@@ -46,6 +45,7 @@
 - Allow public links: yes
 - Maximum public-link validity: 24 hours
 - Maximum public-link download count: 5
+- When enabled, public links are modeled as independently tracked delivery objects.
 
 ### Live Transfer
 
@@ -66,11 +66,10 @@
 - Allow never expire: no
 - Allow validity extension later: yes
 - Newly added trusted devices may view older content: yes
-- Allow outward resharing from the source item: yes
 
 ### Share Availability
 
-- Allow sharing: yes
+- Allow outward sharing: yes
 - Restrict to self only: no
 - Allow recipient resharing: no
 - Allow multiple outward shares from one source item: yes
@@ -96,6 +95,7 @@
 - Allow public links: no
 - Maximum public-link validity: not applicable under the built-in confidential preset
 - Maximum public-link download count: not applicable under the built-in confidential preset
+- When enabled, public links are modeled as independently tracked delivery objects.
 
 ### Live Transfer
 
@@ -116,11 +116,10 @@
 - Allow never expire: no
 - Allow validity extension later: no
 - Newly added trusted devices may view older content: no
-- Allow outward resharing from the source item: no
 
 ### Share Availability
 
-- Allow sharing: no
+- Allow outward sharing: no
 - Restrict to self only: yes
 - Allow recipient resharing: no
 - Allow multiple outward shares from one source item: no
@@ -139,6 +138,7 @@
 ### Public Links
 
 - Not applicable under the built-in top-secret preset
+- When enabled, public links are modeled as independently tracked delivery objects.
 
 ### Live Transfer
 
