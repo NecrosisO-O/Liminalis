@@ -261,7 +261,13 @@ Before finalization succeeds, the backend should verify:
 - the uploader identity still has permission to complete the session
 - all required ciphertext parts are present
 - grouped-content manifests are structurally valid when applicable
-- source-creation policy results are still applicable for the already prepared session
+- source-creation policy results locked at prepare time remain applicable for that still-valid session
+
+Prepare-lock rule:
+
+- source-creation policy should be locked when the upload session is prepared
+- as long as the prepared session remains valid and is not explicitly invalidated, finalization should use that locked source-creation policy result rather than re-checking newly changed current policy
+- later policy changes should block newly created upload sessions, not retroactively break already prepared valid sessions
 
 On successful finalization, the backend should:
 

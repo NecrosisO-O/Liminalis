@@ -64,6 +64,10 @@
 - A documentation-normalization pass has now started to fold accepted later planning conclusions back into the canonical architecture and baseline documents.
 - A second-round normalization pass has now started to mark the original design documents as historical design-phase framing while pointing readers toward the later accepted baseline documents.
 - The documentation-normalization work is now substantially complete, and the repository baseline is stable enough to support later implementation sequencing once the user explicitly requests that next step.
+- The user has now explicitly moved the project into implementation sequencing planning.
+- The sequencing baseline now treats identity/session, trusted-device and recovery, key/access plus `AccessGrantSet`, minimal policy evaluation, and stored-transfer ingestion as the critical path before read models, outward sharing breadth, admin completion, and live transfer.
+- Upload sessions now lock source-creation policy at prepare time so valid prepared sessions may still finalize even if later policy edits would block newly created sessions.
+- The implementation-sequencing planning set now also includes stable backend domain/service boundaries, API/route families, and milestone-level acceptance criteria aligned to `M1` through `M10`.
 - The project should be developed deliberately rather than rushed into coding.
 - The design phase has started.
 - Initial design drafts are being recorded under `design/` before any architecture work.

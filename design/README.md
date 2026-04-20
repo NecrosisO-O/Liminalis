@@ -41,6 +41,10 @@ This directory stores the approved design, architecture, and implementation-plan
 - `design/29-admin-control-plane-and-policy-management-workflow-note.md`: detailed planning note for invite, approval, disablement, and policy-management workflows
 - `design/30-recipient-wrapping-access-package-and-regrant-note.md`: detailed planning note for recipient public wrapping material, access-package metadata, and explicit regrant behavior
 - `design/31-recovery-rotation-and-trust-material-resilience-note.md`: detailed planning note for recovery rotation durability and local trust-material resilience
+- `design/32-v1-implementation-sequencing-and-milestones.md`: detailed planning note for safe implementation ordering, dependency phases, and milestone structure
+- `design/33-backend-domain-and-service-breakdown.md`: detailed planning note for stable backend domains, service ownership, dependency rules, and code-boundary risks
+- `design/34-v1-api-and-route-planning.md`: detailed planning note for backend route families, frontend route boundaries, and late-versus-early API surfaces
+- `design/35-v1-milestone-decomposition-and-acceptance.md`: detailed planning note for milestone decomposition, scope boundaries, and acceptance criteria
 
 ## Current Status
 

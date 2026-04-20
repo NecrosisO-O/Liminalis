@@ -148,20 +148,30 @@
 - Began the documentation-normalization pass so accepted later planning conclusions are folded back into the canonical architecture and baseline documents
 - Updated the canonical boundary, module, domain, state, security, topology, and compact decision-baseline documents to reflect the now-accepted later planning set
 - Began the second normalization round across `design/01` through `design/08` so the original design-phase documents clearly act as historical framing rather than competing current baselines
+- The user has now explicitly started implementation sequencing planning
+- Drafted the sixteenth detailed implementation-planning note under `design/32-v1-implementation-sequencing-and-milestones.md`
+- Re-checked the planning corpus for sequencing dependencies and identified the key implementation trap that upload finalization must not be left ambiguous across policy changes
+- Accepted the prepare-lock rule for upload sessions so source-creation policy is locked at prepare time for that still-valid session
+- Reframed the implementation path around a stricter critical path: identity/session, trusted-device/recovery, key/access substrate, minimal policy engine, stored-transfer ingestion, protected self retrieval, lifecycle jobs, projections, outward sharing, admin completion, and live transfer late
+- Drafted the seventeenth through nineteenth detailed implementation-planning notes under `design/33` through `design/35`
+- Turned the sequencing baseline into a backend domain/service breakdown, a route/API planning baseline, and milestone-level acceptance criteria for `M1` through `M10`
+- Completed the main implementation-sequencing planning set so later work can move from behavior notes into ticket decomposition and execution planning without reopening core domain boundaries
 
 ## Current Focus
 
 - Preserve the completed planning baseline and no-code gate until the user explicitly ends planning
-- Treat `design/09` through `design/16` as the compact canonical baseline and `design/17` through `design/31` as the detailed accepted planning set
+- Use the new sequencing note as the immediate guide for domain breakdown, API planning, and later code milestones
+- Use the domain, API, and milestone notes as the working bridge from implementation planning into execution planning
 - Keep canonical summaries and detailed notes aligned when durable clarifications are accepted
-- Prepare to move from behavior-specification work into implementation sequencing only after the user explicitly directs that next step
+- Continue reviewing sequencing assumptions against the accepted planning corpus before any code work begins
 - Keep the deferred share-first path explicitly out of v1 scope
 - Preserve the planning-only, no-code gate until the user explicitly ends it
 
 ## Next Checkpoint
 
-- Confirm that the documentation-normalization work is complete enough and that the planning baseline is stable
-- Wait for the user's explicit direction before shifting from planning-baseline work into implementation sequencing
+- Review the new sequencing baseline and derive the backend domain/service breakdown from it
+- Review the new sequencing baseline and derive the API/route planning from it
+- Review whether the sequencing planning set is now complete enough to move into ticket decomposition or direct implementation execution planning
 - Wait for the user's explicit instruction before ending planning and starting code changes
 
 ## Notes
