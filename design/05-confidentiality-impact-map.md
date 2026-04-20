@@ -3,6 +3,7 @@
 ## Status
 
 - Working map for the final confidentiality-policy pass
+- Historical design-phase policy map; later accepted policy-engine and implementation-planning notes now define the working `v1` policy baseline more concretely
 
 ## Purpose
 
@@ -185,3 +186,9 @@ It is intentionally broad so the final confidentiality design can be checked aga
 
 - The confidentiality policy body is now largely settled.
 - The remaining deferred item is how the share-first entry path should interact with confidentiality policy.
+
+## Later Baseline Notes
+
+- Later accepted documents now interpret this map through an explicit confidentiality-policy engine and versioned `PolicyBundle` model.
+- The accepted overall rule is now state-preserving and action-blocking: existing objects keep snapshot semantics, while future actions are re-evaluated against current policy.
+- This document remains useful as the broad design-surface map, but the current working baseline for policy behavior is now described more directly in `design/24-confidentiality-policy-engine-and-bundle-note.md` and the canonical architecture summaries.

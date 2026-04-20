@@ -3,6 +3,7 @@
 ## Status
 
 - Accepted draft for the built-in default confidentiality configuration
+- Accepted built-in default preset set; later accepted policy documents interpret these presets as initial `PolicyBundle` versions rather than as a separate parallel rules system
 
 ## Global Default
 
@@ -149,3 +150,8 @@
 - Allow live-transfer failure to fall back to normal stored transfer: no
 - Retain live-transfer records: no
 - Allow grouped or large live transfer: yes
+
+## Later Baseline Notes
+
+- Later accepted documents keep these presets as the built-in starting bundles for `v1`, while also fixing the distinction between fixed system rules and editable per-level strategy fields.
+- These presets should now be understood as initial current `PolicyBundle` values that the admin may later replace through versioned policy publication.

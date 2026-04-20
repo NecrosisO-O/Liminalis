@@ -3,6 +3,7 @@
 ## Status
 
 - Planned architecture-phase work
+- Historical architecture-phase work plan; the architecture phase itself is complete and later accepted documents now hold the resulting working baseline
 
 ## Goal
 
@@ -173,3 +174,9 @@ Expected output:
 ## Completion Condition
 
 The architecture phase is complete when `Liminalis` has a documented architectural baseline that is specific enough to guide implementation, while still respecting the confirmed `v1` scope and deferred items.
+
+## Later Baseline Notes
+
+- The architecture phase described here has now completed in substance.
+- The resulting accepted architecture baseline lives in `design/09` through `design/15`, while later implementation-planning notes under `design/16` and beyond expand the baseline into finer behavior specifications.
+- This file should now be read as a historical planning map for the completed architecture phase rather than as the current working baseline itself.

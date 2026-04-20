@@ -3,6 +3,7 @@
 ## Status
 
 - Active checklist for the rest of the design phase
+- Historical late-design checklist; the main accepted outcomes here have since been carried into architecture and implementation-planning documents
 
 ## Confirmed Boundary
 
@@ -121,3 +122,9 @@
 5. Detailed history page
 6. Admin panel field-level detail
 7. Confidentiality policy pass
+
+## Later Baseline Notes
+
+- The trusted-device, recovery, live-transfer, history, admin, and confidentiality directions recorded here have now been expanded and stabilized in the accepted later notes.
+- In particular, later documents now make `consumed` share outcomes explicit, separate ordinary pairing from recovery restoration, and formalize the confidentiality-policy engine and admin publication model.
+- This file should now be read as a late-design checklist snapshot rather than the current canonical baseline.

@@ -37,6 +37,7 @@ Responsibilities:
 - recovery-code generation, rotation, and recovery
 - trusted-device list and status
 - recent activity and trusted-device metadata
+- trusted-device public wrapping material publication
 
 Boundary notes:
 
@@ -48,6 +49,7 @@ Boundary notes:
 Responsibilities:
 
 - self-space text, file, and grouped-file objects
+- upload-session preparation, finalization, and activation boundary
 - upload-time object creation
 - source-item retention and validity
 - source-item confidentiality state
@@ -67,6 +69,8 @@ Responsibilities:
 - password-extraction sharing
 - public-link delivery
 - share-object creation from source items
+- retrieval package issuance for outward-delivery paths
+- public-link delivery-ticket issuance
 - share validity, revocation, and retrieval rules
 - source/share linkage and propagation of source invalidation
 
@@ -114,6 +118,7 @@ Responsibilities:
 - trusted-device search behavior
 - trusted-device search over item titles and visible metadata
 - retention-aware visibility of active versus historical records
+- retained live-transfer record query model when policy allows retention
 
 Boundary notes:
 
@@ -131,6 +136,7 @@ Responsibilities:
 - storage limits and instance-level resource control
 - instance-level feature switches
 - confidentiality-policy configuration surface
+- confidentiality-policy validation, publication, and version visibility
 - system-state and health visibility
 
 Boundary notes:
@@ -167,3 +173,4 @@ Recommended high-level dependency shape:
 - treating public links, password extraction, and user-targeted sharing as unrelated systems
 - scattering confidentiality policy decisions throughout unrelated modules
 - making history a purely front-end assembled view instead of a real read-model boundary
+- letting admin control-plane views drift into user-content reading surfaces

@@ -61,11 +61,13 @@ Its goal is to make lifecycle behavior explicit before implementation, especiall
 - `revoked`
 - `expired`
 - `source_invalidated`
+- `consumed`
 
 ### Notes
 
 - inactive share objects may remain visible in retained history
 - burn-after-read does not become an `inactive_reason`; it goes through a purge path instead
+- `consumed` is the retained outcome for no-repeat shares after the first successful ordinary recipient retrieval
 
 ### Core Transitions
 
@@ -73,6 +75,7 @@ Its goal is to make lifecycle behavior explicit before implementation, especiall
 - `active -> inactive (revoked)`
 - `active -> inactive (expired)`
 - `active -> inactive (source_invalidated)`
+- `active -> inactive (consumed)` when a no-repeat share completes its first successful ordinary recipient retrieval
 - `active -> purge path` when burn-after-read triggers for the share object
 
 ### Notes On `created`
@@ -103,7 +106,8 @@ Its goal is to make lifecycle behavior explicit before implementation, especiall
 ### Notes
 
 - a successful retrieval does not necessarily change the main state if allowed retrieval count remains
-- if the parent share object enters purge or otherwise becomes logically unavailable, derived extraction access should become logically unavailable as well
+- if the parent share object enters purge, is revoked, expires, or becomes source-invalidated, derived extraction access should become logically unavailable as well
+- ordinary no-repeat consumption of the recipient-targeted retrieval path does not by itself invalidate sibling `ExtractionAccess`
 
 ## 4. Public Link Lifecycle
 
@@ -124,7 +128,8 @@ Its goal is to make lifecycle behavior explicit before implementation, especiall
 
 ### Notes
 
-- if the parent share object enters purge or otherwise becomes logically unavailable, derived public-link access should become logically unavailable as well
+- if the parent share object enters purge, is revoked, expires, or becomes source-invalidated, derived public-link access should become logically unavailable as well
+- ordinary no-repeat consumption of the recipient-targeted retrieval path does not by itself invalidate sibling `PublicLink`
 
 ## 5. Trusted Device Onboarding And Recovery
 
@@ -148,7 +153,7 @@ Its goal is to make lifecycle behavior explicit before implementation, especiall
 
 - onboarding and recovery are separate flows that converge on `trusted`
 - recovery should not create a different long-term trusted-device category in `v1`
-- successful recovery should trigger re-evaluation or re-grant of historical object visibility according to the same trusted-access domain rules
+- successful recovery should restore historical protected access through the recovery path inside the same trusted-access domain without silently rewriting the ordinary pairing rules for historical visibility
 
 ## 6. Live Transfer Session
 
@@ -221,12 +226,14 @@ Represent the non-retained removal path triggered by burn-after-read.
 ### Detailed History
 
 - includes retained inactive objects where product policy allows history retention
+- includes retained consumed-share records for no-repeat recipient delivery outcomes
 - excludes burn-after-read objects once the purge path completes
 
 ### Search
 
 - follows the retained object set available to trusted devices
 - excludes purged burn-after-read objects
+- may continue to include retained consumed-share records while they remain retained
 - in `v1`, search is expected to cover titles and visible metadata by default rather than full-text protected-content search
 - for text items, a short visible summary may serve as searchable visible metadata without becoming full-text indexing
 
@@ -238,3 +245,5 @@ The architecture should explicitly support these cascades:
 - `share object inactive -> removed from active timeline and moved to retained history when history is allowed`
 - `burn-after-read trigger -> object enters purge path instead of retained inactive state`
 - `live transfer failure + allowed fallback -> explicit stored-transfer handoff flow`
+
+Ordinary no-repeat share consumption closes the ordinary recipient retrieval path for that share object, but does not by itself invalidate sibling `ExtractionAccess` or `PublicLink` objects.

@@ -3,6 +3,7 @@
 ## Status
 
 - Draft: near design closure
+- Historical design-phase scope document; later accepted architecture and implementation-planning notes refine this scope into the working `v1` baseline
 
 ## Working Target Users
 
@@ -370,3 +371,11 @@ The working example levels are:
 - One-time share vs reusable transfer spaces
 - Broad universality vs product focus
 - Browser convenience vs strong end-to-end key handling
+
+## Later Baseline Notes
+
+- Later accepted documents keep send-to-self as the product anchor and keep send-to-others distinct, but formalize stored transfer as the primary product and architecture center in `v1`.
+- The deferred share-first path is now an explicit `v1` exclusion rather than merely a later possibility.
+- User-targeted protected sharing is now understood as identity-bound sharing that requires recipient trusted-device public wrapping material; when that prerequisite is absent, the share is blocked rather than silently weakened.
+- Live transfer remains in `v1`, but later accepted documents make it a distinct subsystem with explicit handoff into stored transfer rather than a hidden continuation of the same transfer lifecycle.
+- The current working `v1` baseline should be read from `design/09-v1-architecture-boundary.md`, `design/15-implementation-architecture-baseline.md`, and the accepted implementation-planning notes.

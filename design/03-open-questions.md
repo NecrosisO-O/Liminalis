@@ -3,6 +3,13 @@
 ## Status
 
 - Active during design phase
+- Historical design-phase open-question list; many items below have since been resolved in accepted architecture and implementation-planning notes
+
+## Later Baseline Notes
+
+- This file should now be read mainly as a record of questions from the design phase rather than as the current source of truth.
+- Questions around trusted-device access, recipient-bound decryption rights, metadata retention, confidentiality-policy structure, retrieval semantics, and admin boundaries now have accepted later answers in `design/09` and beyond.
+- The main still-deferred design-level item remains the excluded share-first path and its future confidentiality interaction, which stays outside `v1`.
 
 ## Product Direction
 

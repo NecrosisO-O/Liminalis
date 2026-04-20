@@ -24,6 +24,7 @@ It identifies the minimum complete runtime shape, the major component surfaces, 
 - trusted-device search over item titles and visible metadata as a `v1` baseline
 - text search may use short visible summaries as metadata, but should not become protected-content full-text indexing
 - confidentiality-policy evaluation
+- explicit upload-session preparation and finalization before stored-object activation
 - live transfer as a supported but architecturally secondary subsystem
 - admin panel and instance-level strategy control
 
@@ -94,6 +95,13 @@ Implementation should preserve the architectural distinction of these objects:
 - LiveTransferSession
 - PolicyBundle
 
+Implementation should also preserve these supporting architectural objects:
+
+- UserDomainAccessPublicKey
+- DevicePublicIdentity
+- UploadSession
+- RetrievalAttempt
+
 Implementation should also preserve the rule that:
 
 - `ActiveTimelineItem` and `HistoryEntry` are read models, not primary business objects
@@ -103,13 +111,15 @@ Implementation should also preserve the rule that:
 Implementation should preserve these state-model properties:
 
 - source items use retained inactive states rather than collapsing every terminal condition into deletion
-- share objects distinguish revoked, expired, and source-invalidated inactive reasons
+- share objects distinguish revoked, expired, source-invalidated, and retained consumed inactive reasons
 - password extraction and public links retain independent access-state logic
 - live transfer uses a dedicated session state machine with separate transport substate
 - burn-after-read uses a purge path and should not leave retained history or search traces
 - burn-after-read should become logically unavailable immediately, even if physical purge work finishes asynchronously
+- source items should not become active until upload finalization succeeds
 - source invalidation cascades into derived outward-share invalidation
-- parent-share purge or logical invalidation should cascade into derived extraction and public-link unavailability
+- parent-share revocation, expiry, source invalidation, or burn-after-read purge should cascade into derived extraction and public-link unavailability
+- ordinary no-repeat share consumption closes the ordinary recipient path while leaving sibling extraction and public-link objects governed by their own access states
 - one share object may expose multiple independently tracked public-link objects
 
 ## 6. Security Baseline
@@ -121,9 +131,11 @@ Implementation should preserve these security rules:
 - confidentiality policy controls access, defaults, and transport permissions
 - object-level access visibility should be represented explicitly rather than inferred ad hoc from account identity alone
 - successful recovery should trigger re-evaluation or re-grant of historical object access under the same trusted-access domain rules
+- identity-bound protected sharing should require recipient-published public wrapping material rather than hidden server-side recipient-root access
 - confidentiality policy does not switch the core content-encryption algorithm per level in `v1`
 - large-file handling must support chunked or streaming processing
 - content bodies should be reused where possible while share objects carry delivery-specific access and lifecycle state
+- public-link convenience delivery should stay controlled through short-lived delivery access rather than unmanaged long-lived direct object links
 
 ## 7. Implementation Red Lines
 
@@ -137,6 +149,7 @@ Implementation should not:
 - retain burn-after-read objects in history or search
 - reduce trusted devices to plain sessions
 - silently expand `v1` search into full-text protected-content indexing without an explicit architectural decision
+- auto-downgrade an identity-bound protected share into a weaker hidden path when recipient public wrapping material is absent
 
 ## 8. Recommended Delivery Order
 

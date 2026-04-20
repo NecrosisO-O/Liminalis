@@ -1,0 +1,343 @@
+# Liminalis Project Memory
+
+## Identity
+
+- Project name: `Liminalis`
+- Product direction: a nearly universal and convenient file transfer assistant
+
+## Confirmed Workflow
+
+- Phase 1: Design
+- Phase 2: Architecture
+- Phase 3: Implementation
+- Rule: do not advance phases without explicit user confirmation
+
+## Current Phase State
+
+- The user confirmed the transition from design into architecture.
+- The user has now confirmed the transition from architecture into implementation.
+- The implementation phase is currently constrained to a planning-first subphase before any code is written.
+- The user accepted the first pre-coding implementation-planning decision baseline for `v1`.
+
+## Current Known Intent
+
+- The project should enter implementation through detailed planning rather than immediate coding.
+- The planning stage should aim to keep unresolved implementation questions out of the code phase.
+- The planning stage must not be considered complete without explicit user confirmation.
+- No code should be written until the user explicitly instructs the project to leave planning and begin implementation work.
+- The pre-coding baseline now adopts per-source-item content keys with reusable ciphertext and access-context wrapping for protected flows.
+- Trusted-device establishment should use browser-generated user-level root access material plus per-device keys, with pairing or recovery regranting access into the same trusted-access domain.
+- Policy should use mixed snapshot and action-time semantics, and admin policy edits should not retroactively rewrite existing objects by default.
+- `v1` should allow a limited server-visible metadata projection for history and search, but should not store full protected-content plaintext or perform full-text indexing of protected content.
+- Burn-after-read should override repeat-download and multi-device re-access expectations within the affected access domain.
+- Retrieval accounting should use explicit attempt identities and completion-based consumption semantics.
+- `v1` authentication should use local accounts with invite registration, admin approval, and secure cookie-backed sessions.
+- Detailed key-and-access planning now uses a layered model with `UserDomainAccessRoot`, `UserRecoveryRoot`, `DeviceIdentityKey`, `SourceContentKey`, `ShareAccessKey`, `ExtractionSecret`, and `PublicLinkDeliverySecret`.
+- Ordinary new-device visibility and recovery restoration are now treated as distinct paths, so recovery may restore historical protected access without silently making ordinary future-device visibility too broad.
+- Recovery planning now keeps three recovery codes per set, allows any one code to restore access, and rotates the whole set immediately after a successful recovery.
+- Trusted-device protocol planning now fixes QR pairing as the primary path, short-code entry as the manual fallback, explicit trusted-device confirmation before trust issuance, and post-recovery acknowledgment before returning to normal use.
+- `AccessGrantSet` planning now uses a replace-on-change versioning model with one current version per protected object and explicit replacement only when object-level access semantics truly change.
+- Pairing under domain modes does not rewrite `AccessGrantSet`, pairing under snapshot modes does not automatically widen access, recovery usually restores through existing recovery packages without rewriting the current grant, and lifecycle invalidation remains separate from access-grant replacement.
+- Retrieval planning now uses explicit retrieval-attempt identities, protected success requires transfer completion plus usable client decryption confirmation, and public-link success is counted on successful response-stream completion.
+- User-targeted repeat-download is now interpreted per share object and recipient access domain, no-repeat shares are consumed for the whole recipient access domain on first successful retrieval, and burn-after-read overrides repeat-download and multi-device re-access expectations.
+- Metadata planning now fixes the `v1` boundary as limited server-visible metadata projection for timeline, history, and search, while excluding full protected-content plaintext storage and full-text indexing.
+- Consumed no-repeat shares should leave the active timeline immediately but remain as retained non-retrievable history and search records.
+- State-model refinement now requires `ShareObject` to support an explicit retained `consumed` inactive reason for no-repeat share completion, distinct from `revoked`, `expired`, `source_invalidated`, and burn-after-read purge behavior.
+- Identity planning now fixes `username` as the required unique login identifier, with `email` remaining optional metadata rather than a login identifier.
+- Identity and admission planning now uses invite registration, pending approval, explicit admin approval, separate enable/disable state, waiting-screen-only access for pending users, and secure cookie-backed sessions that remain distinct from trusted-device access.
+- Recipient-domain share issuance now assumes recipient-published public wrapping material, so user-targeted protected sharing does not require server access to recipient plaintext trust roots.
+- In `v1`, one `ShareObject` remains the outward-delivery root for sibling recipient delivery, password extraction, and public-link delivery, but consuming the ordinary no-repeat recipient path does not by itself invalidate sibling extraction or public-link objects.
+- Recovery-code rotation must now be durable within the current recovered session so the newly rotated set can be re-shown after reload or interruption without regenerating yet another set.
+- The canonical state model and architecture baseline now recognize retained `consumed` share outcomes directly rather than leaving that refinement only in follow-up notes.
+- The confidentiality-policy engine should now follow a state-preserving, action-blocking rule: historical objects keep snapshot semantics, while future actions are re-evaluated against current policy.
+- `PolicyBundle` planning now distinguishes fixed system rules from editable per-level fields and defines structured evaluation families for source creation, share creation, extraction, public links, live transfer, and future action-time checks.
+- If a recipient has not yet established the trusted-device public wrapping material needed for identity-bound protected sharing, `v1` should block that user-targeted protected share rather than inventing a weaker hidden queueing path.
+- `v1` session timing now uses a 30-day absolute expiry and a 7-day idle expiry for account sessions, while logout invalidates the account session without automatically deleting local trusted-device material.
+- Confidentiality-policy edits should publish immediately after validation and create new current `PolicyBundle` versions rather than using a separate draft workflow in `v1`.
+- Stored-transfer ingestion planning now uses explicit upload sessions, resumable ciphertext-part upload, client-side encryption, finalized source-item activation only after completion, and manifest-based grouped-content handling.
+- Live transfer now keeps a distinct session lifecycle with peer-to-peer-first transport, policy-controlled relay fallback, retained record policy separate from completion, and explicit live-to-stored handoff into a new stored-transfer flow when allowed.
+- Retrieval planning now also defines explicit `RetrievalAttempt` records, package-reference issuance, protected completion confirmation, and public-link short-lived delivery tickets instead of long-lived direct object URLs.
+- Read-model planning now defines concrete projection families for active timeline, history, narrow search, and retained live-transfer records, with explicit treatment of consumed shares.
+- Admin control-plane planning now defines invite, approval, disablement, and policy-management workflows while preserving the boundary that admin surfaces do not become content-reading surfaces.
+- Recipient-wrapping planning now makes public wrapping material, package-family metadata, and explicit regrant behavior concrete enough for later share and retrieval API planning.
+- Recovery resilience planning now defines the session-bound re-display contract for rotated recovery codes and clarifies local trust-material durability versus ordinary logout.
+- A documentation-normalization pass has now started to fold accepted later planning conclusions back into the canonical architecture and baseline documents.
+- A second-round normalization pass has now started to mark the original design documents as historical design-phase framing while pointing readers toward the later accepted baseline documents.
+- The documentation-normalization work is now substantially complete, and the repository baseline is stable enough to support later implementation sequencing once the user explicitly requests that next step.
+- The project should be developed deliberately rather than rushed into coding.
+- The design phase has started.
+- Initial design drafts are being recorded under `design/` before any architecture work.
+- The product direction now includes a cloud-hosted service with connected devices acting as nodes.
+- The first useful version should work in the browser across devices.
+- The transfer model includes both files and text messages.
+- Text messages are a first-class transfer object.
+- Text messages are not part of outward sharing and are not part of online direct transfer.
+- End-to-end encryption is the baseline for protected transfer flows, with public-link sharing as the explicit convenience exception.
+- The preferred receive model is mixed: live transfer plus encrypted temporary holding when needed.
+- Send-to-self and send-to-others are distinct product modes.
+- Send-to-self is the product's basic anchor and default web entry experience.
+- For send-to-self, encrypted temporary holding is the default mode.
+- Ciphertexts sent to self should be visible and downloadable on all devices logged in under the same identity.
+- The default page direction is a list of valid encrypted payloads plus an upload or compose area, potentially using an IM-like visual structure.
+- The IM-like main timeline should show only currently valid payloads in event order.
+- Expired and self-destructed items should appear in a separate detailed record view.
+- The default composer should combine text input with nearby single-file sending.
+- Folder upload, very large files, and more complex transfer forms should move to a dedicated upload page.
+- Send-to-others currently reuses the stored encrypted payload path instead of introducing a separate transport path.
+- The currently proposed outward sharing methods are: specify another user, password-protected extraction, and public link generation.
+- Public-link sharing is a deliberate convenience exception and is not required to preserve the strict end-to-end model.
+- The intended public-link experience is that opening the link in a browser can directly begin download or decryption flow.
+- In the first version, send-to-others uses item-first sharing only.
+- The share-first entry path is deferred until later.
+- The expected deployment context is a self-hosted instance primarily used by its owner.
+- The owner is typically the administrator user.
+- Other users are usually friends or frequent collaborators who need full transfer features but not server configuration access.
+- "Specify another user" mainly refers to sharing with another account inside the same hosted instance.
+- User admission should follow an invite-registration-approval flow.
+- Administrators generate invite codes, users register with those codes, and admins approve accounts before full access is granted.
+- Only administrators can generate invitation codes.
+- Sharing to another instance user currently targets exactly one recipient, not multiple recipients.
+- In the IM-like timeline, self-originated items should show the source device name, while incoming shared items should show the sharing user.
+- Transfers should support confidentiality levels chosen at upload time, with a default level to avoid repeated manual selection.
+- Burn-after-read should exist as an optional transfer policy.
+- The current working confidentiality labels are: secret, confidential, and top secret.
+- The detailed mapping from confidentiality levels to concrete protection rules is intentionally deferred until later in the design phase.
+- Confidentiality uses exactly three levels and treats them as configurable strategy groups.
+- Administrators may customize the concrete strategy for each level, but the product should provide a default built-in configuration.
+- The default confidentiality level should be configurable.
+- Confidentiality levels may not be disabled.
+- Confidentiality level names are fixed.
+- The default send surface should expose a lightweight confidentiality switch on the left side of the composer.
+- The send-surface confidentiality switch applies to both text and file actions in the current send context.
+- Uploaded content may have its confidentiality level changed later.
+- Recipients may not change the confidentiality level of received shared items.
+- Later confidentiality changes to a source item do not automatically propagate to already derived shares.
+- Future newly created shares should use the source item's current confidentiality level at the time they are created.
+- In the lifecycle model, default validity and maximum validity are configurable per confidentiality level.
+- Whether a level allows never-expire behavior is configurable.
+- All files allow manual deletion and manual early invalidation.
+- Whether validity may be extended later is configurable.
+- All files allow manual shortening of validity.
+- Validity is treated as the same concept as the server-side retention period for stored content.
+- All files remain visible to trusted devices by default.
+- Whether newly added trusted devices may view older content is configurable.
+- Manual deletion and manual early invalidation are merged into one concept rather than separate user-facing actions.
+- Whether a source item may be outwardly reshared again is configurable within confidentiality policy.
+- Whether a level may be shared at all is configurable.
+- Which outward sharing methods are allowed for a level is configurable.
+- Whether a level may be restricted to self-space only is configurable.
+- Whether a recipient may reshare by level is configurable.
+- Whether one source item may create multiple outward shares by level is configurable.
+- How the share-first entry path interacts with confidentiality policy is intentionally deferred until later.
+- Whether password extraction is allowed is controlled by confidentiality policy.
+- Whether a password must be system-generated is determined by confidentiality policy.
+- System-generated passwords must be at least 24 characters and include uppercase letters, lowercase letters, digits, and special characters.
+- Custom passwords require at least 8 characters with no additional complexity requirement.
+- Retrieval count is chosen at share time, while the maximum allowed retrieval count is configurable.
+- The share UI only presents the link and password; sending them onward is up to the user.
+- After one failed password attempt, captcha is required.
+- After successful password entry, the visible metadata should follow the same model as user-targeted sharing.
+- Whether public links are allowed is controlled by confidentiality policy.
+- Public-link validity and download count are chosen at share time within configurable maximums.
+- Public links should go directly to download without showing metadata or other information.
+- Public links should allow early revocation.
+- Every generated public link should be tracked as its own managed object.
+- Live transfer is constrained by confidentiality policy.
+- Whether a level allows live transfer, peer-to-peer transport, relay transport, peer-to-peer-to-relay fallback, stored-transfer fallback, record retention, and grouped/large live transfer is configurable.
+- Burn-after-read remains an additional option rather than being inherently bound to confidentiality level.
+- Burn-after-read should be available as an option at upload/send time.
+- For files, burn-after-read triggers when one device successfully downloads and decrypts the content.
+- For text messages, burn-after-read may use an explicit seen action such as a dedicated read button.
+- Burn-after-read may apply to both ordinary uploaded objects and share objects, depending on where it was enabled.
+- After burn-after-read triggers, the system should remove the relevant in-product traces rather than leaving history or metadata behind.
+- Burn-after-read items should not remain in history after the policy triggers.
+- For self-space uploads, burn-after-read may remove online availability for other devices after the first successful decryption.
+- Local copies created by deliberate user-side saving or export are outside the system's ability to erase and are treated as a user-protection responsibility.
+- All confidentiality levels allow all additional optional policies.
+- Additional optional policies are not enabled by default for any level.
+- Confidentiality level does not reduce display, history, search, or normal metadata visibility on trusted devices by itself.
+- On trusted devices, filenames, text visibility, summaries, timestamps, source metadata, and search results remain available unless another explicit product rule overrides them.
+- Share default validity by level is configurable.
+- Share maximum validity by level is configurable.
+- Share behavior remains constrained by the source-item invalidation and lifecycle rules.
+- Shares should always allow sender revocation.
+- Direct user-targeted sharing remains single-recipient.
+- Within the allowed validity window, repeated download is allowed for user-targeted shares.
+- User-targeted shares do not require a separate explicit claim step.
+- Recipients may access user-targeted shares across multiple trusted devices.
+- Recipients may see some content detail and metadata for user-targeted shares.
+- User-targeted sharing does not provide content preview before download.
+- For common single-file sharing, the recipient-facing list view should show filename, file size, sender, expiry time, current status, and confidentiality level.
+- The recipient-facing detail view may additionally show file type, share time, receive time, repeat-download allowance, and invalidation reason when applicable.
+- All confidentiality levels may be sent without an extra confirmation step.
+- All confidentiality levels may choose an explicit validity period.
+- Default validity differs by confidentiality level, and maximum validity is also limited by level.
+- Additional protective options remain separate optional policies rather than being inherently bound to confidentiality level.
+- All confidentiality levels remain eligible for the lightweight send path.
+- Confidentiality selection should not trigger extra risk-warning copy on each send.
+- How online direct transfer participates in confidentiality policy is intentionally deferred until later in the confidentiality pass.
+- Password extraction should generate a retrieval link plus a corresponding extraction password.
+- The recipient uses the link and password as the credentials for downloading the shared content.
+- The password-extraction page should ask for the password first, then show metadata, then offer download.
+- Password generation behavior is now governed by confidentiality policy: some levels may require system-generated passwords, while custom passwords remain allowed under the defined minimum length rule when policy permits.
+- Public links should open directly into download with minimal or no intermediate presentation.
+- Administrators use the same everyday transfer interface as normal users, with server management exposed through a separate admin panel.
+- External integrations such as a Telegram bot are a later expansion direction, not part of the initial version.
+- A Telegram bot may later be used to upload files into `Liminalis` for added convenience.
+- Uploads and shares should both support validity periods.
+- Maximum upload validity is constrained by confidentiality level, while share validity can be set separately.
+- If an original file expires or is manually deleted, all shares derived from it must become invalid.
+- Once a recipient has already downloaded a file locally, later deletion or invalidation cannot affect that local copy.
+- Invitation codes are single-use and may expire, but never with a validity longer than four hours.
+- Pending users should see only a waiting-for-approval screen and cannot use the product yet.
+- The password-extraction UI may show link and password together for generation convenience, but they are intended to be sent separately.
+- The advanced upload page exists for folder uploads, oversized files, or other cases the lightweight upload path cannot reliably support.
+- The advanced upload page is a manual destination, not an automatic redirect target.
+- If the lightweight upload path detects unsupported content or limits, it should show a text warning instead of forcing navigation.
+- History should be designed primarily for user review rather than audit-heavy administration.
+- The recipient main timeline should show only currently valid items.
+- Invalidated items should be removed from the main timeline, but preserved in detailed history.
+- If invalidation happens during active viewing or use, the product should show an immediate status message.
+- History should show concrete invalidation reasons for retained items, such as expired, deleted by sender, or revoked by sender. Burn-after-read items do not remain in history.
+- The detailed history page should include completed records as well as invalidated and other non-active records.
+- The first-version history page should provide search plus at least status and source-type filters.
+- History entries should show title, content type, source, time, and current status.
+- History detail should clearly show whether content is still retrievable.
+- Text-message history may be opened for full viewing unless later confidentiality policy overrides that behavior.
+- The main timeline uses a chat-like left-right split with current-device uploads on the right and incoming device/user content on the left.
+- Timeline items use a circular avatar container, with device icons for device-origin content and user icons or initials for user-origin content.
+- The timeline title row should show only source name and timestamp.
+- Text items use a bubble presentation with a single-side confidentiality color accent and expand/collapse for long content.
+- File items use a card presentation with icon, filename, format, and file size, plus a confidentiality-colored icon background.
+- File cards should use a small colored dot to indicate rough remaining-validity state instead of explicit text countdowns.
+- The remaining-validity dot uses a green-only visual language with shape differences: soft light-green filled for still-safe, medium-green hollow for approaching expiry, and darker thicker green ring for near-expiry.
+- Clicking the file-card body starts download immediately, while a dedicated share button remains on the right side.
+- Detailed inspection belongs in the history page rather than the active timeline.
+- Folder and file-group items should share the same card skeleton as single-file items.
+- Grouped-item secondary information should at least show item count and total size.
+- Grouped items should use the same confidentiality color and validity-dot language as single files.
+- Clicking the grouped-item card body should download the whole grouped object.
+- Grouped-item details should not expand inline in the active timeline.
+- Live transfer is a separate page that requires both devices to enter the mode, confirm each other, and then transfer via relay or peer-to-peer transport.
+- Live transfer focuses on files rather than text messages.
+- In live transfer, self-device transfer and user-to-user transfer can share one unified peer-session model rather than being split into separate product modes.
+- Live transfer should use a create-session / join-session structure.
+- Live transfer should attempt peer-to-peer first and automatically fall back to relay.
+- Users should see only lightweight transport-status labels, not manual transport selection.
+- If live transfer fails, the user should be guided back to the normal stored-transfer path.
+- The first peer-to-peer attempt should time out after about 10 seconds before relay fallback.
+- The failed-state primary action should be switching to normal transfer.
+- An unjoined live session should expire after about 5 minutes.
+- An established but inactive live session should end after about 10 minutes of inactivity.
+- Invalid public links should fail with generic errors that do not reveal content information.
+- Some security-related behaviors should support toggles, because strict defaults may be inconvenient in certain usage environments.
+- Identity should be account-based, while decryption access is granted through trusted browser devices.
+- Logging in proves account identity but should not automatically grant a new browser decryption access.
+- Each trusted browser instance should have its own device key and appear as a distinct device.
+- The first login becomes the user's first trusted device; later devices require trusted-device approval or recovery.
+- Clearing browser storage should force that browser to re-establish trust.
+- Administrators can manage the instance but cannot decrypt user content on the users' behalf.
+- The accepted first-version trust flow is: login first, then trusted-device approval or recovery.
+- QR pairing is the main new-device approval path, with short-code pairing as fallback.
+- Recovery is the fallback when no trusted device is available.
+- Successful recovery should rotate the recovery credential.
+- Recovery should use three recovery codes rather than a single recovery phrase.
+- Each recovery code should be 20 characters long.
+- Recovery codes should use only non-ambiguous letters and digits, and should be displayed in grouped segments.
+- After recovery-code rotation, the continue action should be blocked by a five-second countdown to force acknowledgment.
+- The first recovery-code display should offer copy-all and download-text actions.
+- The first version does not need per-code copy actions.
+- Old recovery codes should not be viewable later; seeing a new set means rotating to a new set.
+- Rotated recovery codes should appear on a strong interrupting page rather than a lightweight prompt or modal.
+- On the untrusted-device page, recovery should be visually secondary and not presented as an equally prominent primary action.
+- After recovery credential rotation, the product should clearly force the user to notice and acknowledge the new credential before continuing.
+- State-page wording should stay direct and non-technical, and avoid awkward participant wording in trusted-device and live-transfer flows.
+- Administrators should be able to disable and re-enable users.
+- Administrators should be able to view per-user storage usage and impose storage limits.
+- Confidentiality policy should be centrally managed at the instance level rather than customized per user.
+- Administrators may view device counts and limited device metadata for users, but may not manage user trust relationships.
+- The recommended first admin-panel shape is: overview, user and invitation controls, storage and limits, instance-level strategy controls, and system status.
+- The detailed confidentiality-policy management page is intentionally deferred until later.
+- The first admin-panel overview may include recent 24-hour transfer activity alongside health, counts, storage, and invitation status.
+- User detail may include approval metadata and invitation provenance.
+- Storage management may allow manual cleanup triggering.
+- The first strategy page should include invitation registration, recovery, live transfer, public links, and password extraction as core switches.
+- The first release boundary is web-only.
+- Remaining design work has been organized into a dedicated checklist for step-by-step resolution.
+- A dedicated confidentiality-impact map now tracks all product areas that may be affected by confidentiality-level decisions.
+- The confidentiality-policy management page should use a compact global header plus three fixed tabs: secret, confidential, and top secret.
+- The global header should contain only the default confidentiality level selector and a restore-defaults action.
+- Each level tab should be split into lifecycle, share availability, user-targeted sharing, password extraction, public links, and live transfer sections.
+- Only truly level-varying policy fields belong on the page; fixed system rules should not appear there as editable fields.
+- A design review snapshot records that the design phase is largely complete and identifies only a small number of deferred items.
+- A dedicated default-preset document now tracks the built-in confidentiality defaults, starting with the `secret` preset and the global default level.
+- A dedicated v1 architecture-boundary document now records which settled design capabilities must be treated as hard architectural constraints and how deferred items are carried forward.
+- A dedicated system-module boundary document now records the main logical modules, their responsibilities, and their dependency directions for `v1` architecture.
+- A dedicated core-domain-model document now records the main business objects, relationships, and read-model boundaries for `v1` architecture.
+- Architecture now materializes object-level visibility and trusted-device access outcomes through `AccessGrantSet` structures.
+- A dedicated flow-and-state-model document now records the canonical lifecycle states, inactive reasons, purge-path handling, and cascade rules for `v1` architecture.
+- A dedicated security-and-key-architecture document now records the protected-flow boundary, mixed access model, unified content-encryption stance, and large-file security constraints for `v1`.
+- A dedicated storage-and-service-topology document now records the runtime roles, storage placement rules, and pragmatic deployment shape for `v1` architecture.
+- A dedicated implementation-architecture baseline now records the minimum complete runtime shape, implementation red lines, recommended delivery order, and deferred assumptions for `v1`.
+- The built-in `secret` preset currently assumes allowed validity extension, visibility of older content to newly added trusted devices, and recipient multi-device access.
+- The built-in `confidential` preset currently assumes a 2-hour default validity, 24-hour maximum validity, no public links, mandatory system-generated passwords for password extraction, and no fallback from live transfer to stored transfer.
+- The built-in `top secret` preset currently assumes a 10-minute default validity, 1-hour maximum validity, no never-expire, no extension, no visibility to newly added trusted devices, no outward sharing, and live transfer without record retention.
+- The built-in `top secret` preset currently assumes peer-to-peer-only live transfer with no relay fallback and no fallback to stored transfer.
+
+## Durable Constraints
+
+- Process discipline matters as much as output quality.
+- Design decisions should be recorded before architecture is finalized.
+- Architecture should be finalized before implementation begins.
+- The first git commit should happen after an initial design baseline exists.
+
+## Open Questions
+
+- Target users
+- Core usage scenarios
+- Supported platforms
+- Transfer methods and protocols
+- Security and privacy requirements
+- Online, local-first, or hybrid product model
+
+## Documentation Map
+
+- `agents.md`: assistant operating rules for this repository
+- `memory.md`: durable project memory
+- `now.md`: current progress and immediate next step
+- `design/`: design documents and approved proposals
+
+## Design Workspace Map
+
+- `design/README.md`: design index and document organization
+- `design/01-product-definition.md`: product framing and design principles
+- `design/02-scenarios-and-scope.md`: target scenarios, scope, and non-goals
+- `design/03-open-questions.md`: unresolved design questions for confirmation
+- `design/04-remaining-design-issues.md`: ordered checklist of remaining design decisions
+- `design/05-confidentiality-impact-map.md`: full map of product areas touched by confidentiality policy
+- `design/06-design-review.md`: end-of-design review snapshot and remaining deferred items
+- `design/07-confidentiality-default-presets.md`: built-in default confidentiality preset values
+- `design/08-architecture-phase-plan.md`: macro work plan for the architecture phase
+- `design/09-v1-architecture-boundary.md`: accepted v1 architecture-boundary decisions and deferred assumptions
+- `design/10-system-module-boundaries.md`: accepted logical module boundaries and dependency directions for `v1`
+- `design/11-core-domain-model.md`: accepted core business objects, relationships, and read-model boundaries for `v1`
+- `design/12-flow-and-state-model.md`: accepted lifecycle states, purge-path handling, and cascade rules for `v1`
+- `design/13-security-and-key-architecture.md`: accepted security, key-handling, and large-file protection architecture for `v1`
+- `design/14-storage-and-service-topology.md`: accepted runtime roles, storage placement, and deployment shape for `v1`
+- `design/15-implementation-architecture-baseline.md`: accepted implementation-facing architecture baseline for `v1`
+- `design/16-implementation-planning-decision-baseline.md`: accepted pre-coding implementation-planning decisions for `v1`
+- `design/17-key-and-access-architecture-note.md`: detailed implementation-planning note for key roles, access packages, and recovery boundaries
+- `design/18-trusted-device-pairing-and-recovery-protocol-note.md`: detailed implementation-planning note for trusted-device establishment, pairing, and recovery flows
+- `design/19-access-grant-set-structure-and-update-rules.md`: detailed implementation-planning note for `AccessGrantSet` structure, invariants, and update rules
+- `design/20-retrieval-repeat-download-and-burn-after-read-semantics.md`: detailed implementation-planning note for retrieval semantics, count consumption, no-repeat shares, and burn-after-read behavior
+- `design/21-metadata-history-and-search-boundary-note.md`: detailed implementation-planning note for server-visible metadata limits, history/search projection, and trusted-device visibility rules
+- `design/22-flow-and-state-model-refinement-note.md`: detailed implementation-planning note refining share-state semantics around retained consumed outcomes
+- `design/23-identity-admission-and-session-baseline.md`: detailed implementation-planning note for identity, invite admission, approval gating, and session semantics
+- `design/24-confidentiality-policy-engine-and-bundle-note.md`: detailed implementation-planning note for policy-engine structure, `PolicyBundle` behavior, and snapshot/action-time evaluation rules
+- `design/25-upload-storage-chunking-and-grouped-content-note.md`: detailed implementation-planning note for upload/storage shape, resumability, chunking, and grouped content
+- `design/26-live-transfer-session-and-fallback-note.md`: detailed implementation-planning note for live-transfer sessions, transport policy, and stored-transfer handoff
+- `design/27-retrieval-protocol-and-package-issuance-note.md`: detailed implementation-planning note for retrieval attempts, package issuance, and public-link delivery tickets
+- `design/28-read-model-projection-schema-note.md`: detailed implementation-planning note for timeline/history/search/live-transfer projection schemas
+- `design/29-admin-control-plane-and-policy-management-workflow-note.md`: detailed implementation-planning note for invite, approval, disablement, and policy-management workflows
+- `design/30-recipient-wrapping-access-package-and-regrant-note.md`: detailed implementation-planning note for recipient wrapping material, package metadata, and regrant behavior
+- `design/31-recovery-rotation-and-trust-material-resilience-note.md`: detailed implementation-planning note for recovery-rotation durability and local trust-material resilience

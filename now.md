@@ -1,0 +1,171 @@
+# Current Status
+
+## Phase
+
+- Current phase: implementation
+- Current phase segment: implementation planning
+
+## Progress
+
+- Confirmed project name: `Liminalis`
+- Confirmed workflow: `design -> architecture -> implementation`
+- Confirmed phase-gated collaboration: no autonomous advancement
+- Created project documentation scaffold
+- Created `design/` directory for future design artifacts
+- Started the design phase
+- Drafted the first design baseline under `design/`
+- Recorded the first concrete product constraints from the user
+- Refined the product around a default send-to-self mode and a separate send-to-others mode
+- Elevated text messages to a first-class transfer object in the design draft
+- Set send-to-self to default to encrypted temporary holding across the user's devices
+- Captured a homepage direction centered on an available ciphertext list and upload area
+- Refined the landing page into an event-flow timeline plus a lightweight adjacent text-and-file composer
+- Split complex uploads and historical records into dedicated secondary views
+- Began modeling send-to-others as a share action layered on stored encrypted payloads
+- Clarified that public-link sharing is a convenience-oriented exception to the strict end-to-end path
+- Set send-to-others to support both item-first and share-first entry paths, with item-first as the default
+- Clarified the self-hosted multi-user scenario with an admin owner and regular transfer users
+- Defined user admission as invite registration followed by administrator approval
+- Refined user-to-user sharing to single-recipient targeting with visible source context in the timeline
+- Introduced confidentiality levels and optional burn-after-read as send-time policy concepts
+- Deferred detailed confidentiality-policy mapping until other design areas are settled
+- Defined password extraction around a generated retrieval link plus extraction password
+- Drafted the password-extraction retrieval flow as password entry, metadata view, then download
+- Set public-link retrieval to direct download and separated admin capability into a dedicated management panel
+- Recorded external integrations like a Telegram bot as later-phase expansion rather than initial scope
+- Added validity, invitation, live-transfer, history, and invalid-link rules from the latest design round
+- Clarified that advanced upload is manual-entry only and unsupported default uploads show text warnings
+- Added a design principle that some security-related behaviors should be switchable
+- Accepted the account-plus-trusted-device direction for self identity and multi-device access
+- Accepted QR-first trusted-device pairing, short-code fallback, and rotating recovery credentials
+- Confirmed key admin-panel powers: user disablement, storage visibility and limits, and centralized confidentiality governance
+- Accepted the recommended admin-panel visibility and first-version module scope, while deferring detailed confidentiality-policy page design
+- Confirmed the first release boundary as web-only
+- Created an ordered checklist of remaining design issues for step-by-step resolution
+- Refined trusted-device state-page direction by making recovery visually secondary and rotation acknowledgment explicit
+- Chose the recovery-credential format: three grouped 20-character recovery codes using non-ambiguous letters and digits
+- Added a five-second gated continue action after recovery-code rotation
+- Refined online direct transfer to exclude text messages and to use one unified peer-session model
+- Accepted create/join sessions, peer-to-peer-first routing, lightweight status labels, and stored-transfer fallback for live transfer
+- Accepted the invalidation model: active timeline only, immediate notices on active loss, and reasoned history records
+- Accepted the first-version detailed history model, including completed records, search, core filters, and retrievability detail
+- Accepted the first-version admin-panel field direction, including overview activity, user approval metadata, manual cleanup, and core strategy switches
+- Accepted the first-version recovery-code display model, including copy-all, download-text, and non-repeatable old-code visibility
+- Accepted detailed live-transfer timing and fallback behavior, including 10-second P2P timeout and session expiry rules
+- Closed most non-confidentiality wording direction, with only minor phrasing polish left as needed
+- Accepted the core main-timeline visual system, including left-right split, avatar containers, text/file item patterns, and click-to-download file cards
+- Extended the main-timeline system to folder and file-group items using the same card skeleton and no inline detail expansion
+- Finalized the main-timeline validity-dot system with green-only color and shape differences
+- Began the final confidentiality-policy pass by fixing the three-level strategy-group model and its basic editability rules
+- Recorded the first part of confidentiality strategy, including fixed level names, current-level share creation, and send-surface behavior
+- Deferred the relationship between online direct transfer and confidentiality policy until later in the final pass
+- Recorded the second part of confidentiality strategy, covering validity behavior, lightweight sending, and the separation of extra policies from level choice
+- Added a dedicated confidentiality-impact map document to keep the final policy pass grounded in the full product surface
+- Recorded part three lifecycle rules around validity, retention, trusted-device visibility, and configurability
+- Closed the remaining lifecycle semantics by merging delete/invalidate and making outward resharing configurable
+- Began the share-availability part of confidentiality policy by making overall share permission and allowed share methods configurable
+- Deferred the relationship between share-first entry and confidentiality policy until later
+- Closed the main share-availability decisions by making self-only, recipient resharing, and repeated outward sharing configurable
+- Began the user-targeted sharing behavior segment with configurable share validity, mandatory source constraints, and always-allowed revocation
+- Refined user-targeted sharing with repeated download, no claim step, multi-device recipient access, and visible detail metadata
+- Accepted the recipient-facing metadata model for user-targeted sharing, with no content preview and a single-file-first metadata set
+- Recorded the password-extraction segment, including policy-driven password generation, retrieval-count control, and captcha after one failed attempt
+- Matched password-extraction metadata display to the user-targeted sharing metadata model
+- Recorded the public-link segment, including configurable validity/download limits, direct download, revocation, and per-link tracking
+- Expanded burn-after-read to cover upload-time use, file decryption, text read actions, and the boundary between online traces and local saved copies
+- Closed the display/search/metadata exposure segment by keeping trusted-device visibility uniform across confidentiality levels
+- Fixed the add-on policy rule: all levels allow all optional policies, and none are enabled by default
+- Closed the live-transfer confidentiality segment by making all related controls policy-configurable
+- Finalized the admin-facing confidentiality-policy page structure around a global header and three fixed level tabs
+- Narrowed first-version scope by allowing share-first to be deferred out of v1
+- Cleaned stale confidentiality open items and added a design review snapshot
+- Began the built-in confidentiality preset document with `secret` as the global default level
+- Filled in the first full draft of the built-in `secret` preset defaults
+- Began recording the built-in `top secret` preset defaults
+- Completed the top-secret live-transfer defaults with a peer-to-peer-only stance
+- Filled in the first full draft of the built-in `confidential` preset defaults
+- Accepted the built-in default confidentiality presets without further revision
+- The design phase has been confirmed complete by the user
+- The repository is now ready for the first commit and initial push preparation
+- The first commit must exclude agent-support documents such as `agents.md`, `memory.md`, and `now.md`
+- The architecture phase has started
+- Drafted the macro architecture-phase work plan
+- Accepted the v1 architecture-boundary draft and its deferred-feature assumptions
+- Accepted the system-module boundary draft and the main dependency directions for `v1`
+- Accepted the core-domain-model draft and the main object/read-model distinctions for `v1`
+- Accepted the flow-and-state-model draft with inactive reasons, purge-path handling, and live-session transport substates
+- Accepted the security-and-key-architecture draft, including the unified content-encryption stance for `v1`
+- Accepted the storage-and-service-topology draft with explicit runtime roles and metadata/blob separation
+- Accepted the implementation-facing architecture baseline, including runtime shape, implementation red lines, and recommended delivery order
+- Refined the architecture with explicit access-grant ownership, read-model projection responsibility, early policy-engine placement, and one-to-many public-link modeling
+- Completed multiple rounds of architecture review and applied final design-architecture alignment fixes
+- The user has now confirmed the transition from architecture into implementation
+- Implementation has started in a planning-first mode rather than a coding mode
+- The current implementation stage is explicitly constrained to detailed planning only
+- No code should be written until the user explicitly ends the planning stage
+- The immediate goal is to produce a detailed implementation plan that keeps unresolved issues out of the code phase
+- Began a pre-coding decision audit across design and architecture documents for `v1`
+- Identified the main implementation-planning decision areas around key and access architecture, trusted-device protocol, policy snapshot semantics, metadata/search boundary, burn-after-read semantics, retrieval accounting, and auth baseline
+- Marked several architecture-risk areas for explicit review before coding, especially `AccessGrantSet`, metadata privacy boundaries, and burn-after-read interaction rules
+- The user accepted the first implementation-planning decision baseline and its recommended defaults
+- Recorded the accepted decision baseline under `design/16-implementation-planning-decision-baseline.md`
+- Locked the first pre-coding defaults for key and access architecture, trusted-device baseline, policy snapshot semantics, metadata/search boundary, burn-after-read precedence, retrieval accounting, auth baseline, read-model projection, grouped-content shape, live-transfer baseline, policy-engine placement, and admin isolation
+- Drafted the first detailed implementation-planning note under `design/17-key-and-access-architecture-note.md`
+- Refined the protected-access model around layered source, share, extraction, and public-link access objects plus separate ordinary-domain and recovery restoration roots
+- Identified the key implementation-planning follow-ups for `AccessGrantSet` structure, pairing and recovery protocol messages, protected retrieval protocol, and final public-link delivery mechanism
+- Drafted the second detailed implementation-planning note under `design/18-trusted-device-pairing-and-recovery-protocol-note.md`
+- Fixed the recovery-credential semantics by keeping three recovery codes per set while allowing any one code to restore access and rotating the whole set after success
+- Refined the trusted-device protocol around first-device establishment, QR-first pairing, short-code fallback, explicit approval before trust issuance, and separate ordinary-pairing versus recovery-restoration behavior
+- Drafted the third detailed implementation-planning note under `design/19-access-grant-set-structure-and-update-rules.md`
+- Refined `AccessGrantSet` into a replace-on-change object with one current version per protected object, explicit grant subject modes, and clear rules for when pairing, recovery, lifecycle changes, and device invalidation should or should not create a new version
+- Separated access-grant replacement semantics from object lifecycle invalidation so expiry, revocation, source invalidation, and burn-after-read do not silently double as access-model rewrites
+- Drafted the fourth detailed implementation-planning note under `design/20-retrieval-repeat-download-and-burn-after-read-semantics.md`
+- Fixed retrieval semantics around explicit retrieval-attempt identities, protected completion versus public-link completion, domain-scoped repeat-download, no-repeat share consumption, and burn-after-read precedence
+- Identified one remaining follow-up that the accepted state model should later gain an explicit consumed-like share outcome rather than overloading revoked or expired
+- Drafted the fifth detailed implementation-planning note under `design/21-metadata-history-and-search-boundary-note.md`
+- Refined the `v1` metadata boundary around limited server-visible projections, explicit active-timeline/history/search read models, and strict exclusion of full protected-content indexing
+- Confirmed the accepted default that consumed no-repeat shares leave the active timeline but remain as retained non-retrievable history and search records
+- Drafted the sixth detailed implementation-planning note under `design/22-flow-and-state-model-refinement-note.md`
+- Refined the share-state model so no-repeat share completion becomes an explicit retained `consumed` inactive reason instead of being overloaded onto revoked, expired, or source-invalidated outcomes
+- Clarified that burn-after-read still uses the non-retained purge path, while retained consumed shares remain visible only in history and retained search, not in the active timeline
+- Drafted the seventh detailed implementation-planning note under `design/23-identity-admission-and-session-baseline.md`
+- Refined the identity baseline around `username` login, invite registration, pending approval, explicit admin approval, separate enable/disable state, and cookie-backed account sessions distinct from trusted-device access
+- Completed the current foundation-planning set by making post-login routing explicit for pending users, approved-but-untrusted users, trusted users, and disabled users
+- Corrected the planning set after review by aligning the identity baseline, adding recipient public wrapping material to the sharing model, and making recovery rotation durable within the recovered session
+- Clarified that one `ShareObject` remains the outward-delivery root for sibling recipient, extraction, and public-link paths, while ordinary no-repeat recipient consumption does not automatically invalidate sibling delivery objects
+- Folded the retained `consumed` share outcome back into the canonical state and implementation-baseline documents instead of leaving it only in follow-up refinement notes
+- Drafted the eighth detailed implementation-planning note under `design/24-confidentiality-policy-engine-and-bundle-note.md`
+- Defined the policy-engine baseline around `PolicyBundle` versions, fixed versus editable policy fields, structured evaluation families, and the accepted state-preserving, action-blocking principle
+- Closed the largest remaining foundation-planning gap by making policy snapshot persistence and action-time evaluation rules explicit for source items, share objects, extraction, public links, and live transfer
+- Accepted the remaining high-impact planning decisions around recipient eligibility for identity-bound protected sharing, public session timing, logout semantics, immediate policy publication, and live-to-stored fallback interpretation
+- Drafted the ninth detailed implementation-planning note under `design/25-upload-storage-chunking-and-grouped-content-note.md`
+- Drafted the tenth detailed implementation-planning note under `design/26-live-transfer-session-and-fallback-note.md`
+- Clarified stored-transfer ingestion around upload sessions, resumable ciphertext-part upload, grouped-content manifests, and finalization-before-activation rules
+- Clarified live transfer around peer-to-peer-first transport, policy-controlled relay fallback, retained record policy, and explicit handoff into a new stored-transfer flow when fallback is allowed
+- Drafted the eleventh through fifteenth detailed implementation-planning notes under `design/27` through `design/31`
+- Closed the remaining protocol and control-plane planning gaps around retrieval attempts, package issuance, public-link delivery tickets, read-model projection schemas, admin workflows, recipient wrapping material, explicit regrant behavior, and recovery-rotation resilience
+- Reduced the remaining pre-coding planning backlog to mainly canonical fold-back and later implementation sequencing rather than missing core behavior specifications
+- Began the documentation-normalization pass so accepted later planning conclusions are folded back into the canonical architecture and baseline documents
+- Updated the canonical boundary, module, domain, state, security, topology, and compact decision-baseline documents to reflect the now-accepted later planning set
+- Began the second normalization round across `design/01` through `design/08` so the original design-phase documents clearly act as historical framing rather than competing current baselines
+
+## Current Focus
+
+- Preserve the completed planning baseline and no-code gate until the user explicitly ends planning
+- Treat `design/09` through `design/16` as the compact canonical baseline and `design/17` through `design/31` as the detailed accepted planning set
+- Keep canonical summaries and detailed notes aligned when durable clarifications are accepted
+- Prepare to move from behavior-specification work into implementation sequencing only after the user explicitly directs that next step
+- Keep the deferred share-first path explicitly out of v1 scope
+- Preserve the planning-only, no-code gate until the user explicitly ends it
+
+## Next Checkpoint
+
+- Confirm that the documentation-normalization work is complete enough and that the planning baseline is stable
+- Wait for the user's explicit direction before shifting from planning-baseline work into implementation sequencing
+- Wait for the user's explicit instruction before ending planning and starting code changes
+
+## Notes
+
+- `memory.md` should be updated when durable decisions are made
+- `now.md` should be updated whenever progress changes materially
+- No code should be created during the current implementation-planning stage

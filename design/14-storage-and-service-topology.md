@@ -51,15 +51,18 @@ Stores:
 
 - users
 - trusted devices
+- trusted-device public wrapping material
 - recovery credential versions
+- upload-session metadata
 - source-item metadata
 - source-item access-grant and visibility state
 - share-object metadata
 - share-object access-grant and visibility state
 - password-extraction state
 - public-link state
+- retrieval-attempt records
 - live-transfer session state
-- history and lookup support records, including title and visible-metadata search support
+- history and lookup support records, including title and visible-metadata search support and retained live-transfer record support when policy allows it
 - confidentiality policy bundles
 - admin configuration, invites, approvals, limits, and system-state metadata
 
@@ -108,6 +111,7 @@ Other cleanup and consistency jobs may remain secondary refinements as long as t
 - read models should not be left to accidental front-end assembly or scattered ad hoc updates from multiple modules
 - for `v1`, the search projection should stay intentionally narrow and limited to titles and visible metadata
 - text items may contribute a short visible summary field to the search projection without introducing protected-content full-text indexing
+- retained live-transfer records, when policy allows them, should be projected as their own read-model family rather than disguised as stored-transfer objects
 
 ## Storage Placement Rules
 

@@ -186,6 +186,27 @@ Boundary:
 - can differ between a source item and its derived share objects
 - should remain a focused object-level access structure for `v1`, not a generalized ACL framework
 
+## Supporting Architectural Objects
+
+These are not elevated above the main domain objects listed above, but they are architecturally meaningful support objects in `v1` and should not be treated as incidental implementation leftovers.
+
+### UserDomainAccessPublicKey
+
+- publishable public wrapping material for one user's trusted-device domain
+- used for identity-bound protected sharing without requiring server possession of recipient plaintext trust roots
+
+### DevicePublicIdentity
+
+- publishable public identity for one trusted device when device-snapshot wrapping is required
+
+### UploadSession
+
+- coordination object for stored-transfer preparation, ciphertext-part upload, resumability, and finalization before `SourceItem` activation
+
+### RetrievalAttempt
+
+- retrieval coordination object used for idempotent attempt tracking, completion accounting, and downstream no-repeat or burn-after-read consequences
+
 ## Non-Core Read Models
 
 ### ActiveTimelineItem
@@ -203,13 +224,17 @@ Boundary:
 
 - one `User` has many `TrustedDevice`
 - one `User` has one current `RecoveryCredentialSet`
+- one `User` may publish one current `UserDomainAccessPublicKey`
 - one `User` owns many `SourceItem`
+- one `TrustedDevice` may publish one current `DevicePublicIdentity`
+- one `User` may create many `UploadSession`
 - one `SourceItem` has one current `AccessGrantSet`
 - one `SourceItem` may generate many `ShareObject`
 - one `ShareObject` has one current `AccessGrantSet`
 - one `ShareObject` may expose one `ExtractionAccess`
 - one `ShareObject` may expose multiple independently tracked `PublicLink` objects
 - one `LiveTransferSession` references participating users and trusted devices without becoming a source item or share object
+- one protected retrieval flow may create one or more `RetrievalAttempt` records over time without changing the underlying stored object identity
 - one confidentiality level resolves through one current `PolicyBundle`
 
 ## Recommended Outward-Delivery Shape

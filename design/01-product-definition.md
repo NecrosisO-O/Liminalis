@@ -3,6 +3,7 @@
 ## Status
 
 - Draft: near design closure
+- Historical design-phase product framing; later accepted architecture and implementation-planning notes refine and constrain this direction for `v1`
 
 ## Working Product Statement
 
@@ -94,3 +95,9 @@ Instead of asking users to pick a separate tool for each transfer situation, `Li
 - Common transfers require little setup
 - Failure states are recoverable and clearly explained
 - The product feels broader than a single sharing method, but simpler than a toolbox of unrelated features
+
+## Later Baseline Notes
+
+- Later accepted documents keep this product framing, but make stored transfer the primary architectural center and treat live transfer as a distinct secondary subsystem in `v1`.
+- Later accepted documents also keep text as a first-class object while fixing it to self-space only in `v1`, without outward-share or live-transfer expansion.
+- The canonical `v1` boundary and baseline now live primarily in `design/09-v1-architecture-boundary.md` and the accepted follow-up planning notes.

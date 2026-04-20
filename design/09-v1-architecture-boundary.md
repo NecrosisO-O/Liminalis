@@ -36,6 +36,7 @@ The following are not optional or deferrable in `v1` architecture:
 
 - source items and share objects should be modeled as distinct domain objects
 - share objects may reference source items, but should retain their own lifecycle and policy state
+- one share object may remain the outward-delivery root for sibling recipient, password-extraction, and public-link delivery paths
 
 ### 4. Timeline And History Data Boundary
 
@@ -47,7 +48,16 @@ The following are not optional or deferrable in `v1` architecture:
 - live transfer and stored transfer should remain separate subsystems
 - fallback from live transfer to normal stored transfer should happen through explicit handoff interfaces rather than a single unified transfer-state machine
 
-### 6. Deferred Feature Handling
+### 6. Identity-Bound Recipient Sharing Boundary
+
+- identity-bound protected sharing should depend on recipient-published public wrapping material
+- if that recipient material is not yet available, `v1` should block the identity-bound protected share rather than silently queueing or degrading it into a weaker hidden path
+
+### 7. Public-Link Delivery Boundary
+
+- public-link delivery should remain controlled through short-lived server-issued delivery access rather than unmanaged long-lived object links
+
+### 8. Deferred Feature Handling
 
 - deferred items should be carried as explicit architecture assumptions rather than full built modules
 - the main deferred item is the share-first path and its confidentiality interaction

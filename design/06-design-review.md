@@ -3,6 +3,7 @@
 ## Status
 
 - Design-phase review snapshot
+- Historical design-closure snapshot; later accepted architecture and implementation-planning notes refine this review into the current working `v1` baseline
 
 ## Overall State
 
@@ -31,3 +32,8 @@
 
 - architecture should now be able to derive module boundaries from the settled product model
 - the deferred items above should either be finalized first or carried as explicit architecture assumptions
+
+## Later Baseline Notes
+
+- The deferred share-first item was carried forward as an explicit `v1` exclusion rather than re-opened during implementation planning.
+- The later architecture and implementation-planning corpus now expands the settled product model here into explicit domain objects, state rules, security boundaries, policy-engine behavior, and read-model boundaries.

@@ -49,6 +49,8 @@ Architectural consequence:
 - it must remain policy-aware
 - source items and share objects should each carry their own current access-grant result
 - successful recovery should trigger re-evaluation or re-grant of historical object access under the same trusted-access domain rules
+- identity-bound protected sharing should rely on recipient-published public wrapping material rather than on server access to recipient plaintext trust roots
+- ordinary pairing should not silently widen historical object visibility when the object's access mode is snapshot-limited
 
 ## 3. Recovery Position
 
@@ -68,6 +70,7 @@ Architectural consequence:
 
 - content bodies should be reusable where possible, without violating confidentiality-policy restrictions or stricter delivery-path assumptions
 - access grants, policy snapshots, and delivery constraints should vary per share object
+- one share object may act as the outward-delivery root for sibling recipient, password-extraction, and public-link delivery paths
 
 ## 5. Password Extraction Versus Public Links
 
@@ -78,6 +81,7 @@ Architectural consequence:
 
 - `ExtractionAccess` and `PublicLink` must remain distinct objects and access models
 - they should not be collapsed into one generic anonymous-share system
+- public-link delivery should remain controlled through short-lived delivery access rather than unmanaged long-lived object URLs
 
 ## 6. Confidentiality Policy Scope
 
