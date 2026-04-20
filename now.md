@@ -156,23 +156,20 @@
 - Drafted the seventeenth through nineteenth detailed implementation-planning notes under `design/33` through `design/35`
 - Turned the sequencing baseline into a backend domain/service breakdown, a route/API planning baseline, and milestone-level acceptance criteria for `M1` through `M10`
 - Completed the main implementation-sequencing planning set so later work can move from behavior notes into ticket decomposition and execution planning without reopening core domain boundaries
+- Recorded the code-phase macro plan under `design/36-code-phase-macro-plan.md` without starting implementation
 
 ## Current Focus
 
-- Preserve the completed planning baseline and no-code gate until the user explicitly ends planning
-- Use the new sequencing note as the immediate guide for domain breakdown, API planning, and later code milestones
-- Use the domain, API, and milestone notes as the working bridge from implementation planning into execution planning
+- Preserve the completed implementation-planning baseline as the source of truth for future code work
+- Keep the recorded code-phase macro plan ready for execution once the user explicitly starts implementation
 - Keep canonical summaries and detailed notes aligned when durable clarifications are accepted
-- Continue reviewing sequencing assumptions against the accepted planning corpus before any code work begins
+- Continue waiting for explicit user instruction before any implementation begins
 - Keep the deferred share-first path explicitly out of v1 scope
-- Preserve the planning-only, no-code gate until the user explicitly ends it
 
 ## Next Checkpoint
 
-- Review the new sequencing baseline and derive the backend domain/service breakdown from it
-- Review the new sequencing baseline and derive the API/route planning from it
-- Review whether the sequencing planning set is now complete enough to move into ticket decomposition or direct implementation execution planning
-- Wait for the user's explicit instruction before ending planning and starting code changes
+- Wait for the user's explicit instruction before starting the code phase
+- Once instructed, execute the recorded macro plan and test all automatable work before final reporting
 
 ## Notes
 

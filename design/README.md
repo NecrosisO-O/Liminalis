@@ -45,6 +45,7 @@ This directory stores the approved design, architecture, and implementation-plan
 - `design/33-backend-domain-and-service-breakdown.md`: detailed planning note for stable backend domains, service ownership, dependency rules, and code-boundary risks
 - `design/34-v1-api-and-route-planning.md`: detailed planning note for backend route families, frontend route boundaries, and late-versus-early API surfaces
 - `design/35-v1-milestone-decomposition-and-acceptance.md`: detailed planning note for milestone decomposition, scope boundaries, and acceptance criteria
+- `design/36-code-phase-macro-plan.md`: recorded macro plan for the code phase; execution still requires explicit user instruction
 
 ## Current Status
 
