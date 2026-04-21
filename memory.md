@@ -16,9 +16,9 @@
 
 - The user confirmed the transition from design into architecture.
 - The user has now confirmed the transition from architecture into implementation.
-- The implementation phase is no longer planning-only; the user has explicitly authorized ongoing code execution.
+- The implementation phase is now actively executing for the current run after the user's explicit start instruction.
 - The user accepted the first pre-coding implementation-planning decision baseline for `v1`.
-- The user expects autonomous troubleshooting during build and test work, with progress-document maintenance and stage-checkpoint commits and pushes during execution.
+- The user expects autonomous troubleshooting during build and test work, with progress-document maintenance and stage-checkpoint commits and pushes during execution after the explicit start instruction is given.
 
 ## Current Known Intent
 
@@ -26,6 +26,11 @@
 - The planning stage should aim to keep unresolved implementation questions out of the code phase.
 - The planning stage must not be considered complete without explicit user confirmation.
 - No code should be written until the user explicitly instructs the project to leave planning and begin implementation work.
+- Execution is currently active because the user has now given the explicit start instruction for this run.
+- After the explicit start instruction, the assistant should autonomously push through the whole plan instead of stopping at ordinary blockers.
+- The assistant may install necessary project-scoped dependencies, environment pieces, tools, or programs on the current machine when needed for development, build, test, and validation.
+- Those environment changes must not affect other devices, other hosts, or unrelated internal servers.
+- When a decision is needed during execution, the assistant should first rely on accepted design and architecture documents, then on project design principles, and ask the user only as a last resort.
 - The pre-coding baseline now adopts per-source-item content keys with reusable ciphertext and access-context wrapping for protected flows.
 - Trusted-device establishment should use browser-generated user-level root access material plus per-device keys, with pairing or recovery regranting access into the same trusted-access domain.
 - Policy should use mixed snapshot and action-time semantics, and admin policy edits should not retroactively rewrite existing objects by default.
@@ -71,9 +76,13 @@
 - The implementation-sequencing planning set now also includes stable backend domain/service boundaries, API/route families, and milestone-level acceptance criteria aligned to `M1` through `M10`.
 - The planning phase is now complete enough to support code execution, and later code work should use `design/16` through `design/35` as its primary implementation-planning baseline.
 - The code-phase macro plan is now recorded in `design/36-code-phase-macro-plan.md`, but implementation still must not begin until the user gives explicit start instruction.
-- Implementation has now explicitly started, beginning with foundation stabilization in the `M1` and `M2` area.
+- A prior foundation-stabilization pass repaired the initial `M1` and `M2` build chain, but execution is currently paused again pending the user's next explicit start instruction.
 - The first code-execution repair pass established Prisma 7 config compatibility, restored generated-client imports for the current TypeScript `NodeNext` setup, and brought the monorepo build back to a passing state.
 - Early-stage workspace test commands should tolerate an empty test set until real automated tests are added, so validation failures reflect actual regressions rather than missing test files.
+- The current execution run has now started and extended the M1 and M2 base from buildable code into database-backed, seedable, e2e-validated identity and trust foundations.
+- Local project execution now relies on a root `.env`, local Docker PostgreSQL, and Prisma 7 driver-adapter wiring through a shared Prisma client factory.
+- Local development seeding now provisions an owner admin account for project bootstrap without weakening the documented invite and approval model for ordinary instance users.
+- The current M1 and M2 validation baseline now includes e2e coverage for waiting-state routing, admin-role enforcement, first-device bootstrap, explicit same-user pairing approval, cross-user pairing rejection, recovery pending-display durability, and disabled-user blocking of trust expansion and recovery.
 - The project should be developed deliberately rather than rushed into coding.
 - The design phase has started.
 - Initial design drafts are being recorded under `design/` before any architecture work.

@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -81,6 +82,12 @@ export class TrustService {
   }
 
   async createPairingSession(userId: string, input: CreatePairingSessionDto) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+
+    if (!user || user.enablementState === 'DISABLED') {
+      throw new ForbiddenException('User cannot establish trust');
+    }
+
     const device = await this.prisma.trustedDevice.create({
       data: {
         userId,
@@ -112,11 +119,27 @@ export class TrustService {
       throw new NotFoundException('Pairing session not found');
     }
 
+    if (session.expiresAt < new Date() && session.state !== PairingSessionState.TRUSTED) {
+      return this.prisma.pairingSession.update({
+        where: { id: session.id },
+        data: { state: PairingSessionState.EXPIRED },
+        include: { requesterDevice: true, approverDevice: true },
+      });
+    }
+
     return session;
   }
 
   async approvePairing(userId: string, input: ApprovePairingDto) {
     const session = await this.getPairingSession(input.pairingSessionId);
+
+    if (session.requesterDevice.userId !== userId) {
+      throw new BadRequestException('Pairing session belongs to a different user');
+    }
+
+    if (session.state !== PairingSessionState.AWAITING_PAIR) {
+      throw new BadRequestException('Pairing session is not awaiting approval');
+    }
 
     const approver = await this.prisma.trustedDevice.findFirst({
       where: { userId, trustState: DeviceTrustState.TRUSTED },
@@ -150,6 +173,14 @@ export class TrustService {
   async rejectPairing(userId: string, input: RejectPairingDto) {
     const session = await this.getPairingSession(input.pairingSessionId);
 
+    if (session.requesterDevice.userId !== userId) {
+      throw new BadRequestException('Pairing session belongs to a different user');
+    }
+
+    if (session.state !== PairingSessionState.AWAITING_PAIR) {
+      throw new BadRequestException('Pairing session is not awaiting approval');
+    }
+
     const approver = await this.prisma.trustedDevice.findFirst({
       where: { userId, trustState: DeviceTrustState.TRUSTED },
       orderBy: { trustEstablishedAt: 'asc' },
@@ -179,6 +210,10 @@ export class TrustService {
       throw new NotFoundException('Pairing session not found');
     }
 
+    if (session.expiresAt < new Date() && session.state !== PairingSessionState.TRUSTED) {
+      throw new BadRequestException('Pairing session expired');
+    }
+
     return session;
   }
 
@@ -192,10 +227,20 @@ export class TrustService {
       throw new NotFoundException('Pairing session not found');
     }
 
+    if (session.expiresAt < new Date() && session.state !== PairingSessionState.TRUSTED) {
+      throw new BadRequestException('Pairing session expired');
+    }
+
     return session;
   }
 
   async recoveryAttempt(userId: string, input: RecoveryAttemptDto) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+
+    if (!user || user.enablementState === 'DISABLED') {
+      throw new ForbiddenException('User cannot complete recovery');
+    }
+
     const recoverySet = await this.prisma.recoveryCredentialSet.findUnique({
       where: { userId },
     });
@@ -248,6 +293,12 @@ export class TrustService {
   }
 
   async acknowledgeRecoveryRotation(userId: string, trustedDeviceId: string) {
+    const device = await this.prisma.trustedDevice.findUnique({ where: { id: trustedDeviceId } });
+
+    if (!device || device.userId !== userId) {
+      throw new NotFoundException('Trusted device not found');
+    }
+
     await this.prisma.trustedDevice.update({
       where: { id: trustedDeviceId },
       data: {

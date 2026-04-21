@@ -3,7 +3,7 @@
 ## Phase
 
 - Current phase: implementation
-- Current phase segment: code execution
+- Current phase segment: M1 and M2 foundation stabilization
 
 ## Progress
 
@@ -164,23 +164,33 @@
 - Fixed the first TypeScript decorator-signature compatibility errors by converting decorated controller-only type imports to `import type`
 - Confirmed that the full monorepo build now succeeds for both `api` and `web`
 - Adjusted workspace test commands so empty test suites do not fail the validation step during the current early implementation stage
+- The user has now clarified that future autonomous execution must wait until a fresh explicit start instruction is given
+- The user authorized project-scoped installation of needed environment pieces, dependencies, tools, and programs during execution, as long as other devices and internal servers are not affected
+- The rule baseline is being updated so later execution proceeds autonomously against the accepted documents and only escalates genuinely undecidable issues
+- The user has now explicitly started autonomous execution for the current run
+- Brought up local PostgreSQL for the project and created a root `.env` runtime configuration for local development and validation
+- Added a development seed path that provisions a local owner admin account without changing the documented invite and approval model for ordinary users
+- Adapted the API runtime to Prisma 7's driver-adapter model and centralized Prisma client creation for app runtime, seed execution, and e2e tests
+- Tightened the M1 admin-control boundary by enforcing admin-role checks on invite, approval, enable, and disable actions
+- Tightened M2 trust and recovery enforcement by adding disabled-user blocking, pairing ownership checks, pairing state and expiry checks, and recovery acknowledgment device-ownership checks
+- Added API e2e coverage for the M1 waiting-state flow, admin authorization boundary, first-device bootstrap flow, explicit second-device approval, cross-user pairing rejection, recovery pending-display durability, and disabled-user trust blocking
+- Confirmed that root build, workspace tests, and API e2e validation all pass against the current M1 and M2 foundation implementation
 
 ## Current Focus
 
-- Execute code work against the accepted implementation-planning baseline in `design/16` through `design/35`
-- Stabilize the `M1` and `M2` foundation code so the backend can build, validate, and support the next implementation steps safely
-- Keep canonical summaries and detailed notes aligned when durable clarifications are accepted
-- Update project progress documents when material execution progress is made
+- Preserve the accepted implementation-planning baseline as the source of truth for code work
+- Continue hardening the M1 and M2 foundation implementation so trust, admission, and recovery behavior match the accepted planning corpus
+- Prepare to move from the validated M1 and M2 base into the next milestone foundation after the current checkpoint is recorded
 - Keep the deferred share-first path explicitly out of v1 scope
 
 ## Next Checkpoint
 
-- Continue `M1` and `M2` implementation hardening after the initial build-chain repair
-- Add or expand automated tests as real executable behavior surfaces become stable enough to verify
-- Create a first stage-checkpoint commit once the current foundation fixes are recorded and verified
+- Record the verified M1 and M2 stabilization pass in project memory and git history
+- Push the current checkpoint after verification and documentation updates
+- Continue into the next milestone in milestone order from the now-validated trust and identity base
 
 ## Notes
 
 - `memory.md` should be updated when durable decisions are made
 - `now.md` should be updated whenever progress changes materially
-- Code work is now active and should continue under the accepted milestone ordering
+- Autonomous execution is active for the current run and should continue in milestone order unless a genuinely undecidable issue appears
