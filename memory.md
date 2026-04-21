@@ -83,6 +83,9 @@
 - Local project execution now relies on a root `.env`, local Docker PostgreSQL, and Prisma 7 driver-adapter wiring through a shared Prisma client factory.
 - Local development seeding now provisions an owner admin account for project bootstrap without weakening the documented invite and approval model for ordinary instance users.
 - The current M1 and M2 validation baseline now includes e2e coverage for waiting-state routing, admin-role enforcement, first-device bootstrap, explicit same-user pairing approval, cross-user pairing rejection, recovery pending-display durability, and disabled-user blocking of trust expansion and recovery.
+- The current execution run has now extended the backend foundation through a first minimal `M3` implementation covering current `PolicyBundle` loading, source-creation evaluation, upload-session preparation, upload-part registration, grouped-content manifest persistence, `SourceItem` finalization, source-side package-family creation, and current `AccessGrantSet` persistence.
+- The current `M3` baseline now supports self-space text, single-file, and grouped-content source creation with locked source-creation policy snapshots through upload finalization.
+- The current `M3` validation baseline now includes e2e coverage for text-source creation, single-file finalization guards, grouped-content finalization, and source-side `AccessGrantSet` and package-family creation.
 - The project should be developed deliberately rather than rushed into coding.
 - The design phase has started.
 - Initial design drafts are being recorded under `design/` before any architecture work.

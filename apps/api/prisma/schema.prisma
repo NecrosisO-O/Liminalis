@@ -35,6 +35,65 @@ enum PairingSessionState {
   EXPIRED
 }
 
+enum ConfidentialityLevel {
+  SECRET
+  CONFIDENTIAL
+  TOP_SECRET
+}
+
+enum UploadContentKind {
+  SINGLE_FILE
+  GROUPED_CONTENT
+  SELF_SPACE_TEXT
+}
+
+enum GroupStructureKind {
+  MULTI_FILE
+  FOLDER
+}
+
+enum UploadSessionPhase {
+  CREATED
+  PREPARING
+  UPLOADING
+  FINALIZING
+  COMPLETED
+  ABANDONED
+  EXPIRED
+  FAILED
+}
+
+enum SourceItemState {
+  ACTIVE
+  INVALIDATED
+  EXPIRED
+  PURGED
+}
+
+enum ProtectedObjectType {
+  SOURCE_ITEM
+  SHARE_OBJECT
+}
+
+enum AccessGrantStatus {
+  CURRENT
+  SUPERSEDED
+}
+
+enum AccessGrantSubjectMode {
+  OWNER_DOMAIN
+  OWNER_DEVICE_SNAPSHOT
+  RECIPIENT_DOMAIN
+  RECIPIENT_DEVICE_SNAPSHOT
+}
+
+enum PackageFamilyKind {
+  OWNER_ORDINARY
+  OWNER_RECOVERY
+  RECIPIENT_ORDINARY
+  RECIPIENT_RECOVERY
+}
+
 model User {
   id               String           @id @default(cuid())
   username         String           @unique
@@ -52,6 +111,8 @@ model User {
   devices          TrustedDevice[]
   recoverySet      RecoveryCredentialSet?
   wrappingKeys     UserDomainWrappingKey[]
+  uploadSessions   UploadSession[]
+  sourceItems      SourceItem[]
 }
 
 model InviteCode {
@@ -132,4 +193,140 @@ model UserDomainWrappingKey {
   createdAt  DateTime @default(now())
 
   @@unique([userId, version])
+}
+
+model PolicyBundle {
+  id                    String               @id @default(cuid())
+  levelName             ConfidentialityLevel
+  bundleVersion         Int
+  isCurrent             Boolean              @default(true)
+  updatedByAdminId      String?
+  lifecycle             Json
+  shareAvailability     Json
+  userTargetedSharing   Json
+  passwordExtraction    Json
+  publicLinks           Json
+  liveTransfer          Json
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
+  uploadSessions        UploadSession[]
+  sourceItems           SourceItem[]
+
+  @@unique([levelName, bundleVersion])
+}
+
+model UploadSession {
+  id                     String              @id @default(cuid())
+  uploaderUserId         String
+  uploaderUser           User                @relation(fields: [uploaderUserId], references: [id])
+  contentKind            UploadContentKind
+  groupStructureKind     GroupStructureKind?
+  confidentialityLevel   ConfidentialityLevel
+  policyBundleId         String
+  policyBundle           PolicyBundle        @relation(fields: [policyBundleId], references: [id])
+  policySnapshot         Json
+  requestedValidityMinutes Int?
+  resolvedValidityMinutes  Int?
+  burnAfterReadEnabled   Boolean             @default(false)
+  phase                  UploadSessionPhase  @default(CREATED)
+  expiresAt              DateTime
+  finalizedSourceItemId  String?             @unique
+  finalizedSourceItem    SourceItem?         @relation("UploadSessionFinalizedSourceItem", fields: [finalizedSourceItemId], references: [id])
+  createdAt              DateTime            @default(now())
+  updatedAt              DateTime            @updatedAt
+  parts                  UploadPart[]
+
+  @@index([uploaderUserId, phase])
+}
+
+model UploadPart {
+  id              String        @id @default(cuid())
+  uploadSessionId String
+  uploadSession   UploadSession @relation(fields: [uploadSessionId], references: [id])
+  partNumber      Int
+  storageKey      String
+  byteSize        Int
+  checksum        String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@unique([uploadSessionId, partNumber])
+}
+
+model SourceItem {
+  id                     String                @id @default(cuid())
+  ownerUserId            String
+  ownerUser              User                  @relation(fields: [ownerUserId], references: [id])
+  contentKind            UploadContentKind
+  groupStructureKind     GroupStructureKind?
+  confidentialityLevel   ConfidentialityLevel
+  state                  SourceItemState       @default(ACTIVE)
+  policyBundleId         String
+  policyBundle           PolicyBundle          @relation(fields: [policyBundleId], references: [id])
+  policySnapshot         Json
+  displayName            String?
+  textCiphertextBody     String?
+  storageBinding         Json?
+  validUntil             DateTime?
+  burnAfterReadEnabled   Boolean               @default(false)
+  uploadSession          UploadSession?        @relation("UploadSessionFinalizedSourceItem")
+  groupManifest          GroupManifest?
+  accessGrantSets        AccessGrantSet[]
+  packageFamilies        PackageFamily[]
+  createdAt              DateTime              @default(now())
+  updatedAt              DateTime              @updatedAt
+}
+
+model GroupManifest {
+  id                 String             @id @default(cuid())
+  sourceItemId       String             @unique
+  sourceItem         SourceItem         @relation(fields: [sourceItemId], references: [id])
+  structureKind      GroupStructureKind
+  manifestJson       Json
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+}
+
+model PackageFamily {
+  id                  String              @id @default(cuid())
+  protectedObjectType ProtectedObjectType
+  protectedObjectId   String
+  sourceItemId        String?
+  sourceItem          SourceItem?         @relation(fields: [sourceItemId], references: [id])
+  kind                PackageFamilyKind
+  familyVersion       Int
+  issueTrigger        String
+  referenceBlob       Json
+  createdAt           DateTime            @default(now())
+  ordinaryGrantSets   AccessGrantSet[]    @relation("OrdinaryPackageFamily")
+  recoveryGrantSets   AccessGrantSet[]    @relation("RecoveryPackageFamily")
+
+  @@index([protectedObjectType, protectedObjectId, kind])
+}
+
+model AccessGrantSet {
+  id                        String                 @id @default(cuid())
+  version                   Int
+  protectedObjectType       ProtectedObjectType
+  sourceItemId              String?
+  sourceItem                SourceItem?            @relation(fields: [sourceItemId], references: [id])
+  status                    AccessGrantStatus      @default(CURRENT)
+  grantSubjectMode          AccessGrantSubjectMode
+  subjectUserId             String
+  snapshotDeviceIds         String[]
+  ordinaryPackageFamilyId   String
+  ordinaryPackageFamily     PackageFamily          @relation("OrdinaryPackageFamily", fields: [ordinaryPackageFamilyId], references: [id])
+  recoveryEnabled           Boolean                @default(true)
+  recoveryPackageFamilyId   String?
+  recoveryPackageFamily     PackageFamily?         @relation("RecoveryPackageFamily", fields: [recoveryPackageFamilyId], references: [id])
+  confidentialityLevel      ConfidentialityLevel
+  allowFutureTrustedDevices Boolean                @default(false)
+  allowRecipientMultiDeviceAccess Boolean          @default(false)
+  issueTrigger              String
+  supersedesAccessGrantSetId String?
+  issuedAt                  DateTime               @default(now())
+  supersededAt              DateTime?
+
+  @@unique([sourceItemId, version])
+  @@index([protectedObjectType, status])
 }

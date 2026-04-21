@@ -175,19 +175,26 @@
 - Tightened M2 trust and recovery enforcement by adding disabled-user blocking, pairing ownership checks, pairing state and expiry checks, and recovery acknowledgment device-ownership checks
 - Added API e2e coverage for the M1 waiting-state flow, admin authorization boundary, first-device bootstrap flow, explicit second-device approval, cross-user pairing rejection, recovery pending-display durability, and disabled-user trust blocking
 - Confirmed that root build, workspace tests, and API e2e validation all pass against the current M1 and M2 foundation implementation
+- Added the first minimal `M3` data model for `PolicyBundle`, `UploadSession`, `UploadPart`, `GroupManifest`, `SourceItem`, `PackageFamily`, and `AccessGrantSet`
+- Added the first minimal policy engine with default built-in confidentiality bundles and source-creation evaluation outputs
+- Added upload prepare, part registration, and finalize routes for self-space text, single-file, and grouped-content source creation
+- Added source-item owner-detail retrieval that exposes current group-manifest and access-structure metadata
+- Confirmed that `M3` prepare-lock semantics are now implemented through upload-session policy snapshots that survive until finalization
+- Added API e2e coverage for text source creation, file finalization guards, grouped-content creation, and source-side `AccessGrantSet` / package-family creation
+- Confirmed that root build, workspace tests, and API e2e validation all pass against the current `M1` through `M3` foundation implementation
 
 ## Current Focus
 
 - Preserve the accepted implementation-planning baseline as the source of truth for code work
-- Continue hardening the M1 and M2 foundation implementation so trust, admission, and recovery behavior match the accepted planning corpus
-- Prepare to move from the validated M1 and M2 base into the next milestone foundation after the current checkpoint is recorded
+- Continue advancing from the validated `M1` through `M3` base into `M4` protected self retrieval and lifecycle handling
+- Keep stored-transfer write-side behavior authoritative before later read-model and outward-sharing layers
 - Keep the deferred share-first path explicitly out of v1 scope
 
 ## Next Checkpoint
 
-- Record the verified M1 and M2 stabilization pass in project memory and git history
+- Record the verified `M3` policy and source-creation pass in project memory and git history
 - Push the current checkpoint after verification and documentation updates
-- Continue into the next milestone in milestone order from the now-validated trust and identity base
+- Continue into `M4` protected self retrieval in milestone order from the now-validated write-side base
 
 ## Notes
 

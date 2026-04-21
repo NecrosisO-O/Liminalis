@@ -15,9 +15,9 @@
     "test": "npm run test --workspace api && npm run test --workspace web",
     "test:e2e": "npm run test:e2e --workspace api && npm run test:e2e --workspace web",
     "format": "npm run format --workspace api && npm run format --workspace web",
-    "db:generate": "npm run prisma:generate --workspace api",
-    "db:migrate": "npm run prisma:migrate --workspace api",
-    "db:push": "npm run prisma:push --workspace api",
-    "db:seed": "npm run prisma:seed --workspace api"
+    "db:generate": "bash -lc 'set -a; source ./.env; set +a; npm run prisma:generate --workspace api'",
+    "db:migrate": "bash -lc 'set -a; source ./.env; set +a; npm run prisma:migrate --workspace api'",
+    "db:push": "bash -lc 'set -a; source ./.env; set +a; npm run prisma:push --workspace api'",
+    "db:seed": "bash -lc 'set -a; source ./.env; set +a; npm run prisma:seed --workspace api'"
   }
 }

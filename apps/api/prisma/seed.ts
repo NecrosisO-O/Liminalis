@@ -1,10 +1,12 @@
 import * as argon2 from 'argon2';
 import {
   AdmissionState,
+  ConfidentialityLevel,
   EnablementState,
   UserRole,
 } from '../generated/prisma/index.js';
 import { createPrismaClient } from '../src/prisma/prisma-client';
+import { POLICY_BUNDLE_DEFAULTS } from '../src/policy/policy-defaults';
 
 const prisma = createPrismaClient();
 
@@ -29,6 +31,37 @@ async function main() {
       approvedAt: new Date(),
     },
   });
+
+  for (const policyBundle of POLICY_BUNDLE_DEFAULTS) {
+    await prisma.policyBundle.upsert({
+      where: {
+        levelName_bundleVersion: {
+          levelName: policyBundle.levelName,
+          bundleVersion: 1,
+        },
+      },
+      update: {
+        isCurrent: true,
+        lifecycle: policyBundle.lifecycle,
+        shareAvailability: policyBundle.shareAvailability,
+        userTargetedSharing: policyBundle.userTargetedSharing,
+        passwordExtraction: policyBundle.passwordExtraction,
+        publicLinks: policyBundle.publicLinks,
+        liveTransfer: policyBundle.liveTransfer,
+      },
+      create: {
+        levelName: policyBundle.levelName,
+        bundleVersion: 1,
+        isCurrent: true,
+        lifecycle: policyBundle.lifecycle,
+        shareAvailability: policyBundle.shareAvailability,
+        userTargetedSharing: policyBundle.userTargetedSharing,
+        passwordExtraction: policyBundle.passwordExtraction,
+        publicLinks: policyBundle.publicLinks,
+        liveTransfer: policyBundle.liveTransfer,
+      },
+    });
+  }
 }
 
 main().catch((error) => {
