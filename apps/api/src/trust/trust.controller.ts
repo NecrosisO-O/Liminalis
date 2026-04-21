@@ -1,4 +1,5 @@
-import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Res, UseGuards } from '@nestjs/common';
+import type { Response } from 'express';
 import { SessionActor } from '../common/decorators/session.decorator';
 import { SessionGuard } from '../common/guards/session.guard';
 import type { AuthenticatedSession } from '../common/types/auth.types';
@@ -18,8 +19,17 @@ export class TrustController {
   async bootstrapFirstDevice(
     @SessionActor() sessionActor: AuthenticatedSession,
     @Body() input: FirstDeviceBootstrapDto,
+    @Res({ passthrough: true }) response: Response,
   ) {
-    return this.trustService.bootstrapFirstDevice(sessionActor.userId, input);
+    const result = await this.trustService.bootstrapFirstDevice(sessionActor.userId, input);
+
+    response.cookie('liminalis_trusted_device', result.trustedDeviceId, {
+      httpOnly: true,
+      sameSite: 'lax',
+      secure: false,
+    });
+
+    return result;
   }
 
   @UseGuards(SessionGuard)
@@ -42,8 +52,17 @@ export class TrustController {
   async approvePairing(
     @SessionActor() sessionActor: AuthenticatedSession,
     @Body() input: ApprovePairingDto,
+    @Res({ passthrough: true }) response: Response,
   ) {
-    return this.trustService.approvePairing(sessionActor.userId, input);
+    const result = await this.trustService.approvePairing(sessionActor.userId, input);
+
+    response.cookie('liminalis_trusted_device', result.requesterDeviceId, {
+      httpOnly: true,
+      sameSite: 'lax',
+      secure: false,
+    });
+
+    return result;
   }
 
   @UseGuards(SessionGuard)
@@ -87,10 +106,19 @@ export class TrustController {
   async acknowledgeRecovery(
     @SessionActor() sessionActor: AuthenticatedSession,
     @Param('trustedDeviceId') trustedDeviceId: string,
+    @Res({ passthrough: true }) response: Response,
   ) {
-    return this.trustService.acknowledgeRecoveryRotation(
+    const result = await this.trustService.acknowledgeRecoveryRotation(
       sessionActor.userId,
       trustedDeviceId,
     );
+
+    response.cookie('liminalis_trusted_device', trustedDeviceId, {
+      httpOnly: true,
+      sameSite: 'lax',
+      secure: false,
+    });
+
+    return result;
   }
 }

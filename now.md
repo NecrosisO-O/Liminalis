@@ -182,19 +182,24 @@
 - Confirmed that `M3` prepare-lock semantics are now implemented through upload-session policy snapshots that survive until finalization
 - Added API e2e coverage for text source creation, file finalization guards, grouped-content creation, and source-side `AccessGrantSet` / package-family creation
 - Confirmed that root build, workspace tests, and API e2e validation all pass against the current `M1` through `M3` foundation implementation
+- Added the first minimal `M4` retrieval and lifecycle model with trusted-device-bound `RetrievalAttempt`, `PackageReference`, protected package issuance, and client completion confirmation for self-space source items
+- Tightened the self-space protected retrieval boundary by requiring a trusted-device cookie distinct from ordinary account session state
+- Added the first burn-after-read write-side consequence for self-space source items so successful protected completion can move the item to immediate logical purge state
+- Added API e2e coverage for trusted-device-only self retrieval, explicit completion confirmation, and burn-after-read purge behavior on source items
+- Confirmed that root build, workspace tests, and API e2e validation all pass against the current `M1` through `M4` foundation implementation
 
 ## Current Focus
 
 - Preserve the accepted implementation-planning baseline as the source of truth for code work
-- Continue advancing from the validated `M1` through `M3` base into `M4` protected self retrieval and lifecycle handling
-- Keep stored-transfer write-side behavior authoritative before later read-model and outward-sharing layers
+- Continue advancing from the validated `M1` through `M4` base into `M5` read-model projection foundations
+- Keep stored-transfer write-side behavior authoritative while beginning the first timeline/history/search projection layer
 - Keep the deferred share-first path explicitly out of v1 scope
 
 ## Next Checkpoint
 
-- Record the verified `M3` policy and source-creation pass in project memory and git history
+- Record the verified `M4` self-retrieval pass in project memory and git history
 - Push the current checkpoint after verification and documentation updates
-- Continue into `M4` protected self retrieval in milestone order from the now-validated write-side base
+- Continue into `M5` projection work in milestone order from the now-validated write-side base
 
 ## Notes
 

@@ -86,6 +86,8 @@
 - The current execution run has now extended the backend foundation through a first minimal `M3` implementation covering current `PolicyBundle` loading, source-creation evaluation, upload-session preparation, upload-part registration, grouped-content manifest persistence, `SourceItem` finalization, source-side package-family creation, and current `AccessGrantSet` persistence.
 - The current `M3` baseline now supports self-space text, single-file, and grouped-content source creation with locked source-creation policy snapshots through upload finalization.
 - The current `M3` validation baseline now includes e2e coverage for text-source creation, single-file finalization guards, grouped-content finalization, and source-side `AccessGrantSet` and package-family creation.
+- The current execution run has now extended the backend foundation through a first minimal `M4` implementation covering trusted-device-bound `RetrievalAttempt`, self-source package issuance through `PackageReference`, explicit protected completion confirmation, and burn-after-read purge behavior for self-space source items.
+- The current `M4` validation baseline now includes e2e coverage for trusted-device-only self retrieval, explicit completion confirmation, and burn-after-read purge behavior on self-space source items.
 - The project should be developed deliberately rather than rushed into coding.
 - The design phase has started.
 - Initial design drafts are being recorded under `design/` before any architecture work.

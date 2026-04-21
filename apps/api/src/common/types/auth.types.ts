@@ -4,4 +4,5 @@ export type AuthenticatedSession = {
   role: 'ADMIN' | 'REGULAR_USER';
   admissionState: 'PENDING_APPROVAL' | 'APPROVED';
   enablementState: 'ENABLED' | 'DISABLED';
+  trustedDeviceId: string | null;
 };
