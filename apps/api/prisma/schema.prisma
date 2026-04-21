@@ -94,6 +94,18 @@ enum PackageFamilyKind {
   RECIPIENT_RECOVERY
 }
 
+enum RetrievalFamily {
+  SOURCE_ITEM_OWNER
+}
+
+enum RetrievalAttemptStatus {
+  ISSUED
+  IN_PROGRESS
+  COMPLETED
+  ABANDONED
+  FAILED
+}
+
 model User {
   id               String           @id @default(cuid())
   username         String           @unique
@@ -113,6 +125,7 @@ model User {
   wrappingKeys     UserDomainWrappingKey[]
   uploadSessions   UploadSession[]
   sourceItems      SourceItem[]
+  retrievalAttempts RetrievalAttempt[]
 }
 
 model InviteCode {
@@ -151,6 +164,7 @@ model TrustedDevice {
   updatedAt              DateTime              @updatedAt
   pairingRequests        PairingSession[]      @relation("PairingRequester")
   approvals              PairingSession[]      @relation("PairingApprover")
+  retrievalAttempts      RetrievalAttempt[]
 }
 
 model PairingSession {
@@ -273,6 +287,7 @@ model SourceItem {
   groupManifest          GroupManifest?
   accessGrantSets        AccessGrantSet[]
   packageFamilies        PackageFamily[]
+  retrievalAttempts      RetrievalAttempt[]
   createdAt              DateTime              @default(now())
   updatedAt              DateTime              @updatedAt
 }
@@ -300,6 +315,7 @@ model PackageFamily {
   createdAt           DateTime            @default(now())
   ordinaryGrantSets   AccessGrantSet[]    @relation("OrdinaryPackageFamily")
   recoveryGrantSets   AccessGrantSet[]    @relation("RecoveryPackageFamily")
+  packageReferences   PackageReference[]
 
   @@index([protectedObjectType, protectedObjectId, kind])
 }
@@ -329,4 +345,46 @@ model AccessGrantSet {
 
   @@unique([sourceItemId, version])
   @@index([protectedObjectType, status])
+}
+
+model PackageReference {
+  id                      String            @id @default(cuid())
+  packageFamilyId         String
+  packageFamily           PackageFamily     @relation(fields: [packageFamilyId], references: [id])
+  packageFamilyKind       PackageFamilyKind
+  protectedObjectType     ProtectedObjectType
+  protectedObjectId       String
+  eligibleSubjectUserId   String
+  eligibleSubjectDeviceId String
+  packageFamilyVersion    Int
+  wrappedPayloadReference Json
+  expiresAt               DateTime
+  createdAt               DateTime          @default(now())
+  retrievalAttempt        RetrievalAttempt?
+
+  @@index([protectedObjectType, protectedObjectId, packageFamilyKind])
+}
+
+model RetrievalAttempt {
+  id                 String                 @id @default(cuid())
+  retrievalFamily    RetrievalFamily
+  targetObjectType   ProtectedObjectType
+  targetObjectId     String
+  sourceItemId       String?
+  sourceItem         SourceItem?            @relation(fields: [sourceItemId], references: [id])
+  requestingUserId   String
+  requestingUser     User                   @relation(fields: [requestingUserId], references: [id])
+  requestingDeviceId String
+  requestingDevice   TrustedDevice          @relation(fields: [requestingDeviceId], references: [id])
+  status             RetrievalAttemptStatus @default(ISSUED)
+  attemptScopeKey    String
+  packageReferenceId String?                @unique
+  packageReference   PackageReference?      @relation(fields: [packageReferenceId], references: [id])
+  issuedAt           DateTime               @default(now())
+  completedAt        DateTime?
+  createdAt          DateTime               @default(now())
+  updatedAt          DateTime               @updatedAt
+
+  @@unique([retrievalFamily, targetObjectId, requestingUserId, requestingDeviceId, attemptScopeKey])
+  @@index([sourceItemId, status])
 }

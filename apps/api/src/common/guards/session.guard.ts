@@ -14,6 +14,7 @@ export class SessionGuard implements CanActivate {
         role: 'ADMIN' | 'REGULAR_USER';
         admissionState: 'PENDING_APPROVAL' | 'APPROVED';
         enablementState: 'ENABLED' | 'DISABLED';
+        trustedDeviceId: string | null;
       };
     }>();
 
@@ -27,12 +28,15 @@ export class SessionGuard implements CanActivate {
       throw new UnauthorizedException('Invalid session');
     }
 
+    const trustedDeviceId = request.cookies?.liminalis_trusted_device ?? null;
+
     request.sessionActor = {
       sessionId: session.id,
       userId: session.userId,
       role: session.user.role,
       admissionState: session.user.admissionState,
       enablementState: session.user.enablementState,
+      trustedDeviceId,
     };
 
     return true;

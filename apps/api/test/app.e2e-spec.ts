@@ -29,6 +29,8 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
 
   beforeEach(async () => {
     await prisma.session.deleteMany();
+    await prisma.retrievalAttempt.deleteMany();
+    await prisma.packageReference.deleteMany();
     await prisma.accessGrantSet.deleteMany();
     await prisma.packageFamily.deleteMany();
     await prisma.groupManifest.deleteMany();
@@ -59,6 +61,10 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
     const cookies = response.get('set-cookie');
     expect(cookies).toBeDefined();
     return cookies;
+  }
+
+  function mergeCookies(...cookieSets: Array<string[] | undefined>) {
+    return cookieSets.flatMap((cookieSet) => cookieSet ?? []);
   }
 
   it('keeps pending users on the waiting bootstrap surface until admin approval', async () => {
@@ -650,5 +656,175 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
     expect(sourceItem.body.accessGrantSets).toHaveLength(1);
     expect(sourceItem.body.accessGrantSets[0].grantSubjectMode).toBe('OWNER_DEVICE_SNAPSHOT');
     expect(sourceItem.body.packageFamilies).toHaveLength(2);
+  });
+
+  it('issues a protected self-retrieval attempt only for a trusted device and completes it explicitly', async () => {
+    const adminCookies = await login('owner', 'admin123456');
+
+    const invite = await request(app.getHttpServer())
+      .post('/api/admin/invites')
+      .set('Cookie', adminCookies)
+      .send({ expiresInMinutes: 30 })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post('/api/registration/register')
+      .send({
+        inviteCode: invite.body.code,
+        username: 'kate',
+        password: 'kate-password',
+      })
+      .expect(201);
+
+    const kate = await prisma.user.findUniqueOrThrow({ where: { username: 'kate' } });
+
+    await request(app.getHttpServer())
+      .post('/api/admin/users/approve')
+      .set('Cookie', adminCookies)
+      .send({ userId: kate.id })
+      .expect(201);
+
+    const kateSessionCookies = await login('kate', 'kate-password');
+
+    await request(app.getHttpServer())
+      .post('/api/uploads/prepare')
+      .set('Cookie', kateSessionCookies)
+      .send({
+        contentKind: 'SELF_SPACE_TEXT',
+        confidentialityLevel: 'SECRET',
+        requestedValidityMinutes: 30,
+      })
+      .expect(403);
+
+    const kateTrustResponse = await request(app.getHttpServer())
+      .post('/api/trust/bootstrap-first-device')
+      .set('Cookie', kateSessionCookies)
+      .send({
+        deviceLabel: 'Kate Browser 1',
+        devicePublicIdentity: 'kate-device-1',
+        userDomainPublicKey: 'kate-domain-key',
+      })
+      .expect(201);
+
+    const kateCookies = mergeCookies(kateSessionCookies, kateTrustResponse.get('set-cookie'));
+
+    const prepare = await request(app.getHttpServer())
+      .post('/api/uploads/prepare')
+      .set('Cookie', kateCookies)
+      .send({
+        contentKind: 'SELF_SPACE_TEXT',
+        confidentialityLevel: 'SECRET',
+        requestedValidityMinutes: 30,
+      })
+      .expect(201);
+
+    const finalize = await request(app.getHttpServer())
+      .post(`/api/uploads/${prepare.body.uploadSessionId}/finalize`)
+      .set('Cookie', kateCookies)
+      .send({
+        displayName: 'retrievable-note',
+        textCiphertextBody: 'ciphertext-retrievable-note',
+      })
+      .expect(201);
+
+    const issueAttempt = await request(app.getHttpServer())
+      .post(`/api/retrieval/source-items/${finalize.body.sourceItemId}/attempts/attempt-1`)
+      .set('Cookie', kateCookies)
+      .expect(201);
+
+    expect(issueAttempt.body.packageReferenceId).toBeTruthy();
+    expect(issueAttempt.body.packageFamilyKind).toBe('OWNER_ORDINARY');
+    expect(issueAttempt.body.textCiphertextBody).toBe('ciphertext-retrievable-note');
+
+    await request(app.getHttpServer())
+      .post(`/api/retrieval/attempts/${issueAttempt.body.retrievalAttemptId}/complete`)
+      .set('Cookie', kateCookies)
+      .send({ success: true })
+      .expect(201)
+      .expect((response) => {
+        expect(response.body.status).toBe('COMPLETED');
+        expect(response.body.sourceItemState).toBe('ACTIVE');
+      });
+  });
+
+  it('purges burn-after-read self-space source items immediately after successful protected completion', async () => {
+    const adminCookies = await login('owner', 'admin123456');
+
+    const invite = await request(app.getHttpServer())
+      .post('/api/admin/invites')
+      .set('Cookie', adminCookies)
+      .send({ expiresInMinutes: 30 })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post('/api/registration/register')
+      .send({
+        inviteCode: invite.body.code,
+        username: 'lena',
+        password: 'lena-password',
+      })
+      .expect(201);
+
+    const lena = await prisma.user.findUniqueOrThrow({ where: { username: 'lena' } });
+
+    await request(app.getHttpServer())
+      .post('/api/admin/users/approve')
+      .set('Cookie', adminCookies)
+      .send({ userId: lena.id })
+      .expect(201);
+
+    const lenaSessionCookies = await login('lena', 'lena-password');
+
+    const lenaTrustResponse = await request(app.getHttpServer())
+      .post('/api/trust/bootstrap-first-device')
+      .set('Cookie', lenaSessionCookies)
+      .send({
+        deviceLabel: 'Lena Browser 1',
+        devicePublicIdentity: 'lena-device-1',
+        userDomainPublicKey: 'lena-domain-key',
+      })
+      .expect(201);
+
+    const lenaCookies = mergeCookies(lenaSessionCookies, lenaTrustResponse.get('set-cookie'));
+
+    const prepare = await request(app.getHttpServer())
+      .post('/api/uploads/prepare')
+      .set('Cookie', lenaCookies)
+      .send({
+        contentKind: 'SELF_SPACE_TEXT',
+        confidentialityLevel: 'SECRET',
+        requestedValidityMinutes: 30,
+        burnAfterReadEnabled: true,
+      })
+      .expect(201);
+
+    const finalize = await request(app.getHttpServer())
+      .post(`/api/uploads/${prepare.body.uploadSessionId}/finalize`)
+      .set('Cookie', lenaCookies)
+      .send({
+        displayName: 'burn-note',
+        textCiphertextBody: 'ciphertext-burn-note',
+      })
+      .expect(201);
+
+    const issueAttempt = await request(app.getHttpServer())
+      .post(`/api/retrieval/source-items/${finalize.body.sourceItemId}/attempts/attempt-burn`)
+      .set('Cookie', lenaCookies)
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post(`/api/retrieval/attempts/${issueAttempt.body.retrievalAttemptId}/complete`)
+      .set('Cookie', lenaCookies)
+      .send({ success: true })
+      .expect(201)
+      .expect((response) => {
+        expect(response.body.status).toBe('COMPLETED');
+        expect(response.body.sourceItemState).toBe('PURGED');
+      });
+
+    await request(app.getHttpServer())
+      .post(`/api/retrieval/source-items/${finalize.body.sourceItemId}/attempts/attempt-after-burn`)
+      .set('Cookie', lenaCookies)
+      .expect(400);
   });
 });

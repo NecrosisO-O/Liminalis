@@ -31,8 +31,7 @@ export class UploadsService {
   ) {}
 
   async prepareUpload(userId: string, input: PrepareUploadDto) {
-    const user = await this.requireEligibleUploader(userId);
-    this.requireTrustedEntry(user);
+    await this.requireEligibleTrustedUploader(userId);
 
     const confidentialityLevel =
       input.confidentialityLevel ?? this.policyService.getDefaultConfidentialityLevel();
@@ -279,7 +278,7 @@ export class UploadsService {
     return session;
   }
 
-  private async requireEligibleUploader(userId: string) {
+  private async requireEligibleTrustedUploader(userId: string) {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
 
     if (!user || user.enablementState === 'DISABLED') {
@@ -290,10 +289,18 @@ export class UploadsService {
       throw new ForbiddenException('Pending users cannot create source items');
     }
 
-    return user;
-  }
+    const trustedDevice = await this.prisma.trustedDevice.findFirst({
+      where: {
+        userId,
+        trustState: 'TRUSTED',
+      },
+      orderBy: { trustEstablishedAt: 'asc' },
+    });
 
-  private requireTrustedEntry(user: User) {
-    void user;
+    if (!trustedDevice) {
+      throw new ForbiddenException('Trusted device required for source creation');
+    }
+
+    return user;
   }
 }
