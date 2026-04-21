@@ -327,6 +327,13 @@ export class TrustService {
     }
 
     if (recoverySet.pendingDisplayUntil < new Date()) {
+      await this.prisma.recoveryCredentialSet.update({
+        where: { userId },
+        data: {
+          pendingDisplayBlob: null,
+          pendingDisplayUntil: null,
+        },
+      });
       throw new BadRequestException('Pending recovery display expired');
     }
 

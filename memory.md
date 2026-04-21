@@ -102,6 +102,9 @@
 - The current execution run has now extended the backend foundation through a first minimal `M9` implementation covering `LiveTransferSession`, session creation/join/confirmation, policy-gated p2p-first versus relay transport updates, explicit live-to-stored fallback eligibility after failure, and retained `LiveTransferRecordProjection` rows when the live-transfer policy snapshot allows retention.
 - The current `M9` validation baseline now includes e2e coverage for p2p-first live transfer completion, retained live-transfer record visibility, relay blocking when policy disables relay, and explicit stored fallback only after failure when the policy snapshot permits it.
 - Local API e2e validation now also depends on `pretest:e2e` regenerating the Prisma client after schema changes, because newly added compound unique keys and late-phase models may otherwise leave the generated client behind the current schema during the same run.
+- The current execution run has now extended the backend foundation through a first minimal `M10` implementation covering explicit current-browser trusted-access removal, recovery pending-display expiry cleanup, and snapshot-mode access regrant for source-item and share-object ordinary package families.
+- The current `M10` validation baseline now includes e2e coverage for trusted-access removal behaving separately from logout, blocked protected retrieval after trust removal, stale recovery pending-display cleanup, and explicit snapshot-mode regrant restoring protected access only after the maintenance action.
+- The accepted backend `v1` milestone chain `M1` through `M10` is now implemented and locally validated end-to-end in the current repository state.
 - The project should be developed deliberately rather than rushed into coding.
 - The design phase has started.
 - Initial design drafts are being recorded under `design/` before any architecture work.

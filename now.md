@@ -3,7 +3,7 @@
 ## Phase
 
 - Current phase: implementation
-- Current phase segment: M9 live transfer and explicit stored fallback implemented, moving into M10
+- Current phase segment: M10 resilience and maintenance polish completed
 
 ## Progress
 
@@ -213,19 +213,23 @@
 - Added API e2e coverage for p2p-first live transfer completion, retained live-transfer record visibility, relay blocking under `TOP_SECRET`, and explicit stored-fallback allowance only after failure when policy permits it
 - Added `pretest:e2e` Prisma client regeneration so e2e validation stays aligned with newly added Prisma compound keys and live-transfer schema changes
 - Confirmed that root build and API e2e validation now pass against the current `M1` through `M9` foundation implementation
+- Added the first minimal `M10` maintenance slice with explicit current-browser trusted-access removal, snapshot-mode access regrant for `SourceItem` and `ShareObject`, and recovery pending-display expiry cleanup that clears stale pending-display state instead of leaving it ambiguously lingering
+- Kept trusted-access removal separate from logout semantics and kept snapshot-mode access widening available only through explicit maintenance routes rather than silent ordinary pairing side effects
+- Added API e2e coverage for current-browser trusted-access removal, blocked protected retrieval after local trust removal, stale recovery pending-display cleanup, and explicit snapshot-mode regrant restoring access to a newly trusted device only after the regrant action
+- Confirmed that final root build and API e2e validation now pass against the current `M1` through `M10` foundation implementation
 
 ## Current Focus
 
 - Preserve the accepted implementation-planning baseline as the source of truth for code work
-- Continue advancing from the validated `M1` through `M9` base into `M10` resilience and maintenance polish
-- Keep late maintenance work focused on recovery resilience, trusted-access removal, and package/regrant-safe cleanup without weakening earlier milestone boundaries
+- Preserve the implemented `M1` through `M10` backend baseline as the current code-phase completion point
+- Keep any future work constrained by the accepted boundaries: session vs trust, source vs share, protected retrieval vs public-link delivery, stored transfer vs live transfer, and admin control plane vs user content access
 - Keep the deferred share-first path explicitly out of v1 scope
 
 ## Next Checkpoint
 
-- Record the verified `M9` live-transfer pass in project memory and git history
+- Record the verified `M10` resilience pass in project memory and git history
 - Push the current checkpoint after verification and documentation updates
-- Continue into `M10` resilience and maintenance polish in milestone order from the now-validated write-side, projection, outward-delivery, admin-policy, and live-transfer base
+- Treat the current backend milestone plan as implemented and validated end-to-end for the accepted `v1` scope
 
 ## Notes
 
