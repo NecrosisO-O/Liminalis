@@ -11,6 +11,10 @@ import {
   type PolicyBundleSeed,
 } from './policy-defaults';
 import {
+  type ExtractionCreationPolicyDecision,
+  type ExtractionCreationPolicyInput,
+  type PublicLinkCreationPolicyDecision,
+  type PublicLinkCreationPolicyInput,
   type ShareCreationPolicyDecision,
   type ShareCreationPolicyInput,
   type SourceCreationPolicyDecision,
@@ -159,6 +163,124 @@ export class PolicyService implements OnModuleInit {
         resolvedValidityMinutes,
         allowRepeatDownload,
         allowRecipientMultiDeviceAccess,
+        policyBundleVersion: bundle.bundleVersion,
+      },
+    };
+  }
+
+  async evaluateExtractionCreation(
+    input: ExtractionCreationPolicyInput,
+  ): Promise<ExtractionCreationPolicyDecision> {
+    const bundle = await this.getCurrentBundle(input.confidentialityLevel);
+    const shareAvailability = bundle.shareAvailability as Record<string, boolean | number | null>;
+    const passwordExtraction = bundle.passwordExtraction as Record<string, boolean | number | null>;
+
+    if (!Boolean(shareAvailability.allowOutwardSharing)) {
+      throw new BadRequestException('Outward sharing is not allowed for this level');
+    }
+
+    if (!Boolean(shareAvailability.allowPasswordExtraction)) {
+      throw new BadRequestException('Password extraction is not allowed for this level');
+    }
+
+    const maximumRetrievalCount = this.toNullableNumber(passwordExtraction.maximumRetrievalCount);
+    const requireSystemGeneratedPassword = Boolean(
+      passwordExtraction.requireSystemGeneratedPassword,
+    );
+    const resolvedValidityMinutes = input.requestedValidityMinutes;
+    const resolvedRetrievalCount = input.requestedRetrievalCount ?? 1;
+
+    if (resolvedValidityMinutes !== null && resolvedValidityMinutes <= 0) {
+      throw new BadRequestException('Extraction validity must be greater than zero when provided');
+    }
+
+    if (resolvedRetrievalCount <= 0) {
+      throw new BadRequestException('Extraction retrieval count must be greater than zero');
+    }
+
+    if (maximumRetrievalCount !== null && resolvedRetrievalCount > maximumRetrievalCount) {
+      throw new BadRequestException('Requested extraction retrieval count exceeds the policy maximum');
+    }
+
+    return {
+      allowed: true,
+      decisionReason: 'allowed',
+      policyBundle: bundle,
+      resolvedValidityMinutes,
+      resolvedRetrievalCount,
+      requireSystemGeneratedPassword,
+      snapshotFieldsToPersist: {
+        confidentialityLevel: input.confidentialityLevel,
+        requestedValidityMinutes: input.requestedValidityMinutes,
+        resolvedValidityMinutes,
+        requestedRetrievalCount: input.requestedRetrievalCount,
+        resolvedRetrievalCount,
+        requireSystemGeneratedPassword,
+        policyBundleVersion: bundle.bundleVersion,
+      },
+    };
+  }
+
+  async evaluatePublicLinkCreation(
+    input: PublicLinkCreationPolicyInput,
+  ): Promise<PublicLinkCreationPolicyDecision> {
+    const bundle = await this.getCurrentBundle(input.confidentialityLevel);
+    const shareAvailability = bundle.shareAvailability as Record<string, boolean | number | null>;
+    const publicLinks = bundle.publicLinks as Record<string, boolean | number | null>;
+
+    if (!Boolean(shareAvailability.allowOutwardSharing)) {
+      throw new BadRequestException('Outward sharing is not allowed for this level');
+    }
+
+    if (!Boolean(shareAvailability.allowPublicLinks)) {
+      throw new BadRequestException('Public links are not allowed for this level');
+    }
+
+    const maximumPublicLinkValidityMinutes = this.toNullableNumber(
+      publicLinks.maximumPublicLinkValidityMinutes,
+    );
+    const maximumPublicLinkDownloadCount = this.toNullableNumber(
+      publicLinks.maximumPublicLinkDownloadCount,
+    );
+
+    const resolvedValidityMinutes = input.requestedValidityMinutes;
+    const resolvedDownloadCount = input.requestedDownloadCount ?? 1;
+
+    if (resolvedValidityMinutes !== null && resolvedValidityMinutes <= 0) {
+      throw new BadRequestException('Public-link validity must be greater than zero when provided');
+    }
+
+    if (resolvedDownloadCount <= 0) {
+      throw new BadRequestException('Public-link download count must be greater than zero');
+    }
+
+    if (
+      maximumPublicLinkValidityMinutes !== null &&
+      resolvedValidityMinutes !== null &&
+      resolvedValidityMinutes > maximumPublicLinkValidityMinutes
+    ) {
+      throw new BadRequestException('Requested public-link validity exceeds the policy maximum');
+    }
+
+    if (
+      maximumPublicLinkDownloadCount !== null &&
+      resolvedDownloadCount > maximumPublicLinkDownloadCount
+    ) {
+      throw new BadRequestException('Requested public-link download count exceeds the policy maximum');
+    }
+
+    return {
+      allowed: true,
+      decisionReason: 'allowed',
+      policyBundle: bundle,
+      resolvedValidityMinutes,
+      resolvedDownloadCount,
+      snapshotFieldsToPersist: {
+        confidentialityLevel: input.confidentialityLevel,
+        requestedValidityMinutes: input.requestedValidityMinutes,
+        resolvedValidityMinutes,
+        requestedDownloadCount: input.requestedDownloadCount,
+        resolvedDownloadCount,
         policyBundleVersion: bundle.bundleVersion,
       },
     };

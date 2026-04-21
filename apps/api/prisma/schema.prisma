@@ -92,11 +92,13 @@ enum PackageFamilyKind {
   OWNER_RECOVERY
   RECIPIENT_ORDINARY
   RECIPIENT_RECOVERY
+  PASSWORD_EXTRACTION
 }
 
 enum RetrievalFamily {
   SOURCE_ITEM_OWNER
   SHARE_OBJECT_RECIPIENT
+  EXTRACTION_ACCESS
 }
 
 enum RetrievalAttemptStatus {
@@ -122,6 +124,23 @@ enum ShareObjectInactiveReason {
   EXPIRED
   SOURCE_INVALIDATED
   CONSUMED
+}
+
+enum ExtractionAccessState {
+  ACTIVE
+  CHALLENGE_REQUIRED
+  EXHAUSTED
+  EXPIRED
+  REVOKED
+  INVALIDATED
+}
+
+enum PublicLinkState {
+  ACTIVE
+  EXHAUSTED
+  EXPIRED
+  REVOKED
+  INVALIDATED
 }
 
 model User {
@@ -249,6 +268,8 @@ model PolicyBundle {
   uploadSessions        UploadSession[]
   sourceItems           SourceItem[]
   shareObjects          ShareObject[]
+  extractionAccesses    ExtractionAccess[]
+  publicLinkObjects     PublicLink[]
 
   @@unique([levelName, bundleVersion])
 }
@@ -342,10 +363,61 @@ model ShareObject {
   accessGrantSets              AccessGrantSet[]
   packageFamilies              PackageFamily[]
   retrievalAttempts            RetrievalAttempt[]
+  extractionAccess             ExtractionAccess?
+  publicLinks                  PublicLink[]
   historyEntry                 HistoryEntryProjection?
   searchDocument               SearchDocumentProjection?
   createdAt                    DateTime                 @default(now())
   updatedAt                    DateTime                 @updatedAt
+}
+
+model ExtractionAccess {
+  id                             String                @id @default(cuid())
+  shareObjectId                  String                @unique
+  shareObject                    ShareObject            @relation(fields: [shareObjectId], references: [id])
+  policyBundleId                 String
+  policyBundle                   PolicyBundle           @relation(fields: [policyBundleId], references: [id])
+  policySnapshot                 Json
+  state                          ExtractionAccessState  @default(ACTIVE)
+  entryToken                     String                @unique
+  passwordHash                   String
+  requireSystemGeneratedPassword Boolean               @default(false)
+  configuredRetrievalCount       Int
+  remainingRetrievalCount        Int
+  failedPasswordAttempts         Int                   @default(0)
+  validUntil                     DateTime?
+  packageFamilies                PackageFamily[]
+  retrievalAttempts              RetrievalAttempt[]
+  createdAt                      DateTime              @default(now())
+  updatedAt                      DateTime              @updatedAt
+}
+
+model PublicLink {
+  id                      String                   @id @default(cuid())
+  shareObjectId           String
+  shareObject             ShareObject               @relation(fields: [shareObjectId], references: [id])
+  policyBundleId          String
+  policyBundle            PolicyBundle              @relation(fields: [policyBundleId], references: [id])
+  policySnapshot          Json
+  state                   PublicLinkState           @default(ACTIVE)
+  linkToken               String                    @unique
+  configuredDownloadCount Int
+  remainingDownloadCount  Int
+  validUntil              DateTime?
+  deliveryTickets         PublicLinkDeliveryTicket[]
+  createdAt               DateTime                  @default(now())
+  updatedAt               DateTime                  @updatedAt
+}
+
+model PublicLinkDeliveryTicket {
+  id          String     @id @default(cuid())
+  publicLinkId String
+  publicLink   PublicLink @relation(fields: [publicLinkId], references: [id])
+  ticketToken  String     @unique
+  expiresAt    DateTime
+  redeemedAt   DateTime?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
 }
 
 model GroupManifest {
@@ -366,6 +438,8 @@ model PackageFamily {
   sourceItem          SourceItem?         @relation(fields: [sourceItemId], references: [id])
   shareObjectId       String?
   shareObject         ShareObject?        @relation(fields: [shareObjectId], references: [id])
+  extractionAccessId  String?
+  extractionAccess    ExtractionAccess?   @relation(fields: [extractionAccessId], references: [id])
   kind                PackageFamilyKind
   familyVersion       Int
   issueTrigger        String
@@ -415,8 +489,8 @@ model PackageReference {
   packageFamilyKind       PackageFamilyKind
   protectedObjectType     ProtectedObjectType
   protectedObjectId       String
-  eligibleSubjectUserId   String
-  eligibleSubjectDeviceId String
+  eligibleSubjectUserId   String?
+  eligibleSubjectDeviceId String?
   packageFamilyVersion    Int
   wrappedPayloadReference Json
   expiresAt               DateTime
@@ -435,10 +509,12 @@ model RetrievalAttempt {
   sourceItem         SourceItem?            @relation(fields: [sourceItemId], references: [id])
   shareObjectId      String?
   shareObject        ShareObject?           @relation(fields: [shareObjectId], references: [id])
-  requestingUserId   String
-  requestingUser     User                   @relation(fields: [requestingUserId], references: [id])
-  requestingDeviceId String
-  requestingDevice   TrustedDevice          @relation(fields: [requestingDeviceId], references: [id])
+  extractionAccessId String?
+  extractionAccess   ExtractionAccess?      @relation(fields: [extractionAccessId], references: [id])
+  requestingUserId   String?
+  requestingUser     User?                  @relation(fields: [requestingUserId], references: [id])
+  requestingDeviceId String?
+  requestingDevice   TrustedDevice?         @relation(fields: [requestingDeviceId], references: [id])
   status             RetrievalAttemptStatus @default(ISSUED)
   attemptScopeKey    String
   packageReferenceId String?                @unique
@@ -449,6 +525,7 @@ model RetrievalAttempt {
   updatedAt          DateTime               @updatedAt
 
   @@unique([retrievalFamily, targetObjectId, requestingUserId, requestingDeviceId, attemptScopeKey])
+  @@unique([retrievalFamily, extractionAccessId, attemptScopeKey])
   @@index([sourceItemId, status])
 }
 

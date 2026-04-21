@@ -49,3 +49,49 @@ export type ShareCreationPolicyDecision = {
     policyBundleVersion: number;
   };
 };
+
+export type ExtractionCreationPolicyInput = {
+  confidentialityLevel: ConfidentialityLevel;
+  requestedValidityMinutes: number | null;
+  requestedRetrievalCount: number | null;
+};
+
+export type ExtractionCreationPolicyDecision = {
+  allowed: boolean;
+  decisionReason: string;
+  policyBundle: PolicyBundle;
+  resolvedValidityMinutes: number | null;
+  resolvedRetrievalCount: number;
+  requireSystemGeneratedPassword: boolean;
+  snapshotFieldsToPersist: {
+    confidentialityLevel: ConfidentialityLevel;
+    requestedValidityMinutes: number | null;
+    resolvedValidityMinutes: number | null;
+    requestedRetrievalCount: number | null;
+    resolvedRetrievalCount: number;
+    requireSystemGeneratedPassword: boolean;
+    policyBundleVersion: number;
+  };
+};
+
+export type PublicLinkCreationPolicyInput = {
+  confidentialityLevel: ConfidentialityLevel;
+  requestedValidityMinutes: number | null;
+  requestedDownloadCount: number | null;
+};
+
+export type PublicLinkCreationPolicyDecision = {
+  allowed: boolean;
+  decisionReason: string;
+  policyBundle: PolicyBundle;
+  resolvedValidityMinutes: number | null;
+  resolvedDownloadCount: number;
+  snapshotFieldsToPersist: {
+    confidentialityLevel: ConfidentialityLevel;
+    requestedValidityMinutes: number | null;
+    resolvedValidityMinutes: number | null;
+    requestedDownloadCount: number | null;
+    resolvedDownloadCount: number;
+    policyBundleVersion: number;
+  };
+};
