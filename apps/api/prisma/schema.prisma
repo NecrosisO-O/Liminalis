@@ -1,0 +1,135 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum UserRole {
+  ADMIN
+  REGULAR_USER
+}
+
+enum AdmissionState {
+  PENDING_APPROVAL
+  APPROVED
+}
+
+enum EnablementState {
+  ENABLED
+  DISABLED
+}
+
+enum DeviceTrustState {
+  UNTRUSTED
+  TRUSTED
+}
+
+enum PairingSessionState {
+  AWAITING_PAIR
+  AWAITING_APPROVAL
+  TRUSTED
+  REJECTED
+  EXPIRED
+}
+
+model User {
+  id               String           @id @default(cuid())
+  username         String           @unique
+  email            String?
+  passwordHash     String
+  role             UserRole         @default(REGULAR_USER)
+  admissionState   AdmissionState   @default(PENDING_APPROVAL)
+  enablementState  EnablementState  @default(ENABLED)
+  approvedAt       DateTime?
+  approvedById     String?
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+  sessions         Session[]
+  invitesCreated   InviteCode[]     @relation("InvitesCreated")
+  devices          TrustedDevice[]
+  recoverySet      RecoveryCredentialSet?
+  wrappingKeys     UserDomainWrappingKey[]
+}
+
+model InviteCode {
+  id           String    @id @default(cuid())
+  code         String    @unique
+  createdById  String
+  createdBy    User      @relation("InvitesCreated", fields: [createdById], references: [id])
+  expiresAt    DateTime
+  consumedAt   DateTime?
+  consumedById String?
+  invalidatedAt DateTime?
+  createdAt    DateTime  @default(now())
+}
+
+model Session {
+  id           String    @id @default(cuid())
+  token        String    @unique
+  userId       String
+  user         User      @relation(fields: [userId], references: [id])
+  expiresAt    DateTime
+  idleExpiresAt DateTime
+  lastActivityAt DateTime @default(now())
+  createdAt    DateTime  @default(now())
+}
+
+model TrustedDevice {
+  id                     String                @id @default(cuid())
+  userId                 String
+  user                   User                  @relation(fields: [userId], references: [id])
+  label                  String
+  trustState             DeviceTrustState      @default(UNTRUSTED)
+  trustEstablishedAt     DateTime?
+  publicIdentityVersion  Int                   @default(1)
+  publicIdentityPayload  String?
+  createdAt              DateTime              @default(now())
+  updatedAt              DateTime              @updatedAt
+  pairingRequests        PairingSession[]      @relation("PairingRequester")
+  approvals              PairingSession[]      @relation("PairingApprover")
+}
+
+model PairingSession {
+  id                String              @id @default(cuid())
+  state             PairingSessionState @default(AWAITING_PAIR)
+  requesterDeviceId String
+  requesterDevice   TrustedDevice       @relation("PairingRequester", fields: [requesterDeviceId], references: [id])
+  approverDeviceId  String?
+  approverDevice    TrustedDevice?      @relation("PairingApprover", fields: [approverDeviceId], references: [id])
+  qrToken           String              @unique
+  shortCode         String              @unique
+  expiresAt         DateTime
+  approvedAt        DateTime?
+  rejectedAt        DateTime?
+  createdAt         DateTime            @default(now())
+}
+
+model RecoveryCredentialSet {
+  id                  String   @id @default(cuid())
+  userId              String   @unique
+  user                User     @relation(fields: [userId], references: [id])
+  codeHashOne         String
+  codeHashTwo         String
+  codeHashThree       String
+  pendingDisplayBlob  String?
+  pendingDisplayUntil DateTime?
+  rotatedAt           DateTime?
+  acknowledgedAt      DateTime?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+}
+
+model UserDomainWrappingKey {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id])
+  version    Int
+  publicKey  String
+  isCurrent  Boolean  @default(true)
+  createdAt  DateTime @default(now())
+
+  @@unique([userId, version])
+}

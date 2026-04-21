@@ -1,0 +1,23 @@
+{
+  "name": "liminalis",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace api & npm run dev --workspace web",
+    "dev:api": "npm run start:dev --workspace api",
+    "dev:web": "npm run dev --workspace web",
+    "build": "npm run build --workspace api && npm run build --workspace web",
+    "lint": "npm run lint --workspace api && npm run lint --workspace web",
+    "test": "npm run test --workspace api && npm run test --workspace web",
+    "test:e2e": "npm run test:e2e --workspace api && npm run test:e2e --workspace web",
+    "format": "npm run format --workspace api && npm run format --workspace web",
+    "db:generate": "npm run prisma:generate --workspace api",
+    "db:migrate": "npm run prisma:migrate --workspace api",
+    "db:push": "npm run prisma:push --workspace api",
+    "db:seed": "npm run prisma:seed --workspace api"
+  }
+}
