@@ -78,9 +78,9 @@ export class RetrievalService {
     }
 
     const attempt = await this.prisma.retrievalAttempt.upsert({
-      where: {
-        retrievalFamily_targetObjectId_requestingUserId_requestingDeviceId_attemptScopeKey: {
-          retrievalFamily: RetrievalFamily.SOURCE_ITEM_OWNER,
+        where: {
+          retrievalFamily_targetObjectId_requestingUserId_requestingDeviceId_attemptScopeKey: {
+            retrievalFamily: RetrievalFamily.SOURCE_ITEM_OWNER,
           targetObjectId: sourceItemId,
           requestingUserId: userId,
           requestingDeviceId: trustedDeviceId,
@@ -210,12 +210,12 @@ export class RetrievalService {
       await this.projectionService.projectSourceItem(completed.sourceItemId);
     }
 
-    return {
-      retrievalAttemptId: completed.id,
-      status: completed.status,
-      sourceItemState: completed.sourceItem?.burnAfterReadEnabled
-        ? SourceItemState.PURGED
-        : completed.sourceItem?.state ?? null,
-    };
+      return {
+        retrievalAttemptId: completed.id,
+        status: completed.status,
+        sourceItemState: completed.sourceItem?.burnAfterReadEnabled
+          ? SourceItemState.PURGED
+          : completed.sourceItem?.state ?? null,
+      };
   }
 }
