@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
   UnauthorizedException,
@@ -85,6 +86,12 @@ export class IdentityService {
     return user;
   }
 
+  requireAdmin(role: UserRole) {
+    if (role !== UserRole.ADMIN) {
+      throw new ForbiddenException('Admin role required');
+    }
+  }
+
   async getUserById(userId: string) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
@@ -105,6 +112,10 @@ export class IdentityService {
   }
 
   async createInvite(createdById: string, expiresInMinutes: number) {
+    if (expiresInMinutes <= 0 || expiresInMinutes > 240) {
+      throw new BadRequestException('Invite expiry must be between 1 and 240 minutes');
+    }
+
     return this.prisma.inviteCode.create({
       data: {
         code: crypto.randomUUID(),

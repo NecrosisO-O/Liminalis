@@ -76,7 +76,8 @@ export class IdentityController {
 
   @UseGuards(SessionGuard)
   @Get('api/admin/pending-users')
-  async listPendingUsers() {
+  async listPendingUsers(@SessionActor() sessionActor: AuthenticatedSession) {
+    this.identityService.requireAdmin(sessionActor.role);
     return this.identityService.listPendingUsers();
   }
 
@@ -86,6 +87,7 @@ export class IdentityController {
     @SessionActor() sessionActor: AuthenticatedSession,
     @Body() input: CreateInviteDto,
   ) {
+    this.identityService.requireAdmin(sessionActor.role);
     return this.identityService.createInvite(sessionActor.userId, input.expiresInMinutes);
   }
 }

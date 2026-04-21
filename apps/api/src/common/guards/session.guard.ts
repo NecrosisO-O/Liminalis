@@ -8,7 +8,13 @@ export class SessionGuard implements CanActivate {
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest<{
       cookies?: Record<string, string>;
-      sessionActor?: { sessionId: string; userId: string };
+      sessionActor?: {
+        sessionId: string;
+        userId: string;
+        role: 'ADMIN' | 'REGULAR_USER';
+        admissionState: 'PENDING_APPROVAL' | 'APPROVED';
+        enablementState: 'ENABLED' | 'DISABLED';
+      };
     }>();
 
     const token = request.cookies?.liminalis_session;
@@ -24,6 +30,9 @@ export class SessionGuard implements CanActivate {
     request.sessionActor = {
       sessionId: session.id,
       userId: session.userId,
+      role: session.user.role,
+      admissionState: session.user.admissionState,
+      enablementState: session.user.enablementState,
     };
 
     return true;

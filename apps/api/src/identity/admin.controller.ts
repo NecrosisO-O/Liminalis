@@ -16,16 +16,19 @@ export class AdminUsersController {
     @SessionActor() sessionActor: AuthenticatedSession,
     @Body() input: ApproveUserDto,
   ) {
+    this.identityService.requireAdmin(sessionActor.role);
     return this.identityService.approveUser(input.userId, sessionActor.userId);
   }
 
   @Post('disable')
-  async disable(@Body() input: ToggleUserDto) {
+  async disable(@SessionActor() sessionActor: AuthenticatedSession, @Body() input: ToggleUserDto) {
+    this.identityService.requireAdmin(sessionActor.role);
     return this.identityService.disableUser(input.userId);
   }
 
   @Post('enable')
-  async enable(@Body() input: ToggleUserDto) {
+  async enable(@SessionActor() sessionActor: AuthenticatedSession, @Body() input: ToggleUserDto) {
+    this.identityService.requireAdmin(sessionActor.role);
     return this.identityService.enableUser(input.userId);
   }
 }
