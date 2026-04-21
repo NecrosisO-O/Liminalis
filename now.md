@@ -3,7 +3,7 @@
 ## Phase
 
 - Current phase: implementation
-- Current phase segment: M6 protected user-targeted sharing completed, moving into M7
+- Current phase segment: M7 password extraction and public links completed, moving into M8
 
 ## Progress
 
@@ -198,19 +198,24 @@
 - Added API e2e coverage for recipient wrapping-material blocking, recipient incoming-share retrieval, and no-repeat share consumption into retained `consumed` history state
 - Fixed API e2e isolation for mutable current `PolicyBundle` rows by recreating default bundles in `beforeEach`, so policy-editing cases do not leak into later tests
 - Confirmed that API e2e validation now passes against the current `M1` through `M6` foundation implementation
+- Added the first minimal `M7` outward-delivery siblings with `ExtractionAccess`, password challenge and captcha escalation, completion-based extraction count decrement, `PublicLink`, short-lived delivery tickets, and ticket-redemption-based public-link count decrement
+- Kept extraction as a password-first protected retrieval path distinct from account-session and trusted-device flows, while keeping public links as the explicit convenience exception under separately tracked delivery state
+- Added API e2e coverage for extraction password failure escalation, extraction count decrement on successful completion, confidential-level system-generated extraction passwords, public-link ticket issuance, public-link download-count decrement on ticket redemption, and policy blocking for disabled delivery modes
+- Confirmed that local Prisma schema sync is required whenever new write-side models are introduced, and pushed the `M7` schema with local `prisma db push --accept-data-loss` before validation
+- Confirmed that root build and API e2e validation now pass against the current `M1` through `M7` foundation implementation
 
 ## Current Focus
 
 - Preserve the accepted implementation-planning baseline as the source of truth for code work
-- Continue advancing from the validated `M1` through `M6` base into `M7` password extraction and public-link delivery
-- Keep read-model behavior derived from stable write-side source, retrieval, and share outcomes while adding the next outward-delivery paths
+- Continue advancing from the validated `M1` through `M7` base into `M8` admin control-plane completion
+- Keep write-side policy publication and admin orchestration on top of the already validated source, share, extraction, and public-link domains
 - Keep the deferred share-first path explicitly out of v1 scope
 
 ## Next Checkpoint
 
-- Record the verified `M6` sharing pass in project memory and git history
+- Record the verified `M7` extraction and public-link pass in project memory and git history
 - Push the current checkpoint after verification and documentation updates
-- Continue into `M7` extraction and public-link work in milestone order from the now-validated write-side, projection, and protected-share base
+- Continue into `M8` admin control-plane completion in milestone order from the now-validated write-side, projection, and outward-delivery base
 
 ## Notes
 

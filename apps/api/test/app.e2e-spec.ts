@@ -32,11 +32,14 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
     await prisma.session.deleteMany();
     await prisma.retrievalAttempt.deleteMany();
     await prisma.packageReference.deleteMany();
+    await prisma.publicLinkDeliveryTicket.deleteMany();
     await prisma.activeTimelineItemProjection.deleteMany();
     await prisma.historyEntryProjection.deleteMany();
     await prisma.searchDocumentProjection.deleteMany();
     await prisma.accessGrantSet.deleteMany();
     await prisma.packageFamily.deleteMany();
+    await prisma.publicLink.deleteMany();
+    await prisma.extractionAccess.deleteMany();
     await prisma.shareObject.deleteMany();
     await prisma.groupManifest.deleteMany();
     await prisma.uploadPart.deleteMany();
@@ -1248,5 +1251,526 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
     );
     expect(consumed.retainedStatus).toBe('consumed');
     expect(consumed.retrievable).toBe(false);
+  });
+
+  it('creates extraction access, escalates to captcha after one failed password, and decrements count on successful completion', async () => {
+    const adminCookies = await login('owner', 'admin123456');
+
+    const inviteSender = await request(app.getHttpServer())
+      .post('/api/admin/invites')
+      .set('Cookie', adminCookies)
+      .send({ expiresInMinutes: 30 })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post('/api/registration/register')
+      .send({
+        inviteCode: inviteSender.body.code,
+        username: 'rhea',
+        password: 'rhea-password',
+      })
+      .expect(201);
+
+    const inviteRecipient = await request(app.getHttpServer())
+      .post('/api/admin/invites')
+      .set('Cookie', adminCookies)
+      .send({ expiresInMinutes: 30 })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post('/api/registration/register')
+      .send({
+        inviteCode: inviteRecipient.body.code,
+        username: 'soren',
+        password: 'soren-password',
+      })
+      .expect(201);
+
+    const rhea = await prisma.user.findUniqueOrThrow({ where: { username: 'rhea' } });
+    const soren = await prisma.user.findUniqueOrThrow({ where: { username: 'soren' } });
+
+    await request(app.getHttpServer())
+      .post('/api/admin/users/approve')
+      .set('Cookie', adminCookies)
+      .send({ userId: rhea.id })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post('/api/admin/users/approve')
+      .set('Cookie', adminCookies)
+      .send({ userId: soren.id })
+      .expect(201);
+
+    const rheaSessionCookies = await login('rhea', 'rhea-password');
+    const rheaTrustResponse = await request(app.getHttpServer())
+      .post('/api/trust/bootstrap-first-device')
+      .set('Cookie', rheaSessionCookies)
+      .send({
+        deviceLabel: 'Rhea Browser 1',
+        devicePublicIdentity: 'rhea-device-1',
+        userDomainPublicKey: 'rhea-domain-key',
+      })
+      .expect(201);
+    const rheaCookies = mergeCookies(rheaSessionCookies, rheaTrustResponse.get('set-cookie'));
+
+    const sorenSessionCookies = await login('soren', 'soren-password');
+    const sorenTrustResponse = await request(app.getHttpServer())
+      .post('/api/trust/bootstrap-first-device')
+      .set('Cookie', sorenSessionCookies)
+      .send({
+        deviceLabel: 'Soren Browser 1',
+        devicePublicIdentity: 'soren-device-1',
+        userDomainPublicKey: 'soren-domain-key',
+      })
+      .expect(201);
+    const sorenCookies = mergeCookies(sorenSessionCookies, sorenTrustResponse.get('set-cookie'));
+
+    const prepare = await request(app.getHttpServer())
+      .post('/api/uploads/prepare')
+      .set('Cookie', rheaCookies)
+      .send({
+        contentKind: 'SELF_SPACE_TEXT',
+        confidentialityLevel: 'SECRET',
+        requestedValidityMinutes: 30,
+      })
+      .expect(201);
+
+    const finalize = await request(app.getHttpServer())
+      .post(`/api/uploads/${prepare.body.uploadSessionId}/finalize`)
+      .set('Cookie', rheaCookies)
+      .send({
+        displayName: 'extractable note',
+        textCiphertextBody: 'ciphertext extractable body',
+      })
+      .expect(201);
+
+    const share = await request(app.getHttpServer())
+      .post('/api/shares')
+      .set('Cookie', rheaCookies)
+      .send({
+        sourceItemId: finalize.body.sourceItemId,
+        recipientUsername: 'soren',
+        requestedValidityMinutes: 30,
+      })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post(`/api/shares/${share.body.shareObjectId}/attempts/recipient-attempt-1`)
+      .set('Cookie', sorenCookies)
+      .expect(201);
+
+    const extraction = await request(app.getHttpServer())
+      .post('/api/extraction')
+      .set('Cookie', rheaCookies)
+      .send({
+        shareObjectId: share.body.shareObjectId,
+        password: 'custom-password-1',
+        requestedRetrievalCount: 2,
+      })
+      .expect(201);
+
+    expect(extraction.body.password).toBe('custom-password-1');
+    expect(extraction.body.remainingRetrievalCount).toBe(2);
+
+    await request(app.getHttpServer())
+      .post(`/api/extraction/${extraction.body.entryToken}/attempts/extract-attempt-1`)
+      .send({ password: 'wrong-password' })
+      .expect(403);
+
+    const challenge = await request(app.getHttpServer())
+      .get(`/api/extraction/${extraction.body.entryToken}`)
+      .expect(200);
+
+    expect(challenge.body.state).toBe('CHALLENGE_REQUIRED');
+    expect(challenge.body.requiresCaptcha).toBe(true);
+
+    const extractionAttempt = await request(app.getHttpServer())
+      .post(`/api/extraction/${extraction.body.entryToken}/attempts/extract-attempt-1`)
+      .send({ password: 'custom-password-1', captchaSatisfied: true })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post(`/api/extraction/attempts/${extractionAttempt.body.retrievalAttemptId}/complete`)
+      .send({ success: true })
+      .expect(201)
+      .expect((response) => {
+        expect(response.body.extractionState).toBe('ACTIVE');
+        expect(response.body.remainingRetrievalCount).toBe(1);
+      });
+
+    const afterFirstCompletion = await request(app.getHttpServer())
+      .get(`/api/extraction/${extraction.body.entryToken}`)
+      .expect(200);
+
+    expect(afterFirstCompletion.body.remainingRetrievalCount).toBe(1);
+  });
+
+  it('blocks extraction when policy disables password extraction and uses system-generated passwords when required', async () => {
+    const adminCookies = await login('owner', 'admin123456');
+
+    const inviteSender = await request(app.getHttpServer())
+      .post('/api/admin/invites')
+      .set('Cookie', adminCookies)
+      .send({ expiresInMinutes: 30 })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post('/api/registration/register')
+      .send({
+        inviteCode: inviteSender.body.code,
+        username: 'talia',
+        password: 'talia-password',
+      })
+      .expect(201);
+
+    const inviteRecipient = await request(app.getHttpServer())
+      .post('/api/admin/invites')
+      .set('Cookie', adminCookies)
+      .send({ expiresInMinutes: 30 })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post('/api/registration/register')
+      .send({
+        inviteCode: inviteRecipient.body.code,
+        username: 'ulric',
+        password: 'ulric-password',
+      })
+      .expect(201);
+
+    const talia = await prisma.user.findUniqueOrThrow({ where: { username: 'talia' } });
+    const ulric = await prisma.user.findUniqueOrThrow({ where: { username: 'ulric' } });
+
+    await request(app.getHttpServer())
+      .post('/api/admin/users/approve')
+      .set('Cookie', adminCookies)
+      .send({ userId: talia.id })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post('/api/admin/users/approve')
+      .set('Cookie', adminCookies)
+      .send({ userId: ulric.id })
+      .expect(201);
+
+    const taliaSessionCookies = await login('talia', 'talia-password');
+    const taliaTrustResponse = await request(app.getHttpServer())
+      .post('/api/trust/bootstrap-first-device')
+      .set('Cookie', taliaSessionCookies)
+      .send({
+        deviceLabel: 'Talia Browser 1',
+        devicePublicIdentity: 'talia-device-1',
+        userDomainPublicKey: 'talia-domain-key',
+      })
+      .expect(201);
+    const taliaCookies = mergeCookies(taliaSessionCookies, taliaTrustResponse.get('set-cookie'));
+
+    const ulricSessionCookies = await login('ulric', 'ulric-password');
+    const ulricTrustResponse = await request(app.getHttpServer())
+      .post('/api/trust/bootstrap-first-device')
+      .set('Cookie', ulricSessionCookies)
+      .send({
+        deviceLabel: 'Ulric Browser 1',
+        devicePublicIdentity: 'ulric-device-1',
+        userDomainPublicKey: 'ulric-domain-key',
+      })
+      .expect(201);
+    const ulricCookies = mergeCookies(ulricSessionCookies, ulricTrustResponse.get('set-cookie'));
+
+    const prepare = await request(app.getHttpServer())
+      .post('/api/uploads/prepare')
+      .set('Cookie', taliaCookies)
+      .send({
+        contentKind: 'SELF_SPACE_TEXT',
+        confidentialityLevel: 'CONFIDENTIAL',
+        requestedValidityMinutes: 30,
+      })
+      .expect(201);
+
+    const finalize = await request(app.getHttpServer())
+      .post(`/api/uploads/${prepare.body.uploadSessionId}/finalize`)
+      .set('Cookie', taliaCookies)
+      .send({
+        displayName: 'confidential note',
+        textCiphertextBody: 'ciphertext confidential body',
+      })
+      .expect(201);
+
+    const share = await request(app.getHttpServer())
+      .post('/api/shares')
+      .set('Cookie', taliaCookies)
+      .send({
+        sourceItemId: finalize.body.sourceItemId,
+        recipientUsername: 'ulric',
+        requestedValidityMinutes: 30,
+      })
+      .expect(201);
+
+    const confidentialExtraction = await request(app.getHttpServer())
+      .post('/api/extraction')
+      .set('Cookie', taliaCookies)
+      .send({
+        shareObjectId: share.body.shareObjectId,
+        password: 'ignored-custom-password',
+        requestedRetrievalCount: 2,
+      })
+      .expect(201);
+
+    expect(confidentialExtraction.body.password).not.toBe('ignored-custom-password');
+    expect(confidentialExtraction.body.password.length).toBeGreaterThanOrEqual(24);
+
+    await prisma.policyBundle.updateMany({
+      where: { levelName: 'CONFIDENTIAL', isCurrent: true },
+      data: {
+        shareAvailability: {
+          allowOutwardSharing: true,
+          restrictToSelfOnly: false,
+          allowRecipientResharing: false,
+          allowMultipleOutwardShares: true,
+          allowUserTargetedSharing: true,
+          allowPasswordExtraction: false,
+          allowPublicLinks: false,
+        },
+      },
+    });
+
+    const prepareBlocked = await request(app.getHttpServer())
+      .post('/api/uploads/prepare')
+      .set('Cookie', taliaCookies)
+      .send({
+        contentKind: 'SELF_SPACE_TEXT',
+        confidentialityLevel: 'CONFIDENTIAL',
+        requestedValidityMinutes: 30,
+      })
+      .expect(201);
+
+    const finalizeBlocked = await request(app.getHttpServer())
+      .post(`/api/uploads/${prepareBlocked.body.uploadSessionId}/finalize`)
+      .set('Cookie', taliaCookies)
+      .send({
+        displayName: 'blocked extraction note',
+        textCiphertextBody: 'ciphertext blocked extraction body',
+      })
+      .expect(201);
+
+    const blockedShare = await request(app.getHttpServer())
+      .post('/api/shares')
+      .set('Cookie', taliaCookies)
+      .send({
+        sourceItemId: finalizeBlocked.body.sourceItemId,
+        recipientUsername: 'ulric',
+        requestedValidityMinutes: 30,
+      })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post('/api/extraction')
+      .set('Cookie', taliaCookies)
+      .send({
+        shareObjectId: blockedShare.body.shareObjectId,
+        requestedRetrievalCount: 1,
+      })
+      .expect(400);
+
+    await request(app.getHttpServer())
+      .post(`/api/shares/${share.body.shareObjectId}/attempts/recipient-attempt-policy-check`)
+      .set('Cookie', ulricCookies)
+      .expect(201);
+  });
+
+  it('creates tracked public links and decrements download count only on ticket redemption', async () => {
+    const adminCookies = await login('owner', 'admin123456');
+
+    const inviteSender = await request(app.getHttpServer())
+      .post('/api/admin/invites')
+      .set('Cookie', adminCookies)
+      .send({ expiresInMinutes: 30 })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post('/api/registration/register')
+      .send({
+        inviteCode: inviteSender.body.code,
+        username: 'vera',
+        password: 'vera-password',
+      })
+      .expect(201);
+
+    const inviteRecipient = await request(app.getHttpServer())
+      .post('/api/admin/invites')
+      .set('Cookie', adminCookies)
+      .send({ expiresInMinutes: 30 })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post('/api/registration/register')
+      .send({
+        inviteCode: inviteRecipient.body.code,
+        username: 'wynn',
+        password: 'wynn-password',
+      })
+      .expect(201);
+
+    const vera = await prisma.user.findUniqueOrThrow({ where: { username: 'vera' } });
+    const wynn = await prisma.user.findUniqueOrThrow({ where: { username: 'wynn' } });
+
+    await request(app.getHttpServer())
+      .post('/api/admin/users/approve')
+      .set('Cookie', adminCookies)
+      .send({ userId: vera.id })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post('/api/admin/users/approve')
+      .set('Cookie', adminCookies)
+      .send({ userId: wynn.id })
+      .expect(201);
+
+    const veraSessionCookies = await login('vera', 'vera-password');
+    const veraTrustResponse = await request(app.getHttpServer())
+      .post('/api/trust/bootstrap-first-device')
+      .set('Cookie', veraSessionCookies)
+      .send({
+        deviceLabel: 'Vera Browser 1',
+        devicePublicIdentity: 'vera-device-1',
+        userDomainPublicKey: 'vera-domain-key',
+      })
+      .expect(201);
+    const veraCookies = mergeCookies(veraSessionCookies, veraTrustResponse.get('set-cookie'));
+
+    const wynnSessionCookies = await login('wynn', 'wynn-password');
+    const wynnTrustResponse = await request(app.getHttpServer())
+      .post('/api/trust/bootstrap-first-device')
+      .set('Cookie', wynnSessionCookies)
+      .send({
+        deviceLabel: 'Wynn Browser 1',
+        devicePublicIdentity: 'wynn-device-1',
+        userDomainPublicKey: 'wynn-domain-key',
+      })
+      .expect(201);
+    const wynnCookies = mergeCookies(wynnSessionCookies, wynnTrustResponse.get('set-cookie'));
+
+    const prepare = await request(app.getHttpServer())
+      .post('/api/uploads/prepare')
+      .set('Cookie', veraCookies)
+      .send({
+        contentKind: 'SELF_SPACE_TEXT',
+        confidentialityLevel: 'SECRET',
+        requestedValidityMinutes: 30,
+      })
+      .expect(201);
+
+    const finalize = await request(app.getHttpServer())
+      .post(`/api/uploads/${prepare.body.uploadSessionId}/finalize`)
+      .set('Cookie', veraCookies)
+      .send({
+        displayName: 'public note',
+        textCiphertextBody: 'ciphertext public body',
+      })
+      .expect(201);
+
+    const share = await request(app.getHttpServer())
+      .post('/api/shares')
+      .set('Cookie', veraCookies)
+      .send({
+        sourceItemId: finalize.body.sourceItemId,
+        recipientUsername: 'wynn',
+        requestedValidityMinutes: 30,
+      })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post(`/api/shares/${share.body.shareObjectId}/attempts/recipient-attempt-public-check`)
+      .set('Cookie', wynnCookies)
+      .expect(201);
+
+    const publicLink = await request(app.getHttpServer())
+      .post('/api/public-links')
+      .set('Cookie', veraCookies)
+      .send({
+        shareObjectId: share.body.shareObjectId,
+        requestedValidityMinutes: 30,
+        requestedDownloadCount: 2,
+      })
+      .expect(201);
+
+    expect(publicLink.body.remainingDownloadCount).toBe(2);
+
+    const linkInfo = await request(app.getHttpServer())
+      .get(`/api/public-links/${publicLink.body.linkToken}`)
+      .expect(200);
+
+    expect(linkInfo.body.state).toBe('ACTIVE');
+    expect(linkInfo.body.remainingDownloadCount).toBe(2);
+
+    const ticket = await request(app.getHttpServer())
+      .post(`/api/public-links/${publicLink.body.linkToken}/tickets`)
+      .expect(201);
+
+    const redeemed = await request(app.getHttpServer())
+      .post(`/api/public-links/tickets/${ticket.body.ticketToken}/redeem`)
+      .expect(201);
+
+    expect(redeemed.body.remainingDownloadCount).toBe(1);
+    expect(redeemed.body.textCiphertextBody).toBe('ciphertext public body');
+
+    const afterRedeem = await request(app.getHttpServer())
+      .get(`/api/public-links/${publicLink.body.linkToken}`)
+      .expect(200);
+
+    expect(afterRedeem.body.remainingDownloadCount).toBe(1);
+
+    await prisma.policyBundle.updateMany({
+      where: { levelName: 'SECRET', isCurrent: true },
+      data: {
+        shareAvailability: {
+          allowOutwardSharing: true,
+          restrictToSelfOnly: false,
+          allowRecipientResharing: false,
+          allowMultipleOutwardShares: true,
+          allowUserTargetedSharing: true,
+          allowPasswordExtraction: true,
+          allowPublicLinks: false,
+        },
+      },
+    });
+
+    const prepareBlocked = await request(app.getHttpServer())
+      .post('/api/uploads/prepare')
+      .set('Cookie', veraCookies)
+      .send({
+        contentKind: 'SELF_SPACE_TEXT',
+        confidentialityLevel: 'SECRET',
+        requestedValidityMinutes: 30,
+      })
+      .expect(201);
+
+    const finalizeBlocked = await request(app.getHttpServer())
+      .post(`/api/uploads/${prepareBlocked.body.uploadSessionId}/finalize`)
+      .set('Cookie', veraCookies)
+      .send({
+        displayName: 'blocked public note',
+        textCiphertextBody: 'ciphertext blocked public body',
+      })
+      .expect(201);
+
+    const blockedShare = await request(app.getHttpServer())
+      .post('/api/shares')
+      .set('Cookie', veraCookies)
+      .send({
+        sourceItemId: finalizeBlocked.body.sourceItemId,
+        recipientUsername: 'wynn',
+        requestedValidityMinutes: 30,
+      })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post('/api/public-links')
+      .set('Cookie', veraCookies)
+      .send({
+        shareObjectId: blockedShare.body.shareObjectId,
+        requestedDownloadCount: 1,
+      })
+      .expect(400);
   });
 });
