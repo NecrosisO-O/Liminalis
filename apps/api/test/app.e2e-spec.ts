@@ -40,6 +40,8 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
     await prisma.packageFamily.deleteMany();
     await prisma.publicLink.deleteMany();
     await prisma.extractionAccess.deleteMany();
+    await prisma.liveTransferRecordProjection.deleteMany();
+    await prisma.liveTransferSession.deleteMany();
     await prisma.shareObject.deleteMany();
     await prisma.groupManifest.deleteMany();
     await prisma.uploadPart.deleteMany();
@@ -2117,5 +2119,316 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
     expect(operationsSummary.body.storage.uploadedCiphertextBytes).toBeGreaterThanOrEqual(0);
     expect(operationsSummary.body).not.toHaveProperty('textCiphertextBody');
     expect(operationsSummary.body).not.toHaveProperty('sourceItemsList');
+  });
+
+  it('runs live transfer as a distinct session lifecycle with p2p-first connect and retained records when policy allows them', async () => {
+    const adminCookies = await login('owner', 'admin123456');
+
+    const inviteOne = await request(app.getHttpServer())
+      .post('/api/admin/invites')
+      .set('Cookie', adminCookies)
+      .send({ expiresInMinutes: 30 })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post('/api/registration/register')
+      .send({
+        inviteCode: inviteOne.body.code,
+        username: 'yara',
+        password: 'yara-password',
+      })
+      .expect(201);
+
+    const inviteTwo = await request(app.getHttpServer())
+      .post('/api/admin/invites')
+      .set('Cookie', adminCookies)
+      .send({ expiresInMinutes: 30 })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post('/api/registration/register')
+      .send({
+        inviteCode: inviteTwo.body.code,
+        username: 'zane',
+        password: 'zane-password',
+      })
+      .expect(201);
+
+    const yara = await prisma.user.findUniqueOrThrow({ where: { username: 'yara' } });
+    const zane = await prisma.user.findUniqueOrThrow({ where: { username: 'zane' } });
+
+    await request(app.getHttpServer())
+      .post('/api/admin/users/approve')
+      .set('Cookie', adminCookies)
+      .send({ userId: yara.id })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post('/api/admin/users/approve')
+      .set('Cookie', adminCookies)
+      .send({ userId: zane.id })
+      .expect(201);
+
+    const yaraSessionCookies = await login('yara', 'yara-password');
+    const yaraTrustResponse = await request(app.getHttpServer())
+      .post('/api/trust/bootstrap-first-device')
+      .set('Cookie', yaraSessionCookies)
+      .send({
+        deviceLabel: 'Yara Browser 1',
+        devicePublicIdentity: 'yara-device-1',
+        userDomainPublicKey: 'yara-domain-key',
+      })
+      .expect(201);
+    const yaraCookies = mergeCookies(yaraSessionCookies, yaraTrustResponse.get('set-cookie'));
+
+    const zaneSessionCookies = await login('zane', 'zane-password');
+    const zaneTrustResponse = await request(app.getHttpServer())
+      .post('/api/trust/bootstrap-first-device')
+      .set('Cookie', zaneSessionCookies)
+      .send({
+        deviceLabel: 'Zane Browser 1',
+        devicePublicIdentity: 'zane-device-1',
+        userDomainPublicKey: 'zane-domain-key',
+      })
+      .expect(201);
+    const zaneCookies = mergeCookies(zaneSessionCookies, zaneTrustResponse.get('set-cookie'));
+
+    const liveSession = await request(app.getHttpServer())
+      .post('/api/live-transfer/sessions')
+      .set('Cookie', yaraCookies)
+      .send({
+        contentLabel: 'peer file',
+        contentKind: 'SINGLE_FILE',
+        confidentialityLevel: 'SECRET',
+      })
+      .expect(201);
+
+    expect(liveSession.body.peerToPeerAllowed).toBe(true);
+    expect(liveSession.body.relayAllowed).toBe(true);
+    expect(liveSession.body.retainRecord).toBe(true);
+
+    const joined = await request(app.getHttpServer())
+      .post('/api/live-transfer/sessions/join')
+      .set('Cookie', zaneCookies)
+      .send({ sessionCode: liveSession.body.sessionCode })
+      .expect(201);
+
+    expect(joined.body.state).toBe('AWAITING_CONFIRMATION');
+
+    await request(app.getHttpServer())
+      .post(`/api/live-transfer/sessions/${liveSession.body.liveTransferSessionId}/confirm`)
+      .set('Cookie', yaraCookies)
+      .send({ confirmed: true })
+      .expect(201)
+      .expect((response) => {
+        expect(response.body.state).toBe('CONNECTING');
+        expect(response.body.transportState).toBe('P2P_ATTEMPT');
+      });
+
+    await request(app.getHttpServer())
+      .post(`/api/live-transfer/sessions/${liveSession.body.liveTransferSessionId}/transport`)
+      .set('Cookie', yaraCookies)
+      .send({ transportState: 'P2P_ACTIVE' })
+      .expect(201)
+      .expect((response) => {
+        expect(response.body.state).toBe('ACTIVE');
+      });
+
+    await request(app.getHttpServer())
+      .post(`/api/live-transfer/sessions/${liveSession.body.liveTransferSessionId}/complete`)
+      .set('Cookie', zaneCookies)
+      .expect(201)
+      .expect((response) => {
+        expect(response.body.state).toBe('COMPLETED');
+      });
+
+    const yaraRecords = await request(app.getHttpServer())
+      .get('/api/live-transfer/records')
+      .set('Cookie', yaraCookies)
+      .expect(200);
+
+    expect(yaraRecords.body).toHaveLength(1);
+    expect(yaraRecords.body[0].contentLabel).toBe('peer file');
+    expect(yaraRecords.body[0].sessionOutcome).toBe('completed');
+  });
+
+  it('blocks relay when policy disables it and allows explicit live-to-stored fallback only after failure', async () => {
+    const adminCookies = await login('owner', 'admin123456');
+
+    const inviteOne = await request(app.getHttpServer())
+      .post('/api/admin/invites')
+      .set('Cookie', adminCookies)
+      .send({ expiresInMinutes: 30 })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post('/api/registration/register')
+      .send({
+        inviteCode: inviteOne.body.code,
+        username: 'amber',
+        password: 'amber-password',
+      })
+      .expect(201);
+
+    const inviteTwo = await request(app.getHttpServer())
+      .post('/api/admin/invites')
+      .set('Cookie', adminCookies)
+      .send({ expiresInMinutes: 30 })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post('/api/registration/register')
+      .send({
+        inviteCode: inviteTwo.body.code,
+        username: 'bram',
+        password: 'bram-password',
+      })
+      .expect(201);
+
+    const amber = await prisma.user.findUniqueOrThrow({ where: { username: 'amber' } });
+    const bram = await prisma.user.findUniqueOrThrow({ where: { username: 'bram' } });
+
+    await request(app.getHttpServer())
+      .post('/api/admin/users/approve')
+      .set('Cookie', adminCookies)
+      .send({ userId: amber.id })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post('/api/admin/users/approve')
+      .set('Cookie', adminCookies)
+      .send({ userId: bram.id })
+      .expect(201);
+
+    const amberSessionCookies = await login('amber', 'amber-password');
+    const amberTrustResponse = await request(app.getHttpServer())
+      .post('/api/trust/bootstrap-first-device')
+      .set('Cookie', amberSessionCookies)
+      .send({
+        deviceLabel: 'Amber Browser 1',
+        devicePublicIdentity: 'amber-device-1',
+        userDomainPublicKey: 'amber-domain-key',
+      })
+      .expect(201);
+    const amberCookies = mergeCookies(amberSessionCookies, amberTrustResponse.get('set-cookie'));
+
+    const bramSessionCookies = await login('bram', 'bram-password');
+    const bramTrustResponse = await request(app.getHttpServer())
+      .post('/api/trust/bootstrap-first-device')
+      .set('Cookie', bramSessionCookies)
+      .send({
+        deviceLabel: 'Bram Browser 1',
+        devicePublicIdentity: 'bram-device-1',
+        userDomainPublicKey: 'bram-domain-key',
+      })
+      .expect(201);
+    const bramCookies = mergeCookies(bramSessionCookies, bramTrustResponse.get('set-cookie'));
+
+    const topSecretSession = await request(app.getHttpServer())
+      .post('/api/live-transfer/sessions')
+      .set('Cookie', amberCookies)
+      .send({
+        contentLabel: 'top secret peer file',
+        contentKind: 'SINGLE_FILE',
+        confidentialityLevel: 'TOP_SECRET',
+      })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post('/api/live-transfer/sessions/join')
+      .set('Cookie', bramCookies)
+      .send({ sessionCode: topSecretSession.body.sessionCode })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post(`/api/live-transfer/sessions/${topSecretSession.body.liveTransferSessionId}/confirm`)
+      .set('Cookie', amberCookies)
+      .send({ confirmed: true })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post(`/api/live-transfer/sessions/${topSecretSession.body.liveTransferSessionId}/transport`)
+      .set('Cookie', amberCookies)
+      .send({ transportState: 'RELAY_ATTEMPT' })
+      .expect(400);
+
+    const confidentialSession = await request(app.getHttpServer())
+      .post('/api/live-transfer/sessions')
+      .set('Cookie', amberCookies)
+      .send({
+        contentLabel: 'fallback file',
+        contentKind: 'SINGLE_FILE',
+        confidentialityLevel: 'CONFIDENTIAL',
+      })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post('/api/live-transfer/sessions/join')
+      .set('Cookie', bramCookies)
+      .send({ sessionCode: confidentialSession.body.sessionCode })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post(`/api/live-transfer/sessions/${confidentialSession.body.liveTransferSessionId}/confirm`)
+      .set('Cookie', amberCookies)
+      .send({ confirmed: true })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post(`/api/live-transfer/sessions/${confidentialSession.body.liveTransferSessionId}/stored-fallback`)
+      .set('Cookie', amberCookies)
+      .expect(400);
+
+    await request(app.getHttpServer())
+      .post(`/api/live-transfer/sessions/${confidentialSession.body.liveTransferSessionId}/fail`)
+      .set('Cookie', amberCookies)
+      .send({ reason: 'transport_exhausted' })
+      .expect(201)
+      .expect((response) => {
+        expect(response.body.state).toBe('FAILED');
+      });
+
+    await request(app.getHttpServer())
+      .post(`/api/live-transfer/sessions/${confidentialSession.body.liveTransferSessionId}/stored-fallback`)
+      .set('Cookie', amberCookies)
+      .expect(400);
+
+    const secretSession = await request(app.getHttpServer())
+      .post('/api/live-transfer/sessions')
+      .set('Cookie', amberCookies)
+      .send({
+        contentLabel: 'secret fallback file',
+        contentKind: 'SINGLE_FILE',
+        confidentialityLevel: 'SECRET',
+      })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post('/api/live-transfer/sessions/join')
+      .set('Cookie', bramCookies)
+      .send({ sessionCode: secretSession.body.sessionCode })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post(`/api/live-transfer/sessions/${secretSession.body.liveTransferSessionId}/confirm`)
+      .set('Cookie', amberCookies)
+      .send({ confirmed: true })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post(`/api/live-transfer/sessions/${secretSession.body.liveTransferSessionId}/fail`)
+      .set('Cookie', amberCookies)
+      .send({ reason: 'transport_exhausted' })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post(`/api/live-transfer/sessions/${secretSession.body.liveTransferSessionId}/stored-fallback`)
+      .set('Cookie', amberCookies)
+      .expect(201)
+      .expect((response) => {
+        expect(response.body.handoffRequired).toBe(true);
+        expect(response.body.contentLabel).toBe('secret fallback file');
+        expect(response.body.confidentialityLevel).toBe('SECRET');
+      });
   });
 });

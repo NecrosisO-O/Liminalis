@@ -3,7 +3,7 @@
 ## Phase
 
 - Current phase: implementation
-- Current phase segment: M8 admin control-plane completion implemented, moving into M9
+- Current phase segment: M9 live transfer and explicit stored fallback implemented, moving into M10
 
 ## Progress
 
@@ -208,19 +208,24 @@
 - Added API e2e coverage for invite invalidation, policy version publication, policy-history visibility, restore-defaults version creation, persisted default-level use during upload preparation, validation rejection for invalid policy combinations, and operations summary metadata boundaries
 - Confirmed that local Prisma schema sync is required for the new `InstanceSetting` model before validation, then revalidated successfully
 - Confirmed that root build and API e2e validation now pass against the current `M1` through `M8` foundation implementation
+- Added the first minimal `M9` live-transfer subsystem with `LiveTransferSession`, session creation/join/confirmation, policy-gated p2p-first transport updates, relay gating, explicit failed-session live-to-stored handoff eligibility, and retained `LiveTransferRecordProjection` rows when the policy snapshot allows record retention
+- Kept live transfer as a session subsystem fully separate from `SourceItem` and `ShareObject`, with explicit handoff output for stored fallback rather than silent continuation into the stored-transfer lifecycle
+- Added API e2e coverage for p2p-first live transfer completion, retained live-transfer record visibility, relay blocking under `TOP_SECRET`, and explicit stored-fallback allowance only after failure when policy permits it
+- Added `pretest:e2e` Prisma client regeneration so e2e validation stays aligned with newly added Prisma compound keys and live-transfer schema changes
+- Confirmed that root build and API e2e validation now pass against the current `M1` through `M9` foundation implementation
 
 ## Current Focus
 
 - Preserve the accepted implementation-planning baseline as the source of truth for code work
-- Continue advancing from the validated `M1` through `M8` base into `M9` live transfer and explicit stored fallback
-- Keep live transfer as a distinct subsystem layered on top of the stable stored-transfer and policy-admin foundations
+- Continue advancing from the validated `M1` through `M9` base into `M10` resilience and maintenance polish
+- Keep late maintenance work focused on recovery resilience, trusted-access removal, and package/regrant-safe cleanup without weakening earlier milestone boundaries
 - Keep the deferred share-first path explicitly out of v1 scope
 
 ## Next Checkpoint
 
-- Record the verified `M8` admin control-plane pass in project memory and git history
+- Record the verified `M9` live-transfer pass in project memory and git history
 - Push the current checkpoint after verification and documentation updates
-- Continue into `M9` live transfer and explicit stored fallback in milestone order from the now-validated write-side, projection, outward-delivery, and admin-policy base
+- Continue into `M10` resilience and maintenance polish in milestone order from the now-validated write-side, projection, outward-delivery, admin-policy, and live-transfer base
 
 ## Notes
 
