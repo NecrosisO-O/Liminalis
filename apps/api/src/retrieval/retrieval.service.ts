@@ -14,10 +14,14 @@ import {
   SourceItemState,
 } from '../../generated/prisma/index.js';
 import { PrismaService } from '../prisma/prisma.service';
+import { ProjectionService } from '../projections/projection.service';
 
 @Injectable()
 export class RetrievalService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly projectionService: ProjectionService,
+  ) {}
 
   async issueSourceItemRetrieval(
     userId: string,
@@ -201,6 +205,10 @@ export class RetrievalService {
 
       return updatedAttempt;
     });
+
+    if (completed.sourceItemId) {
+      await this.projectionService.projectSourceItem(completed.sourceItemId);
+    }
 
     return {
       retrievalAttemptId: completed.id,

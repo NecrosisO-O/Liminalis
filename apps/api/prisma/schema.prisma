@@ -106,6 +106,10 @@ enum RetrievalAttemptStatus {
   FAILED
 }
 
+enum ProjectionSourceType {
+  SOURCE_ITEM
+}
+
 model User {
   id               String           @id @default(cuid())
   username         String           @unique
@@ -126,6 +130,9 @@ model User {
   uploadSessions   UploadSession[]
   sourceItems      SourceItem[]
   retrievalAttempts RetrievalAttempt[]
+  activeTimelineItems ActiveTimelineItemProjection[]
+  historyEntries      HistoryEntryProjection[]
+  searchDocuments     SearchDocumentProjection[]
 }
 
 model InviteCode {
@@ -288,6 +295,9 @@ model SourceItem {
   accessGrantSets        AccessGrantSet[]
   packageFamilies        PackageFamily[]
   retrievalAttempts      RetrievalAttempt[]
+  activeTimelineItem     ActiveTimelineItemProjection?
+  historyEntry           HistoryEntryProjection?
+  searchDocument         SearchDocumentProjection?
   createdAt              DateTime              @default(now())
   updatedAt              DateTime              @updatedAt
 }
@@ -387,4 +397,74 @@ model RetrievalAttempt {
 
   @@unique([retrievalFamily, targetObjectId, requestingUserId, requestingDeviceId, attemptScopeKey])
   @@index([sourceItemId, status])
+}
+
+model ActiveTimelineItemProjection {
+  id                 String               @id @default(cuid())
+  ownerUserId        String
+  ownerUser          User                 @relation(fields: [ownerUserId], references: [id])
+  sourceObjectType   ProjectionSourceType
+  sourceObjectId     String
+  sourceItemId       String               @unique
+  sourceItem         SourceItem           @relation(fields: [sourceItemId], references: [id])
+  displayTitle       String?
+  visibleTypeLabel   String
+  visibleSizeBytes   Int?
+  groupedItemCount   Int?
+  sourceLabel        String
+  activeStatusLabel  String
+  confidentialityLevel ConfidentialityLevel
+  currentRetrievable Boolean
+  visibleSummary     String?
+  createdTime        DateTime
+  validUntil         DateTime?
+  projectedAt        DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+
+  @@unique([ownerUserId, sourceObjectType, sourceObjectId])
+}
+
+model HistoryEntryProjection {
+  id                   String               @id @default(cuid())
+  ownerUserId          String
+  ownerUser            User                 @relation(fields: [ownerUserId], references: [id])
+  sourceObjectType     ProjectionSourceType
+  sourceObjectId       String
+  sourceItemId         String               @unique
+  sourceItem           SourceItem           @relation(fields: [sourceItemId], references: [id])
+  displayTitle         String?
+  visibleTypeLabel     String
+  sourceLabel          String
+  confidentialityLevel ConfidentialityLevel
+  retainedStatus       String
+  retrievable          Boolean
+  concreteReason       String?
+  visibleSummary       String?
+  createdTime          DateTime
+  statusTime           DateTime?
+  projectedAt          DateTime             @default(now())
+  updatedAt            DateTime             @updatedAt
+
+  @@unique([ownerUserId, sourceObjectType, sourceObjectId])
+}
+
+model SearchDocumentProjection {
+  id                   String               @id @default(cuid())
+  ownerUserId          String
+  ownerUser            User                 @relation(fields: [ownerUserId], references: [id])
+  sourceObjectType     ProjectionSourceType
+  sourceObjectId       String
+  sourceItemId         String               @unique
+  sourceItem           SourceItem           @relation(fields: [sourceItemId], references: [id])
+  displayTitle         String?
+  visibleSummary       String?
+  sourceLabel          String
+  visibleTypeLabel     String
+  visibleStatusLabel   String
+  confidentialityLevel ConfidentialityLevel
+  retrievable          Boolean
+  projectedAt          DateTime             @default(now())
+  updatedAt            DateTime             @updatedAt
+
+  @@unique([ownerUserId, sourceObjectType, sourceObjectId])
 }

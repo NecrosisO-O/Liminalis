@@ -31,6 +31,9 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
     await prisma.session.deleteMany();
     await prisma.retrievalAttempt.deleteMany();
     await prisma.packageReference.deleteMany();
+    await prisma.activeTimelineItemProjection.deleteMany();
+    await prisma.historyEntryProjection.deleteMany();
+    await prisma.searchDocumentProjection.deleteMany();
     await prisma.accessGrantSet.deleteMany();
     await prisma.packageFamily.deleteMany();
     await prisma.groupManifest.deleteMany();
@@ -826,5 +829,140 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
       .post(`/api/retrieval/source-items/${finalize.body.sourceItemId}/attempts/attempt-after-burn`)
       .set('Cookie', lenaCookies)
       .expect(400);
+  });
+
+  it('projects active timeline, retained history, and narrow search from current source-item write state', async () => {
+    const adminCookies = await login('owner', 'admin123456');
+
+    const invite = await request(app.getHttpServer())
+      .post('/api/admin/invites')
+      .set('Cookie', adminCookies)
+      .send({ expiresInMinutes: 30 })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post('/api/registration/register')
+      .send({
+        inviteCode: invite.body.code,
+        username: 'mira',
+        password: 'mira-password',
+      })
+      .expect(201);
+
+    const mira = await prisma.user.findUniqueOrThrow({ where: { username: 'mira' } });
+
+    await request(app.getHttpServer())
+      .post('/api/admin/users/approve')
+      .set('Cookie', adminCookies)
+      .send({ userId: mira.id })
+      .expect(201);
+
+    const miraSessionCookies = await login('mira', 'mira-password');
+    const miraTrustResponse = await request(app.getHttpServer())
+      .post('/api/trust/bootstrap-first-device')
+      .set('Cookie', miraSessionCookies)
+      .send({
+        deviceLabel: 'Mira Browser 1',
+        devicePublicIdentity: 'mira-device-1',
+        userDomainPublicKey: 'mira-domain-key',
+      })
+      .expect(201);
+
+    const miraCookies = mergeCookies(miraSessionCookies, miraTrustResponse.get('set-cookie'));
+
+    const activePrepare = await request(app.getHttpServer())
+      .post('/api/uploads/prepare')
+      .set('Cookie', miraCookies)
+      .send({
+        contentKind: 'SELF_SPACE_TEXT',
+        confidentialityLevel: 'SECRET',
+        requestedValidityMinutes: 30,
+      })
+      .expect(201);
+
+    const activeFinalize = await request(app.getHttpServer())
+      .post(`/api/uploads/${activePrepare.body.uploadSessionId}/finalize`)
+      .set('Cookie', miraCookies)
+      .send({
+        displayName: 'active note',
+        textCiphertextBody: 'ciphertext active body',
+      })
+      .expect(201);
+
+    const burnPrepare = await request(app.getHttpServer())
+      .post('/api/uploads/prepare')
+      .set('Cookie', miraCookies)
+      .send({
+        contentKind: 'SELF_SPACE_TEXT',
+        confidentialityLevel: 'SECRET',
+        requestedValidityMinutes: 30,
+        burnAfterReadEnabled: true,
+      })
+      .expect(201);
+
+    const burnFinalize = await request(app.getHttpServer())
+      .post(`/api/uploads/${burnPrepare.body.uploadSessionId}/finalize`)
+      .set('Cookie', miraCookies)
+      .send({
+        displayName: 'burn note',
+        textCiphertextBody: 'ciphertext burn body',
+      })
+      .expect(201);
+
+    const burnAttempt = await request(app.getHttpServer())
+      .post(`/api/retrieval/source-items/${burnFinalize.body.sourceItemId}/attempts/attempt-mira-burn`)
+      .set('Cookie', miraCookies)
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post(`/api/retrieval/attempts/${burnAttempt.body.retrievalAttemptId}/complete`)
+      .set('Cookie', miraCookies)
+      .send({ success: true })
+      .expect(201);
+
+    const timeline = await request(app.getHttpServer())
+      .get('/api/timeline')
+      .set('Cookie', miraCookies)
+      .expect(200);
+
+    expect(timeline.body).toHaveLength(1);
+    expect(timeline.body[0].sourceObjectId).toBe(activeFinalize.body.sourceItemId);
+    expect(timeline.body[0].displayTitle).toBe('active note');
+    expect(timeline.body[0].currentRetrievable).toBe(true);
+
+    const history = await request(app.getHttpServer())
+      .get('/api/history')
+      .set('Cookie', miraCookies)
+      .expect(200);
+
+    const activeHistory = history.body.find(
+      (entry: { sourceObjectId: string }) => entry.sourceObjectId === activeFinalize.body.sourceItemId,
+    );
+    const burnedHistory = history.body.find(
+      (entry: { sourceObjectId: string }) => entry.sourceObjectId === burnFinalize.body.sourceItemId,
+    );
+
+    expect(activeHistory.retainedStatus).toBe('active');
+    expect(activeHistory.retrievable).toBe(true);
+    expect(burnedHistory.retainedStatus).toBe('purged');
+    expect(burnedHistory.retrievable).toBe(false);
+    expect(burnedHistory.concreteReason).toBe('purged');
+
+    const searchActive = await request(app.getHttpServer())
+      .get('/api/search')
+      .query({ q: 'active note' })
+      .set('Cookie', miraCookies)
+      .expect(200);
+
+    expect(searchActive.body).toHaveLength(1);
+    expect(searchActive.body[0].displayTitle).toBe('active note');
+
+    const searchBodyWord = await request(app.getHttpServer())
+      .get('/api/search')
+      .query({ q: 'ciphertext' })
+      .set('Cookie', miraCookies)
+      .expect(200);
+
+    expect(searchBodyWord.body).toHaveLength(0);
   });
 });

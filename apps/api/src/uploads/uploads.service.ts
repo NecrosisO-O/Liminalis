@@ -17,6 +17,7 @@ import {
 } from '../../generated/prisma/index.js';
 import { PrismaService } from '../prisma/prisma.service';
 import { PolicyService } from '../policy/policy.service';
+import { ProjectionService } from '../projections/projection.service';
 import { PrepareUploadDto } from './dto/prepare-upload.dto';
 import { RegisterUploadPartDto } from './dto/register-upload-part.dto';
 import { FinalizeUploadDto } from './dto/finalize-upload.dto';
@@ -28,6 +29,7 @@ export class UploadsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly policyService: PolicyService,
+    private readonly projectionService: ProjectionService,
   ) {}
 
   async prepareUpload(userId: string, input: PrepareUploadDto) {
@@ -234,6 +236,8 @@ export class UploadsService {
 
       return created;
     });
+
+    await this.projectionService.projectSourceItem(sourceItem.id);
 
     return {
       sourceItemId: sourceItem.id,

@@ -187,19 +187,25 @@
 - Added the first burn-after-read write-side consequence for self-space source items so successful protected completion can move the item to immediate logical purge state
 - Added API e2e coverage for trusted-device-only self retrieval, explicit completion confirmation, and burn-after-read purge behavior on source items
 - Confirmed that root build, workspace tests, and API e2e validation all pass against the current `M1` through `M4` foundation implementation
+- Added the first minimal `M5` projection model for active timeline, retained history, and narrow search over self-space source items
+- Wired source-item finalization and retrieval completion back into projection refresh so read models follow write-side state changes
+- Added timeline, history, and search routes backed by the projection layer rather than by ad hoc write-side reshaping
+- Kept search intentionally narrow by indexing only approved visible metadata fields and not raw text ciphertext bodies
+- Added API e2e coverage for active timeline filtering, retained history status detail, and narrow search behavior over projected self-space source items
+- Confirmed that root build, workspace tests, and API e2e validation all pass against the current `M1` through `M5` foundation implementation
 
 ## Current Focus
 
 - Preserve the accepted implementation-planning baseline as the source of truth for code work
-- Continue advancing from the validated `M1` through `M4` base into `M5` read-model projection foundations
-- Keep stored-transfer write-side behavior authoritative while beginning the first timeline/history/search projection layer
+- Continue advancing from the validated `M1` through `M5` base into `M6` user-targeted protected sharing
+- Keep read-model behavior derived from stable write-side source and retrieval outcomes while adding the first outward-share path
 - Keep the deferred share-first path explicitly out of v1 scope
 
 ## Next Checkpoint
 
-- Record the verified `M4` self-retrieval pass in project memory and git history
+- Record the verified `M5` projection pass in project memory and git history
 - Push the current checkpoint after verification and documentation updates
-- Continue into `M5` projection work in milestone order from the now-validated write-side base
+- Continue into `M6` protected sharing work in milestone order from the now-validated write-side and projection base
 
 ## Notes
 

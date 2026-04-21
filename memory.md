@@ -88,6 +88,8 @@
 - The current `M3` validation baseline now includes e2e coverage for text-source creation, single-file finalization guards, grouped-content finalization, and source-side `AccessGrantSet` and package-family creation.
 - The current execution run has now extended the backend foundation through a first minimal `M4` implementation covering trusted-device-bound `RetrievalAttempt`, self-source package issuance through `PackageReference`, explicit protected completion confirmation, and burn-after-read purge behavior for self-space source items.
 - The current `M4` validation baseline now includes e2e coverage for trusted-device-only self retrieval, explicit completion confirmation, and burn-after-read purge behavior on self-space source items.
+- The current execution run has now extended the backend foundation through a first minimal `M5` implementation covering active-timeline, retained-history, and narrow-search projections for self-space source items.
+- The current `M5` validation baseline now includes e2e coverage for active timeline filtering, retained history status detail, and narrow search over projected self-space source items while keeping search metadata intentionally narrow.
 - The project should be developed deliberately rather than rushed into coding.
 - The design phase has started.
 - Initial design drafts are being recorded under `design/` before any architecture work.
