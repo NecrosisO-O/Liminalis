@@ -2431,4 +2431,208 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
         expect(response.body.confidentialityLevel).toBe('SECRET');
       });
   });
+
+  it('removes trusted access from the current browser separately from logout and blocks later protected retrieval until re-established', async () => {
+    const adminCookies = await login('owner', 'admin123456');
+
+    const invite = await request(app.getHttpServer())
+      .post('/api/admin/invites')
+      .set('Cookie', adminCookies)
+      .send({ expiresInMinutes: 30 })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post('/api/registration/register')
+      .send({
+        inviteCode: invite.body.code,
+        username: 'cora',
+        password: 'cora-password',
+      })
+      .expect(201);
+
+    const cora = await prisma.user.findUniqueOrThrow({ where: { username: 'cora' } });
+
+    await request(app.getHttpServer())
+      .post('/api/admin/users/approve')
+      .set('Cookie', adminCookies)
+      .send({ userId: cora.id })
+      .expect(201);
+
+    const coraSessionCookies = await login('cora', 'cora-password');
+    const coraTrustResponse = await request(app.getHttpServer())
+      .post('/api/trust/bootstrap-first-device')
+      .set('Cookie', coraSessionCookies)
+      .send({
+        deviceLabel: 'Cora Browser 1',
+        devicePublicIdentity: 'cora-device-1',
+        userDomainPublicKey: 'cora-domain-key',
+      })
+      .expect(201);
+    const coraCookies = mergeCookies(coraSessionCookies, coraTrustResponse.get('set-cookie'));
+
+    const prepare = await request(app.getHttpServer())
+      .post('/api/uploads/prepare')
+      .set('Cookie', coraCookies)
+      .send({
+        contentKind: 'SELF_SPACE_TEXT',
+        confidentialityLevel: 'SECRET',
+        requestedValidityMinutes: 30,
+      })
+      .expect(201);
+
+    const finalize = await request(app.getHttpServer())
+      .post(`/api/uploads/${prepare.body.uploadSessionId}/finalize`)
+      .set('Cookie', coraCookies)
+      .send({
+        displayName: 'removal note',
+        textCiphertextBody: 'ciphertext removal body',
+      })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post('/api/maintenance/trusted-access/remove')
+      .set('Cookie', coraCookies)
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post(`/api/retrieval/source-items/${finalize.body.sourceItemId}/attempts/remove-attempt-1`)
+      .set('Cookie', coraSessionCookies)
+      .expect(403);
+
+    await request(app.getHttpServer())
+      .post('/api/auth/logout')
+      .set('Cookie', coraSessionCookies)
+      .expect(200);
+  });
+
+  it('cleans expired pending recovery display and requires explicit snapshot-mode regrant to regain protected access', async () => {
+    const adminCookies = await login('owner', 'admin123456');
+
+    const invite = await request(app.getHttpServer())
+      .post('/api/admin/invites')
+      .set('Cookie', adminCookies)
+      .send({ expiresInMinutes: 30 })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post('/api/registration/register')
+      .send({
+        inviteCode: invite.body.code,
+        username: 'dorian',
+        password: 'dorian-password',
+      })
+      .expect(201);
+
+    const dorian = await prisma.user.findUniqueOrThrow({ where: { username: 'dorian' } });
+
+    await request(app.getHttpServer())
+      .post('/api/admin/users/approve')
+      .set('Cookie', adminCookies)
+      .send({ userId: dorian.id })
+      .expect(201);
+
+    const dorianSessionCookies = await login('dorian', 'dorian-password');
+    const dorianTrustResponse = await request(app.getHttpServer())
+      .post('/api/trust/bootstrap-first-device')
+      .set('Cookie', dorianSessionCookies)
+      .send({
+        deviceLabel: 'Dorian Browser 1',
+        devicePublicIdentity: 'dorian-device-1',
+        userDomainPublicKey: 'dorian-domain-key',
+      })
+      .expect(201);
+    const dorianCookies = mergeCookies(dorianSessionCookies, dorianTrustResponse.get('set-cookie'));
+
+    const recoveryAttempt = await request(app.getHttpServer())
+      .post('/api/recovery/attempt')
+      .set('Cookie', dorianSessionCookies)
+      .send({
+        recoveryCode: dorianTrustResponse.body.recoveryCodes[0],
+        deviceLabel: 'Dorian Recovery Browser',
+        devicePublicIdentity: 'dorian-recovery-device',
+      })
+      .expect(201);
+
+    await prisma.recoveryCredentialSet.update({
+      where: { userId: dorian.id },
+      data: {
+        pendingDisplayUntil: new Date(Date.now() - 1000),
+      },
+    });
+
+    await request(app.getHttpServer())
+      .get('/api/recovery/pending-display')
+      .set('Cookie', dorianSessionCookies)
+      .expect(400);
+
+    const clearedRecoverySet = await prisma.recoveryCredentialSet.findUniqueOrThrow({
+      where: { userId: dorian.id },
+    });
+    expect(clearedRecoverySet.pendingDisplayBlob).toBeNull();
+    expect(clearedRecoverySet.pendingDisplayUntil).toBeNull();
+
+    const prepare = await request(app.getHttpServer())
+      .post('/api/uploads/prepare')
+      .set('Cookie', dorianCookies)
+      .send({
+        contentKind: 'SELF_SPACE_TEXT',
+        confidentialityLevel: 'TOP_SECRET',
+        requestedValidityMinutes: 30,
+      })
+      .expect(201);
+
+    const finalize = await request(app.getHttpServer())
+      .post(`/api/uploads/${prepare.body.uploadSessionId}/finalize`)
+      .set('Cookie', dorianCookies)
+      .send({
+        displayName: 'snapshot note',
+        textCiphertextBody: 'ciphertext snapshot body',
+      })
+      .expect(201);
+
+    const pairingSession = await request(app.getHttpServer())
+      .post('/api/trust/pairing-sessions')
+      .set('Cookie', dorianCookies)
+      .send({
+        deviceLabel: 'Dorian Browser 2',
+        devicePublicIdentity: 'dorian-device-2',
+      })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post('/api/trust/pairing/approve')
+      .set('Cookie', dorianCookies)
+      .send({ pairingSessionId: pairingSession.body.id })
+      .expect(201);
+
+    const secondDevice = await prisma.trustedDevice.findFirstOrThrow({
+      where: {
+        userId: dorian.id,
+        publicIdentityPayload: 'dorian-device-2',
+      },
+    });
+
+    const secondDeviceCookies = [...dorianSessionCookies, `liminalis_trusted_device=${secondDevice.id}`];
+
+    await request(app.getHttpServer())
+      .post(`/api/retrieval/source-items/${finalize.body.sourceItemId}/attempts/snapshot-attempt-1`)
+      .set('Cookie', secondDeviceCookies)
+      .expect(403);
+
+    await request(app.getHttpServer())
+      .post('/api/maintenance/regrant')
+      .set('Cookie', dorianCookies)
+      .send({
+        protectedObjectType: 'SOURCE_ITEM',
+        protectedObjectId: finalize.body.sourceItemId,
+      })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post(`/api/retrieval/source-items/${finalize.body.sourceItemId}/attempts/snapshot-attempt-2`)
+      .set('Cookie', secondDeviceCookies)
+      .expect(201);
+
+    expect(recoveryAttempt.body.pendingTrustedDeviceId).toBeTruthy();
+  });
 });
