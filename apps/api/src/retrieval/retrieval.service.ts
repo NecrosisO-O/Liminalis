@@ -23,6 +23,18 @@ export class RetrievalService {
     private readonly projectionService: ProjectionService,
   ) {}
 
+  async getAttempt(retrievalAttemptId: string) {
+    const attempt = await this.prisma.retrievalAttempt.findUnique({
+      where: { id: retrievalAttemptId },
+    });
+
+    if (!attempt) {
+      throw new NotFoundException('Retrieval attempt not found');
+    }
+
+    return attempt;
+  }
+
   async issueSourceItemRetrieval(
     userId: string,
     trustedDeviceId: string | null,

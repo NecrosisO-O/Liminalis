@@ -22,8 +22,9 @@ export class ProjectionsController {
   @Get('search')
   async search(
     @SessionActor() sessionActor: AuthenticatedSession,
-    @Query('q') query: string,
+    @Query('q') q: string | undefined,
+    @Query('query') query: string | undefined,
   ) {
-    return this.projectionsService.search(sessionActor.userId, query ?? '');
+    return this.projectionsService.search(sessionActor.userId, q ?? query ?? '');
   }
 }
