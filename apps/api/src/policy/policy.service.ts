@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, OnModuleInit } from '@nestjs/common';
 import {
   ConfidentialityLevel,
+  Prisma,
   PolicyBundle,
   UploadContentKind,
 } from '../../generated/prisma/index.js';
@@ -26,13 +27,16 @@ export class PolicyService implements OnModuleInit {
   constructor(private readonly prisma: PrismaService) {}
 
   async onModuleInit() {
+    await this.ensureInstanceSetting();
+
     for (const seed of POLICY_BUNDLE_DEFAULTS) {
       await this.ensureCurrentBundle(seed);
     }
   }
 
-  getDefaultConfidentialityLevel() {
-    return DEFAULT_CONFIDENTIALITY_LEVEL;
+  async getDefaultConfidentialityLevel() {
+    const setting = await this.ensureInstanceSetting();
+    return setting.defaultConfidentialityLevel;
   }
 
   async getCurrentBundle(levelName: ConfidentialityLevel) {
@@ -104,6 +108,131 @@ export class PolicyService implements OnModuleInit {
         allowOutwardResharing: Boolean(lifecycle.allowOutwardResharing),
         policyBundleVersion: bundle.bundleVersion,
       },
+    };
+  }
+
+  async listCurrentBundles() {
+    return this.prisma.policyBundle.findMany({
+      where: { isCurrent: true },
+      orderBy: { levelName: 'asc' },
+    });
+  }
+
+  async listBundleHistory(levelName: ConfidentialityLevel) {
+    return this.prisma.policyBundle.findMany({
+      where: { levelName },
+      orderBy: [{ bundleVersion: 'desc' }],
+    });
+  }
+
+  async getPolicyAdminState() {
+    const [setting, bundles] = await Promise.all([
+      this.ensureInstanceSetting(),
+      this.listCurrentBundles(),
+    ]);
+
+    return {
+      defaultConfidentialityLevel: setting.defaultConfidentialityLevel,
+      currentBundles: bundles,
+    };
+  }
+
+  async publishBundle(
+    adminUserId: string,
+    levelName: ConfidentialityLevel,
+    input: {
+      lifecycle: Record<string, boolean | number | string | null>;
+      shareAvailability: Record<string, boolean | number | string | null>;
+      userTargetedSharing: Record<string, boolean | number | string | null>;
+      passwordExtraction: Record<string, boolean | number | string | null>;
+      publicLinks: Record<string, boolean | number | string | null>;
+      liveTransfer: Record<string, boolean | number | string | null>;
+      defaultConfidentialityLevel?: ConfidentialityLevel;
+    },
+  ) {
+    this.validateBundleSections(input);
+
+    const current = await this.getCurrentBundle(levelName);
+
+    return this.prisma.$transaction(async (tx) => {
+      await tx.policyBundle.updateMany({
+        where: { levelName, isCurrent: true },
+        data: { isCurrent: false },
+      });
+
+      const created = await tx.policyBundle.create({
+        data: {
+          levelName,
+          bundleVersion: current.bundleVersion + 1,
+          isCurrent: true,
+          updatedByAdminId: adminUserId,
+          lifecycle: input.lifecycle as Prisma.InputJsonValue,
+          shareAvailability: input.shareAvailability as Prisma.InputJsonValue,
+          userTargetedSharing: input.userTargetedSharing as Prisma.InputJsonValue,
+          passwordExtraction: input.passwordExtraction as Prisma.InputJsonValue,
+          publicLinks: input.publicLinks as Prisma.InputJsonValue,
+          liveTransfer: input.liveTransfer as Prisma.InputJsonValue,
+        },
+      });
+
+      if (input.defaultConfidentialityLevel) {
+        await tx.instanceSetting.update({
+          where: { singletonKey: 'default' },
+          data: { defaultConfidentialityLevel: input.defaultConfidentialityLevel },
+        });
+      }
+
+      return created;
+    });
+  }
+
+  async restoreDefaults(adminUserId: string, defaultConfidentialityLevel?: ConfidentialityLevel) {
+    const createdBundles = await this.prisma.$transaction(async (tx) => {
+      const bundles: PolicyBundle[] = [];
+
+      for (const seed of POLICY_BUNDLE_DEFAULTS) {
+        const current = await tx.policyBundle.findFirst({
+          where: { levelName: seed.levelName, isCurrent: true },
+          orderBy: { bundleVersion: 'desc' },
+        });
+
+        await tx.policyBundle.updateMany({
+          where: { levelName: seed.levelName, isCurrent: true },
+          data: { isCurrent: false },
+        });
+
+        const created = await tx.policyBundle.create({
+          data: {
+            levelName: seed.levelName,
+            bundleVersion: (current?.bundleVersion ?? 0) + 1,
+            isCurrent: true,
+            updatedByAdminId: adminUserId,
+            lifecycle: seed.lifecycle as Prisma.InputJsonValue,
+            shareAvailability: seed.shareAvailability as Prisma.InputJsonValue,
+            userTargetedSharing: seed.userTargetedSharing as Prisma.InputJsonValue,
+            passwordExtraction: seed.passwordExtraction as Prisma.InputJsonValue,
+            publicLinks: seed.publicLinks as Prisma.InputJsonValue,
+            liveTransfer: seed.liveTransfer as Prisma.InputJsonValue,
+          },
+        });
+
+        bundles.push(created);
+      }
+
+      await tx.instanceSetting.update({
+        where: { singletonKey: 'default' },
+        data: {
+          defaultConfidentialityLevel:
+            defaultConfidentialityLevel ?? DEFAULT_CONFIDENTIALITY_LEVEL,
+        },
+      });
+
+      return bundles;
+    });
+
+    return {
+      defaultConfidentialityLevel: defaultConfidentialityLevel ?? DEFAULT_CONFIDENTIALITY_LEVEL,
+      bundles: createdBundles,
     };
   }
 
@@ -309,6 +438,71 @@ export class PolicyService implements OnModuleInit {
         liveTransfer: seed.liveTransfer,
       },
     });
+  }
+
+  private async ensureInstanceSetting() {
+    return this.prisma.instanceSetting.upsert({
+      where: { singletonKey: 'default' },
+      update: {},
+      create: {
+        singletonKey: 'default',
+        defaultConfidentialityLevel: DEFAULT_CONFIDENTIALITY_LEVEL,
+      },
+    });
+  }
+
+  private validateBundleSections(input: {
+    lifecycle: Record<string, boolean | number | string | null>;
+    shareAvailability: Record<string, boolean | number | string | null>;
+    userTargetedSharing: Record<string, boolean | number | string | null>;
+    passwordExtraction: Record<string, boolean | number | string | null>;
+    publicLinks: Record<string, boolean | number | string | null>;
+    liveTransfer: Record<string, boolean | number | string | null>;
+  }) {
+    const lifecycleDefault = this.toNullableNumber(input.lifecycle.defaultValidityMinutes);
+    const lifecycleMaximum = this.toNullableNumber(input.lifecycle.maximumValidityMinutes);
+    if (
+      lifecycleDefault !== null &&
+      lifecycleMaximum !== null &&
+      lifecycleDefault > lifecycleMaximum
+    ) {
+      throw new BadRequestException('Lifecycle default validity cannot exceed lifecycle maximum');
+    }
+
+    const shareDefault = this.toNullableNumber(input.userTargetedSharing.defaultShareValidityMinutes);
+    const shareMaximum = this.toNullableNumber(input.userTargetedSharing.maximumShareValidityMinutes);
+    if (shareDefault !== null && shareMaximum !== null && shareDefault > shareMaximum) {
+      throw new BadRequestException('Share default validity cannot exceed share maximum');
+    }
+
+    if (
+      input.shareAvailability.allowUserTargetedSharing === false &&
+      shareDefault !== null
+    ) {
+      throw new BadRequestException('User-targeted share defaults cannot be set when user-targeted sharing is disabled');
+    }
+
+    if (
+      input.shareAvailability.allowPasswordExtraction === false &&
+      this.toNullableNumber(input.passwordExtraction.maximumRetrievalCount) !== null
+    ) {
+      throw new BadRequestException('Password extraction defaults cannot be set when password extraction is disabled');
+    }
+
+    if (
+      input.shareAvailability.allowPublicLinks === false &&
+      (this.toNullableNumber(input.publicLinks.maximumPublicLinkValidityMinutes) !== null ||
+        this.toNullableNumber(input.publicLinks.maximumPublicLinkDownloadCount) !== null)
+    ) {
+      throw new BadRequestException('Public-link defaults cannot be set when public links are disabled');
+    }
+
+    if (
+      input.liveTransfer.allowPeerToPeerToRelayFallback === true &&
+      input.liveTransfer.allowRelay !== true
+    ) {
+      throw new BadRequestException('Peer-to-peer-to-relay fallback requires relay to be enabled');
+    }
   }
 
   private toNullableNumber(value: boolean | number | string | null | undefined) {

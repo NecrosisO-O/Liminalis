@@ -1,4 +1,4 @@
-import { Body, Controller, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
 import { SessionActor } from '../common/decorators/session.decorator';
 import { SessionGuard } from '../common/guards/session.guard';
 import type { AuthenticatedSession } from '../common/types/auth.types';
@@ -10,6 +10,12 @@ import { IdentityService } from './identity.service';
 @UseGuards(SessionGuard)
 export class AdminUsersController {
   constructor(private readonly identityService: IdentityService) {}
+
+  @Get()
+  async listUsers(@SessionActor() sessionActor: AuthenticatedSession) {
+    this.identityService.requireAdmin(sessionActor.role);
+    return this.identityService.listUsers();
+  }
 
   @Post('approve')
   async approve(
