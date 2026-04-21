@@ -96,6 +96,7 @@ enum PackageFamilyKind {
 
 enum RetrievalFamily {
   SOURCE_ITEM_OWNER
+  SHARE_OBJECT_RECIPIENT
 }
 
 enum RetrievalAttemptStatus {
@@ -108,6 +109,19 @@ enum RetrievalAttemptStatus {
 
 enum ProjectionSourceType {
   SOURCE_ITEM
+  SHARE_OBJECT
+}
+
+enum ShareObjectState {
+  ACTIVE
+  INACTIVE
+}
+
+enum ShareObjectInactiveReason {
+  REVOKED
+  EXPIRED
+  SOURCE_INVALIDATED
+  CONSUMED
 }
 
 model User {
@@ -133,6 +147,8 @@ model User {
   activeTimelineItems ActiveTimelineItemProjection[]
   historyEntries      HistoryEntryProjection[]
   searchDocuments     SearchDocumentProjection[]
+  outgoingShares      ShareObject[]         @relation("OutgoingShares")
+  incomingShares      ShareObject[]         @relation("IncomingShares")
 }
 
 model InviteCode {
@@ -232,6 +248,7 @@ model PolicyBundle {
   updatedAt             DateTime             @updatedAt
   uploadSessions        UploadSession[]
   sourceItems           SourceItem[]
+  shareObjects          ShareObject[]
 
   @@unique([levelName, bundleVersion])
 }
@@ -298,8 +315,37 @@ model SourceItem {
   activeTimelineItem     ActiveTimelineItemProjection?
   historyEntry           HistoryEntryProjection?
   searchDocument         SearchDocumentProjection?
+  shares                 ShareObject[]
   createdAt              DateTime              @default(now())
   updatedAt              DateTime              @updatedAt
+}
+
+model ShareObject {
+  id                           String                   @id @default(cuid())
+  sourceItemId                 String
+  sourceItem                   SourceItem               @relation(fields: [sourceItemId], references: [id])
+  ownerUserId                  String
+  ownerUser                    User                     @relation("OutgoingShares", fields: [ownerUserId], references: [id])
+  recipientUserId              String
+  recipientUser                User                     @relation("IncomingShares", fields: [recipientUserId], references: [id])
+  confidentialityLevel         ConfidentialityLevel
+  state                        ShareObjectState         @default(ACTIVE)
+  inactiveReason               ShareObjectInactiveReason?
+  policyBundleId               String
+  policyBundle                 PolicyBundle             @relation(fields: [policyBundleId], references: [id])
+  policySnapshot               Json
+  validUntil                   DateTime?
+  allowRepeatDownload          Boolean                  @default(true)
+  allowRecipientMultiDeviceAccess Boolean               @default(true)
+  burnAfterReadEnabled         Boolean                  @default(false)
+  activeTimelineItem           ActiveTimelineItemProjection?
+  accessGrantSets              AccessGrantSet[]
+  packageFamilies              PackageFamily[]
+  retrievalAttempts            RetrievalAttempt[]
+  historyEntry                 HistoryEntryProjection?
+  searchDocument               SearchDocumentProjection?
+  createdAt                    DateTime                 @default(now())
+  updatedAt                    DateTime                 @updatedAt
 }
 
 model GroupManifest {
@@ -318,6 +364,8 @@ model PackageFamily {
   protectedObjectId   String
   sourceItemId        String?
   sourceItem          SourceItem?         @relation(fields: [sourceItemId], references: [id])
+  shareObjectId       String?
+  shareObject         ShareObject?        @relation(fields: [shareObjectId], references: [id])
   kind                PackageFamilyKind
   familyVersion       Int
   issueTrigger        String
@@ -336,6 +384,8 @@ model AccessGrantSet {
   protectedObjectType       ProtectedObjectType
   sourceItemId              String?
   sourceItem                SourceItem?            @relation(fields: [sourceItemId], references: [id])
+  shareObjectId             String?
+  shareObject               ShareObject?           @relation(fields: [shareObjectId], references: [id])
   status                    AccessGrantStatus      @default(CURRENT)
   grantSubjectMode          AccessGrantSubjectMode
   subjectUserId             String
@@ -354,6 +404,7 @@ model AccessGrantSet {
   supersededAt              DateTime?
 
   @@unique([sourceItemId, version])
+  @@unique([shareObjectId, version])
   @@index([protectedObjectType, status])
 }
 
@@ -382,6 +433,8 @@ model RetrievalAttempt {
   targetObjectId     String
   sourceItemId       String?
   sourceItem         SourceItem?            @relation(fields: [sourceItemId], references: [id])
+  shareObjectId      String?
+  shareObject        ShareObject?           @relation(fields: [shareObjectId], references: [id])
   requestingUserId   String
   requestingUser     User                   @relation(fields: [requestingUserId], references: [id])
   requestingDeviceId String
@@ -405,8 +458,10 @@ model ActiveTimelineItemProjection {
   ownerUser          User                 @relation(fields: [ownerUserId], references: [id])
   sourceObjectType   ProjectionSourceType
   sourceObjectId     String
-  sourceItemId       String               @unique
-  sourceItem         SourceItem           @relation(fields: [sourceItemId], references: [id])
+  sourceItemId       String?              @unique
+  sourceItem         SourceItem?          @relation(fields: [sourceItemId], references: [id])
+  shareObjectId      String?              @unique
+  shareObject        ShareObject?         @relation(fields: [shareObjectId], references: [id])
   displayTitle       String?
   visibleTypeLabel   String
   visibleSizeBytes   Int?
@@ -430,8 +485,10 @@ model HistoryEntryProjection {
   ownerUser            User                 @relation(fields: [ownerUserId], references: [id])
   sourceObjectType     ProjectionSourceType
   sourceObjectId       String
-  sourceItemId         String               @unique
-  sourceItem           SourceItem           @relation(fields: [sourceItemId], references: [id])
+  sourceItemId         String?              @unique
+  sourceItem           SourceItem?          @relation(fields: [sourceItemId], references: [id])
+  shareObjectId        String?              @unique
+  shareObject          ShareObject?         @relation(fields: [shareObjectId], references: [id])
   displayTitle         String?
   visibleTypeLabel     String
   sourceLabel          String
@@ -454,8 +511,10 @@ model SearchDocumentProjection {
   ownerUser            User                 @relation(fields: [ownerUserId], references: [id])
   sourceObjectType     ProjectionSourceType
   sourceObjectId       String
-  sourceItemId         String               @unique
-  sourceItem           SourceItem           @relation(fields: [sourceItemId], references: [id])
+  sourceItemId         String?              @unique
+  sourceItem           SourceItem?          @relation(fields: [sourceItemId], references: [id])
+  shareObjectId        String?              @unique
+  shareObject          ShareObject?         @relation(fields: [shareObjectId], references: [id])
   displayTitle         String?
   visibleSummary       String?
   sourceLabel          String

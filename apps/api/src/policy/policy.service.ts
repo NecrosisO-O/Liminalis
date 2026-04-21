@@ -11,6 +11,8 @@ import {
   type PolicyBundleSeed,
 } from './policy-defaults';
 import {
+  type ShareCreationPolicyDecision,
+  type ShareCreationPolicyInput,
   type SourceCreationPolicyDecision,
   type SourceCreationPolicyInput,
 } from './policy.types';
@@ -96,6 +98,67 @@ export class PolicyService implements OnModuleInit {
         resolvedValidityMinutes,
         allowFutureTrustedDevices: Boolean(lifecycle.allowFutureTrustedDevices),
         allowOutwardResharing: Boolean(lifecycle.allowOutwardResharing),
+        policyBundleVersion: bundle.bundleVersion,
+      },
+    };
+  }
+
+  async evaluateShareCreation(
+    input: ShareCreationPolicyInput,
+  ): Promise<ShareCreationPolicyDecision> {
+    const bundle = await this.getCurrentBundle(input.confidentialityLevel);
+    const shareAvailability = bundle.shareAvailability as Record<string, boolean | number | null>;
+    const userTargetedSharing = bundle.userTargetedSharing as Record<string, boolean | number | null>;
+
+    if (!Boolean(shareAvailability.allowOutwardSharing)) {
+      throw new BadRequestException('Outward sharing is not allowed for this level');
+    }
+
+    if (!Boolean(shareAvailability.allowUserTargetedSharing)) {
+      throw new BadRequestException('User-targeted sharing is not allowed for this level');
+    }
+
+    const defaultShareValidityMinutes = Number(userTargetedSharing.defaultShareValidityMinutes);
+    const maximumShareValidityMinutes = this.toNullableNumber(
+      userTargetedSharing.maximumShareValidityMinutes,
+    );
+
+    let resolvedValidityMinutes = input.requestedValidityMinutes;
+
+    if (resolvedValidityMinutes == null) {
+      resolvedValidityMinutes = defaultShareValidityMinutes;
+    }
+
+    if (resolvedValidityMinutes !== null && resolvedValidityMinutes <= 0) {
+      throw new BadRequestException('Share validity must be greater than zero when provided');
+    }
+
+    if (
+      maximumShareValidityMinutes !== null &&
+      resolvedValidityMinutes !== null &&
+      resolvedValidityMinutes > maximumShareValidityMinutes
+    ) {
+      throw new BadRequestException('Requested share validity exceeds the policy maximum');
+    }
+
+    const allowRepeatDownload = Boolean(userTargetedSharing.allowRepeatDownload);
+    const allowRecipientMultiDeviceAccess = Boolean(
+      userTargetedSharing.allowRecipientMultiDeviceAccess,
+    );
+
+    return {
+      allowed: true,
+      decisionReason: 'allowed',
+      policyBundle: bundle,
+      resolvedValidityMinutes,
+      allowRepeatDownload,
+      allowRecipientMultiDeviceAccess,
+      snapshotFieldsToPersist: {
+        confidentialityLevel: input.confidentialityLevel,
+        requestedValidityMinutes: input.requestedValidityMinutes,
+        resolvedValidityMinutes,
+        allowRepeatDownload,
+        allowRecipientMultiDeviceAccess,
         policyBundleVersion: bundle.bundleVersion,
       },
     };

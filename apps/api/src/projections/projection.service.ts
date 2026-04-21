@@ -2,6 +2,8 @@ import { Injectable } from '@nestjs/common';
 import {
   ConfidentialityLevel,
   ProjectionSourceType,
+  ShareObject,
+  ShareObjectState,
   SourceItem,
   SourceItemState,
   UploadContentKind,
@@ -145,6 +147,98 @@ export class ProjectionService {
     });
   }
 
+  async projectShareObject(shareObjectId: string) {
+    const shareObject = await this.prisma.shareObject.findUnique({
+      where: { id: shareObjectId },
+      include: {
+        ownerUser: true,
+        recipientUser: true,
+        sourceItem: true,
+      },
+    });
+
+    if (!shareObject) {
+      return;
+    }
+
+    const visibility = this.buildShareVisibility(shareObject);
+    const title = shareObject.sourceItem.displayName ?? this.fallbackTitle(shareObject.sourceItem.contentKind);
+
+    await this.prisma.historyEntryProjection.upsert({
+      where: {
+        ownerUserId_sourceObjectType_sourceObjectId: {
+          ownerUserId: shareObject.recipientUserId,
+          sourceObjectType: ProjectionSourceType.SHARE_OBJECT,
+          sourceObjectId: shareObject.id,
+        },
+      },
+      update: {
+        shareObjectId: shareObject.id,
+        displayTitle: title,
+        visibleTypeLabel: visibility.visibleTypeLabel,
+        sourceLabel: visibility.sourceLabel,
+        confidentialityLevel: shareObject.confidentialityLevel,
+        retainedStatus: visibility.retainedStatus,
+        retrievable: visibility.retrievable,
+        concreteReason: visibility.concreteReason,
+        visibleSummary: null,
+        createdTime: shareObject.createdAt,
+        statusTime: visibility.statusTime,
+        projectedAt: new Date(),
+      },
+      create: {
+        ownerUserId: shareObject.recipientUserId,
+        sourceObjectType: ProjectionSourceType.SHARE_OBJECT,
+        sourceObjectId: shareObject.id,
+        shareObjectId: shareObject.id,
+        displayTitle: title,
+        visibleTypeLabel: visibility.visibleTypeLabel,
+        sourceLabel: visibility.sourceLabel,
+        confidentialityLevel: shareObject.confidentialityLevel,
+        retainedStatus: visibility.retainedStatus,
+        retrievable: visibility.retrievable,
+        concreteReason: visibility.concreteReason,
+        visibleSummary: null,
+        createdTime: shareObject.createdAt,
+        statusTime: visibility.statusTime,
+      },
+    });
+
+    await this.prisma.searchDocumentProjection.upsert({
+      where: {
+        ownerUserId_sourceObjectType_sourceObjectId: {
+          ownerUserId: shareObject.recipientUserId,
+          sourceObjectType: ProjectionSourceType.SHARE_OBJECT,
+          sourceObjectId: shareObject.id,
+        },
+      },
+      update: {
+        shareObjectId: shareObject.id,
+        displayTitle: title,
+        visibleSummary: null,
+        sourceLabel: visibility.sourceLabel,
+        visibleTypeLabel: visibility.visibleTypeLabel,
+        visibleStatusLabel: visibility.retainedStatus,
+        confidentialityLevel: shareObject.confidentialityLevel,
+        retrievable: visibility.retrievable,
+        projectedAt: new Date(),
+      },
+      create: {
+        ownerUserId: shareObject.recipientUserId,
+        sourceObjectType: ProjectionSourceType.SHARE_OBJECT,
+        sourceObjectId: shareObject.id,
+        shareObjectId: shareObject.id,
+        displayTitle: title,
+        visibleSummary: null,
+        sourceLabel: visibility.sourceLabel,
+        visibleTypeLabel: visibility.visibleTypeLabel,
+        visibleStatusLabel: visibility.retainedStatus,
+        confidentialityLevel: shareObject.confidentialityLevel,
+        retrievable: visibility.retrievable,
+      },
+    });
+  }
+
   private buildSourceVisibility(
     sourceItem: SourceItem & {
       ownerUser: { username: string };
@@ -212,5 +306,28 @@ export class ProjectionService {
     }
 
     return 'file';
+  }
+
+  private buildShareVisibility(
+    shareObject: ShareObject & {
+      ownerUser: { username: string };
+      recipientUser: { username: string };
+      sourceItem: { contentKind: UploadContentKind; displayName: string | null };
+    },
+  ) {
+    const retrievable = shareObject.state === ShareObjectState.ACTIVE;
+    const retainedStatus =
+      shareObject.state === ShareObjectState.ACTIVE
+        ? 'active'
+        : shareObject.inactiveReason?.toLowerCase() ?? 'inactive';
+
+    return {
+      visibleTypeLabel: this.visibleTypeLabel(shareObject.sourceItem.contentKind, false),
+      sourceLabel: shareObject.ownerUser.username,
+      retrievable,
+      retainedStatus,
+      concreteReason: retrievable ? null : retainedStatus,
+      statusTime: retrievable ? null : shareObject.updatedAt,
+    };
   }
 }

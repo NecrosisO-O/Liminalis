@@ -6,6 +6,7 @@ import { PolicyModule } from './policy/policy.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { ProjectionsModule } from './projections/projections.module';
 import { RetrievalModule } from './retrieval/retrieval.module';
+import { SharesModule } from './shares/shares.module';
 import { SourceItemsModule } from './source-items/source-items.module';
 import { TrustModule } from './trust/trust.module';
 import { UploadsModule } from './uploads/uploads.module';
@@ -22,6 +23,7 @@ import { UploadsModule } from './uploads/uploads.module';
     ProjectionsModule,
     TrustModule,
     UploadsModule,
+    SharesModule,
     SourceItemsModule,
     RetrievalModule,
   ],

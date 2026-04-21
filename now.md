@@ -3,7 +3,7 @@
 ## Phase
 
 - Current phase: implementation
-- Current phase segment: M1 and M2 foundation stabilization
+- Current phase segment: M6 protected user-targeted sharing completed, moving into M7
 
 ## Progress
 
@@ -193,19 +193,24 @@
 - Kept search intentionally narrow by indexing only approved visible metadata fields and not raw text ciphertext bodies
 - Added API e2e coverage for active timeline filtering, retained history status detail, and narrow search behavior over projected self-space source items
 - Confirmed that root build, workspace tests, and API e2e validation all pass against the current `M1` through `M5` foundation implementation
+- Added the first minimal `M6` user-targeted protected sharing path with `ShareObject`, recipient eligibility checks, trusted-device wrapping-material enforcement, share-side `AccessGrantSet` / package-family creation, recipient retrieval issuance, and completion-driven no-repeat consumption
+- Wired share-object state changes back into retained history and narrow search projection refresh for recipient-facing records
+- Added API e2e coverage for recipient wrapping-material blocking, recipient incoming-share retrieval, and no-repeat share consumption into retained `consumed` history state
+- Fixed API e2e isolation for mutable current `PolicyBundle` rows by recreating default bundles in `beforeEach`, so policy-editing cases do not leak into later tests
+- Confirmed that API e2e validation now passes against the current `M1` through `M6` foundation implementation
 
 ## Current Focus
 
 - Preserve the accepted implementation-planning baseline as the source of truth for code work
-- Continue advancing from the validated `M1` through `M5` base into `M6` user-targeted protected sharing
-- Keep read-model behavior derived from stable write-side source and retrieval outcomes while adding the first outward-share path
+- Continue advancing from the validated `M1` through `M6` base into `M7` password extraction and public-link delivery
+- Keep read-model behavior derived from stable write-side source, retrieval, and share outcomes while adding the next outward-delivery paths
 - Keep the deferred share-first path explicitly out of v1 scope
 
 ## Next Checkpoint
 
-- Record the verified `M5` projection pass in project memory and git history
+- Record the verified `M6` sharing pass in project memory and git history
 - Push the current checkpoint after verification and documentation updates
-- Continue into `M6` protected sharing work in milestone order from the now-validated write-side and projection base
+- Continue into `M7` extraction and public-link work in milestone order from the now-validated write-side, projection, and protected-share base
 
 ## Notes
 

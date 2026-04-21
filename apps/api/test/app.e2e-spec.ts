@@ -3,6 +3,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import cookieParser from 'cookie-parser';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
+import { POLICY_BUNDLE_DEFAULTS } from '../src/policy/policy-defaults';
 import { createPrismaClient } from '../src/prisma/prisma-client';
 
 describe('M1, M2, and M3 foundation (e2e)', () => {
@@ -36,16 +37,34 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
     await prisma.searchDocumentProjection.deleteMany();
     await prisma.accessGrantSet.deleteMany();
     await prisma.packageFamily.deleteMany();
+    await prisma.shareObject.deleteMany();
     await prisma.groupManifest.deleteMany();
     await prisma.uploadPart.deleteMany();
     await prisma.uploadSession.deleteMany();
     await prisma.sourceItem.deleteMany();
+    await prisma.policyBundle.deleteMany();
     await prisma.pairingSession.deleteMany();
     await prisma.trustedDevice.deleteMany({ where: { user: { username: { not: 'owner' } } } });
     await prisma.recoveryCredentialSet.deleteMany({ where: { user: { username: { not: 'owner' } } } });
     await prisma.userDomainWrappingKey.deleteMany({ where: { user: { username: { not: 'owner' } } } });
     await prisma.inviteCode.deleteMany();
     await prisma.user.deleteMany({ where: { username: { not: 'owner' } } });
+
+    for (const seed of POLICY_BUNDLE_DEFAULTS) {
+      await prisma.policyBundle.create({
+        data: {
+          levelName: seed.levelName,
+          bundleVersion: 1,
+          isCurrent: true,
+          lifecycle: seed.lifecycle,
+          shareAvailability: seed.shareAvailability,
+          userTargetedSharing: seed.userTargetedSharing,
+          passwordExtraction: seed.passwordExtraction,
+          publicLinks: seed.publicLinks,
+          liveTransfer: seed.liveTransfer,
+        },
+      });
+    }
   });
 
   afterAll(async () => {
@@ -964,5 +983,270 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
       .expect(200);
 
     expect(searchBodyWord.body).toHaveLength(0);
+  });
+
+  it('blocks user-targeted protected sharing when the recipient has no trusted-device wrapping material', async () => {
+    const adminCookies = await login('owner', 'admin123456');
+
+    const inviteSender = await request(app.getHttpServer())
+      .post('/api/admin/invites')
+      .set('Cookie', adminCookies)
+      .send({ expiresInMinutes: 30 })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post('/api/registration/register')
+      .send({
+        inviteCode: inviteSender.body.code,
+        username: 'nina',
+        password: 'nina-password',
+      })
+      .expect(201);
+
+    const inviteRecipient = await request(app.getHttpServer())
+      .post('/api/admin/invites')
+      .set('Cookie', adminCookies)
+      .send({ expiresInMinutes: 30 })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post('/api/registration/register')
+      .send({
+        inviteCode: inviteRecipient.body.code,
+        username: 'otto',
+        password: 'otto-password',
+      })
+      .expect(201);
+
+    const nina = await prisma.user.findUniqueOrThrow({ where: { username: 'nina' } });
+    const otto = await prisma.user.findUniqueOrThrow({ where: { username: 'otto' } });
+
+    await request(app.getHttpServer())
+      .post('/api/admin/users/approve')
+      .set('Cookie', adminCookies)
+      .send({ userId: nina.id })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post('/api/admin/users/approve')
+      .set('Cookie', adminCookies)
+      .send({ userId: otto.id })
+      .expect(201);
+
+    const ninaSessionCookies = await login('nina', 'nina-password');
+    const ninaTrustResponse = await request(app.getHttpServer())
+      .post('/api/trust/bootstrap-first-device')
+      .set('Cookie', ninaSessionCookies)
+      .send({
+        deviceLabel: 'Nina Browser 1',
+        devicePublicIdentity: 'nina-device-1',
+        userDomainPublicKey: 'nina-domain-key',
+      })
+      .expect(201);
+
+    const ninaCookies = mergeCookies(ninaSessionCookies, ninaTrustResponse.get('set-cookie'));
+
+    const prepare = await request(app.getHttpServer())
+      .post('/api/uploads/prepare')
+      .set('Cookie', ninaCookies)
+      .send({
+        contentKind: 'SELF_SPACE_TEXT',
+        confidentialityLevel: 'SECRET',
+        requestedValidityMinutes: 30,
+      })
+      .expect(201);
+
+    const finalize = await request(app.getHttpServer())
+      .post(`/api/uploads/${prepare.body.uploadSessionId}/finalize`)
+      .set('Cookie', ninaCookies)
+      .send({
+        displayName: 'share candidate',
+        textCiphertextBody: 'ciphertext share body',
+      })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post('/api/shares')
+      .set('Cookie', ninaCookies)
+      .send({
+        sourceItemId: finalize.body.sourceItemId,
+        recipientUsername: 'otto',
+        requestedValidityMinutes: 30,
+      })
+      .expect(400);
+  });
+
+  it('creates and consumes a no-repeat protected share for the recipient access domain', async () => {
+    const adminCookies = await login('owner', 'admin123456');
+
+    const inviteSender = await request(app.getHttpServer())
+      .post('/api/admin/invites')
+      .set('Cookie', adminCookies)
+      .send({ expiresInMinutes: 30 })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post('/api/registration/register')
+      .send({
+        inviteCode: inviteSender.body.code,
+        username: 'piper',
+        password: 'piper-password',
+      })
+      .expect(201);
+
+    const inviteRecipient = await request(app.getHttpServer())
+      .post('/api/admin/invites')
+      .set('Cookie', adminCookies)
+      .send({ expiresInMinutes: 30 })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post('/api/registration/register')
+      .send({
+        inviteCode: inviteRecipient.body.code,
+        username: 'quinn',
+        password: 'quinn-password',
+      })
+      .expect(201);
+
+    const piper = await prisma.user.findUniqueOrThrow({ where: { username: 'piper' } });
+    const quinn = await prisma.user.findUniqueOrThrow({ where: { username: 'quinn' } });
+
+    await request(app.getHttpServer())
+      .post('/api/admin/users/approve')
+      .set('Cookie', adminCookies)
+      .send({ userId: piper.id })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post('/api/admin/users/approve')
+      .set('Cookie', adminCookies)
+      .send({ userId: quinn.id })
+      .expect(201);
+
+    const piperSessionCookies = await login('piper', 'piper-password');
+    const piperTrustResponse = await request(app.getHttpServer())
+      .post('/api/trust/bootstrap-first-device')
+      .set('Cookie', piperSessionCookies)
+      .send({
+        deviceLabel: 'Piper Browser 1',
+        devicePublicIdentity: 'piper-device-1',
+        userDomainPublicKey: 'piper-domain-key',
+      })
+      .expect(201);
+    const piperCookies = mergeCookies(piperSessionCookies, piperTrustResponse.get('set-cookie'));
+
+    const quinnSessionCookies = await login('quinn', 'quinn-password');
+    const quinnTrustResponse = await request(app.getHttpServer())
+      .post('/api/trust/bootstrap-first-device')
+      .set('Cookie', quinnSessionCookies)
+      .send({
+        deviceLabel: 'Quinn Browser 1',
+        devicePublicIdentity: 'quinn-device-1',
+        userDomainPublicKey: 'quinn-domain-key',
+      })
+      .expect(201);
+    const quinnCookies = mergeCookies(quinnSessionCookies, quinnTrustResponse.get('set-cookie'));
+
+    const prepare = await request(app.getHttpServer())
+      .post('/api/uploads/prepare')
+      .set('Cookie', piperCookies)
+      .send({
+        contentKind: 'SELF_SPACE_TEXT',
+        confidentialityLevel: 'TOP_SECRET',
+        requestedValidityMinutes: 30,
+      })
+      .expect(201);
+
+    const finalize = await request(app.getHttpServer())
+      .post(`/api/uploads/${prepare.body.uploadSessionId}/finalize`)
+      .set('Cookie', piperCookies)
+      .send({
+        displayName: 'no-repeat share',
+        textCiphertextBody: 'ciphertext no-repeat body',
+      })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post('/api/shares')
+      .set('Cookie', piperCookies)
+      .send({
+        sourceItemId: finalize.body.sourceItemId,
+        recipientUsername: 'quinn',
+        requestedValidityMinutes: 30,
+      })
+      .expect(400);
+
+    await prisma.policyBundle.updateMany({
+      where: { levelName: 'TOP_SECRET', isCurrent: true },
+      data: {
+        shareAvailability: {
+          allowOutwardSharing: true,
+          restrictToSelfOnly: false,
+          allowRecipientResharing: false,
+          allowMultipleOutwardShares: true,
+          allowUserTargetedSharing: true,
+          allowPasswordExtraction: false,
+          allowPublicLinks: false,
+        },
+        userTargetedSharing: {
+          defaultShareValidityMinutes: 30,
+          maximumShareValidityMinutes: 60,
+          allowRepeatDownload: false,
+          allowRecipientMultiDeviceAccess: true,
+        },
+      },
+    });
+
+    const share = await request(app.getHttpServer())
+      .post('/api/shares')
+      .set('Cookie', piperCookies)
+      .send({
+        sourceItemId: finalize.body.sourceItemId,
+        recipientUsername: 'quinn',
+        requestedValidityMinutes: 30,
+      })
+      .expect(201);
+
+    expect(share.body.allowRepeatDownload).toBe(false);
+    expect(share.body.allowRecipientMultiDeviceAccess).toBe(true);
+
+    const incoming = await request(app.getHttpServer())
+      .get('/api/shares/incoming')
+      .set('Cookie', quinnCookies)
+      .expect(200);
+
+    expect(incoming.body).toHaveLength(1);
+
+    const issueAttempt = await request(app.getHttpServer())
+      .post(`/api/shares/${share.body.shareObjectId}/attempts/recipient-attempt-1`)
+      .set('Cookie', quinnCookies)
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post(`/api/shares/attempts/${issueAttempt.body.retrievalAttemptId}/complete`)
+      .set('Cookie', quinnCookies)
+      .send({ success: true })
+      .expect(201)
+      .expect((response) => {
+        expect(response.body.shareState).toBe('INACTIVE');
+        expect(response.body.inactiveReason).toBe('CONSUMED');
+      });
+
+    await request(app.getHttpServer())
+      .post(`/api/shares/${share.body.shareObjectId}/attempts/recipient-attempt-2`)
+      .set('Cookie', quinnCookies)
+      .expect(400);
+
+    const history = await request(app.getHttpServer())
+      .get('/api/history')
+      .set('Cookie', quinnCookies)
+      .expect(200);
+
+    const consumed = history.body.find(
+      (entry: { sourceObjectId: string }) => entry.sourceObjectId === share.body.shareObjectId,
+    );
+    expect(consumed.retainedStatus).toBe('consumed');
+    expect(consumed.retrievable).toBe(false);
   });
 });

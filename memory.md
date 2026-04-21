@@ -90,6 +90,9 @@
 - The current `M4` validation baseline now includes e2e coverage for trusted-device-only self retrieval, explicit completion confirmation, and burn-after-read purge behavior on self-space source items.
 - The current execution run has now extended the backend foundation through a first minimal `M5` implementation covering active-timeline, retained-history, and narrow-search projections for self-space source items.
 - The current `M5` validation baseline now includes e2e coverage for active timeline filtering, retained history status detail, and narrow search over projected self-space source items while keeping search metadata intentionally narrow.
+- The current execution run has now extended the backend foundation through a first minimal `M6` implementation covering `ShareObject`, recipient eligibility and wrapping-material checks, protected user-targeted share creation, recipient retrieval issuance and completion, no-repeat consumption into retained `consumed` state, and share-backed history/search projection refresh.
+- The current `M6` validation baseline now includes e2e coverage for blocking recipient shares when trusted-device wrapping material is absent, recipient incoming-share retrieval, and no-repeat share consumption behavior.
+- API e2e isolation now must explicitly reset mutable current `PolicyBundle` rows between tests, because policy-editing scenarios otherwise leak across cases and invalidate milestone assertions.
 - The project should be developed deliberately rather than rushed into coding.
 - The design phase has started.
 - Initial design drafts are being recorded under `design/` before any architecture work.
