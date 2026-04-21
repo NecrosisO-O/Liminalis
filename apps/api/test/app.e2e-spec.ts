@@ -5,7 +5,7 @@ import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { createPrismaClient } from '../src/prisma/prisma-client';
 
-describe('M1 and M2 foundation (e2e)', () => {
+describe('M1, M2, and M3 foundation (e2e)', () => {
   let app: INestApplication;
   const prisma = createPrismaClient();
 
@@ -29,6 +29,12 @@ describe('M1 and M2 foundation (e2e)', () => {
 
   beforeEach(async () => {
     await prisma.session.deleteMany();
+    await prisma.accessGrantSet.deleteMany();
+    await prisma.packageFamily.deleteMany();
+    await prisma.groupManifest.deleteMany();
+    await prisma.uploadPart.deleteMany();
+    await prisma.uploadSession.deleteMany();
+    await prisma.sourceItem.deleteMany();
     await prisma.pairingSession.deleteMany();
     await prisma.trustedDevice.deleteMany({ where: { user: { username: { not: 'owner' } } } });
     await prisma.recoveryCredentialSet.deleteMany({ where: { user: { username: { not: 'owner' } } } });
@@ -424,5 +430,225 @@ describe('M1 and M2 foundation (e2e)', () => {
         devicePublicIdentity: 'gina-recovery-device',
       })
       .expect(401);
+  });
+
+  it('creates a self-space text source item with locked policy snapshot and access structure', async () => {
+    const adminCookies = await login('owner', 'admin123456');
+
+    const invite = await request(app.getHttpServer())
+      .post('/api/admin/invites')
+      .set('Cookie', adminCookies)
+      .send({ expiresInMinutes: 30 })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post('/api/registration/register')
+      .send({
+        inviteCode: invite.body.code,
+        username: 'harry',
+        password: 'harry-password',
+      })
+      .expect(201);
+
+    const harry = await prisma.user.findUniqueOrThrow({ where: { username: 'harry' } });
+
+    await request(app.getHttpServer())
+      .post('/api/admin/users/approve')
+      .set('Cookie', adminCookies)
+      .send({ userId: harry.id })
+      .expect(201);
+
+    const harryCookies = await login('harry', 'harry-password');
+
+    await request(app.getHttpServer())
+      .post('/api/trust/bootstrap-first-device')
+      .set('Cookie', harryCookies)
+      .send({
+        deviceLabel: 'Harry Browser 1',
+        devicePublicIdentity: 'harry-device-1',
+        userDomainPublicKey: 'harry-domain-key',
+      })
+      .expect(201);
+
+    const prepare = await request(app.getHttpServer())
+      .post('/api/uploads/prepare')
+      .set('Cookie', harryCookies)
+      .send({
+        contentKind: 'SELF_SPACE_TEXT',
+        confidentialityLevel: 'SECRET',
+        requestedValidityMinutes: 30,
+        burnAfterReadEnabled: false,
+      })
+      .expect(201);
+
+    expect(prepare.body.policySnapshot.confidentialityLevel).toBe('SECRET');
+    expect(prepare.body.policySnapshot.resolvedValidityMinutes).toBe(30);
+
+    const finalized = await request(app.getHttpServer())
+      .post(`/api/uploads/${prepare.body.uploadSessionId}/finalize`)
+      .set('Cookie', harryCookies)
+      .send({
+        textCiphertextBody: 'ciphertext-text-body',
+        displayName: 'secret-note',
+      })
+      .expect(201);
+
+    const sourceItem = await request(app.getHttpServer())
+      .get(`/api/source-items/${finalized.body.sourceItemId}`)
+      .set('Cookie', harryCookies)
+      .expect(200);
+
+    expect(sourceItem.body.contentKind).toBe('SELF_SPACE_TEXT');
+    expect(sourceItem.body.textCiphertextBody).toBe('ciphertext-text-body');
+    expect(sourceItem.body.accessGrantSets).toHaveLength(1);
+    expect(sourceItem.body.accessGrantSets[0].grantSubjectMode).toBe('OWNER_DOMAIN');
+  });
+
+  it('requires at least one uploaded part before finalizing a single-file source item', async () => {
+    const adminCookies = await login('owner', 'admin123456');
+
+    const invite = await request(app.getHttpServer())
+      .post('/api/admin/invites')
+      .set('Cookie', adminCookies)
+      .send({ expiresInMinutes: 30 })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post('/api/registration/register')
+      .send({
+        inviteCode: invite.body.code,
+        username: 'ivy',
+        password: 'ivy-password',
+      })
+      .expect(201);
+
+    const ivy = await prisma.user.findUniqueOrThrow({ where: { username: 'ivy' } });
+
+    await request(app.getHttpServer())
+      .post('/api/admin/users/approve')
+      .set('Cookie', adminCookies)
+      .send({ userId: ivy.id })
+      .expect(201);
+
+    const ivyCookies = await login('ivy', 'ivy-password');
+
+    await request(app.getHttpServer())
+      .post('/api/trust/bootstrap-first-device')
+      .set('Cookie', ivyCookies)
+      .send({
+        deviceLabel: 'Ivy Browser 1',
+        devicePublicIdentity: 'ivy-device-1',
+        userDomainPublicKey: 'ivy-domain-key',
+      })
+      .expect(201);
+
+    const prepare = await request(app.getHttpServer())
+      .post('/api/uploads/prepare')
+      .set('Cookie', ivyCookies)
+      .send({
+        contentKind: 'SINGLE_FILE',
+        confidentialityLevel: 'CONFIDENTIAL',
+        requestedValidityMinutes: 60,
+        displayName: 'document.bin',
+      })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post(`/api/uploads/${prepare.body.uploadSessionId}/finalize`)
+      .set('Cookie', ivyCookies)
+      .send({ displayName: 'document.bin' })
+      .expect(400);
+  });
+
+  it('creates grouped content source items with manifest and snapshot-limited access for top-secret level', async () => {
+    const adminCookies = await login('owner', 'admin123456');
+
+    const invite = await request(app.getHttpServer())
+      .post('/api/admin/invites')
+      .set('Cookie', adminCookies)
+      .send({ expiresInMinutes: 30 })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post('/api/registration/register')
+      .send({
+        inviteCode: invite.body.code,
+        username: 'jane',
+        password: 'jane-password',
+      })
+      .expect(201);
+
+    const jane = await prisma.user.findUniqueOrThrow({ where: { username: 'jane' } });
+
+    await request(app.getHttpServer())
+      .post('/api/admin/users/approve')
+      .set('Cookie', adminCookies)
+      .send({ userId: jane.id })
+      .expect(201);
+
+    const janeCookies = await login('jane', 'jane-password');
+
+    await request(app.getHttpServer())
+      .post('/api/trust/bootstrap-first-device')
+      .set('Cookie', janeCookies)
+      .send({
+        deviceLabel: 'Jane Browser 1',
+        devicePublicIdentity: 'jane-device-1',
+        userDomainPublicKey: 'jane-domain-key',
+      })
+      .expect(201);
+
+    const prepare = await request(app.getHttpServer())
+      .post('/api/uploads/prepare')
+      .set('Cookie', janeCookies)
+      .send({
+        contentKind: 'GROUPED_CONTENT',
+        groupStructureKind: 'FOLDER',
+        confidentialityLevel: 'TOP_SECRET',
+        requestedValidityMinutes: 30,
+        displayName: 'folder-bundle',
+      })
+      .expect(201);
+
+    expect(prepare.body.policySnapshot.allowFutureTrustedDevices).toBe(false);
+
+    await request(app.getHttpServer())
+      .post(`/api/uploads/${prepare.body.uploadSessionId}/parts`)
+      .set('Cookie', janeCookies)
+      .send({
+        partNumber: 1,
+        storageKey: 'uploads/jane/folder/part-1.bin',
+        byteSize: 1024,
+      })
+      .expect(201);
+
+    const finalize = await request(app.getHttpServer())
+      .post(`/api/uploads/${prepare.body.uploadSessionId}/finalize`)
+      .set('Cookie', janeCookies)
+      .send({
+        displayName: 'folder-bundle',
+        manifest: {
+          members: [
+            {
+              memberId: 'a',
+              displayName: 'report.pdf',
+              relativePath: 'folder/report.pdf',
+              memberSize: 1024,
+              blobRef: 'uploads/jane/folder/part-1.bin',
+            },
+          ],
+        },
+      })
+      .expect(201);
+
+    const sourceItem = await request(app.getHttpServer())
+      .get(`/api/source-items/${finalize.body.sourceItemId}`)
+      .set('Cookie', janeCookies)
+      .expect(200);
+
+    expect(sourceItem.body.groupManifest).toBeTruthy();
+    expect(sourceItem.body.accessGrantSets).toHaveLength(1);
+    expect(sourceItem.body.accessGrantSets[0].grantSubjectMode).toBe('OWNER_DEVICE_SNAPSHOT');
+    expect(sourceItem.body.packageFamilies).toHaveLength(2);
   });
 });
