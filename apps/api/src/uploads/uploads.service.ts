@@ -36,7 +36,7 @@ export class UploadsService {
     await this.requireEligibleTrustedUploader(userId);
 
     const confidentialityLevel =
-      input.confidentialityLevel ?? this.policyService.getDefaultConfidentialityLevel();
+      input.confidentialityLevel ?? (await this.policyService.getDefaultConfidentialityLevel());
 
     this.validateContentShape(input);
 

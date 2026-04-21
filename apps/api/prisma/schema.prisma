@@ -274,6 +274,14 @@ model PolicyBundle {
   @@unique([levelName, bundleVersion])
 }
 
+model InstanceSetting {
+  id                          String               @id @default(cuid())
+  singletonKey                String               @unique
+  defaultConfidentialityLevel ConfidentialityLevel @default(SECRET)
+  createdAt                   DateTime             @default(now())
+  updatedAt                   DateTime             @updatedAt
+}
+
 model UploadSession {
   id                     String              @id @default(cuid())
   uploaderUserId         String

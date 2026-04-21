@@ -46,6 +46,7 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
     await prisma.uploadSession.deleteMany();
     await prisma.sourceItem.deleteMany();
     await prisma.policyBundle.deleteMany();
+    await prisma.instanceSetting.deleteMany();
     await prisma.pairingSession.deleteMany();
     await prisma.trustedDevice.deleteMany({ where: { user: { username: { not: 'owner' } } } });
     await prisma.recoveryCredentialSet.deleteMany({ where: { user: { username: { not: 'owner' } } } });
@@ -68,6 +69,13 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
         },
       });
     }
+
+    await prisma.instanceSetting.create({
+      data: {
+        singletonKey: 'default',
+        defaultConfidentialityLevel: 'SECRET',
+      },
+    });
   });
 
   afterAll(async () => {
@@ -1772,5 +1780,342 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
         requestedDownloadCount: 1,
       })
       .expect(400);
+  });
+
+  it('lists and invalidates invites through the admin control plane', async () => {
+    const adminCookies = await login('owner', 'admin123456');
+
+    const invite = await request(app.getHttpServer())
+      .post('/api/admin/invites')
+      .set('Cookie', adminCookies)
+      .send({ expiresInMinutes: 30 })
+      .expect(201);
+
+    const inviteList = await request(app.getHttpServer())
+      .get('/api/admin/invites')
+      .set('Cookie', adminCookies)
+      .expect(200);
+
+    const listed = inviteList.body.find((entry: { id: string }) => entry.id === invite.body.id);
+    expect(listed.code).toBe(invite.body.code);
+    expect(listed.invalidatedAt).toBeNull();
+
+    await request(app.getHttpServer())
+      .post('/api/admin/invites/invalidate')
+      .set('Cookie', adminCookies)
+      .send({ inviteId: invite.body.id })
+      .expect(201);
+
+    const invalidatedList = await request(app.getHttpServer())
+      .get('/api/admin/invites')
+      .set('Cookie', adminCookies)
+      .expect(200);
+
+    const invalidated = invalidatedList.body.find((entry: { id: string }) => entry.id === invite.body.id);
+    expect(invalidated.invalidatedAt).toBeTruthy();
+  });
+
+  it('publishes new policy bundle versions, updates default level, and restores defaults through admin policy routes', async () => {
+    const adminCookies = await login('owner', 'admin123456');
+
+    const initialPolicy = await request(app.getHttpServer())
+      .get('/api/admin/policy')
+      .set('Cookie', adminCookies)
+      .expect(200);
+
+    expect(initialPolicy.body.defaultConfidentialityLevel).toBe('SECRET');
+
+    const secretBundle = initialPolicy.body.currentBundles.find(
+      (bundle: { levelName: string }) => bundle.levelName === 'SECRET',
+    );
+    expect(secretBundle.bundleVersion).toBe(1);
+
+    await request(app.getHttpServer())
+      .post('/api/admin/policy/publish')
+      .set('Cookie', adminCookies)
+      .send({
+        levelName: 'SECRET',
+        defaultConfidentialityLevel: 'CONFIDENTIAL',
+        lifecycle: {
+          value: {
+            defaultValidityMinutes: 300,
+            maximumValidityMinutes: 600,
+            allowNeverExpire: false,
+            allowValidityExtensionLater: true,
+            allowFutureTrustedDevices: true,
+            allowOutwardResharing: true,
+          },
+        },
+        shareAvailability: {
+          value: {
+            allowOutwardSharing: true,
+            restrictToSelfOnly: false,
+            allowRecipientResharing: false,
+            allowMultipleOutwardShares: true,
+            allowUserTargetedSharing: true,
+            allowPasswordExtraction: true,
+            allowPublicLinks: true,
+          },
+        },
+        userTargetedSharing: {
+          value: {
+            defaultShareValidityMinutes: 240,
+            maximumShareValidityMinutes: 480,
+            allowRepeatDownload: true,
+            allowRecipientMultiDeviceAccess: true,
+          },
+        },
+        passwordExtraction: {
+          value: {
+            allowPasswordExtraction: true,
+            requireSystemGeneratedPassword: false,
+            maximumRetrievalCount: 4,
+          },
+        },
+        publicLinks: {
+          value: {
+            allowPublicLinks: true,
+            maximumPublicLinkValidityMinutes: 120,
+            maximumPublicLinkDownloadCount: 4,
+          },
+        },
+        liveTransfer: {
+          value: {
+            allowLiveTransfer: true,
+            allowPeerToPeer: true,
+            allowRelay: true,
+            allowPeerToPeerToRelayFallback: true,
+            allowLiveToStoredFallback: true,
+            retainLiveTransferRecords: true,
+            allowGroupedOrLargeLiveTransfer: true,
+          },
+        },
+      })
+      .expect(201)
+      .expect((response) => {
+        expect(response.body.bundleVersion).toBe(2);
+      });
+
+    const currentPolicy = await request(app.getHttpServer())
+      .get('/api/admin/policy')
+      .set('Cookie', adminCookies)
+      .expect(200);
+
+    expect(currentPolicy.body.defaultConfidentialityLevel).toBe('CONFIDENTIAL');
+    const updatedSecret = currentPolicy.body.currentBundles.find(
+      (bundle: { levelName: string }) => bundle.levelName === 'SECRET',
+    );
+    expect(updatedSecret.bundleVersion).toBe(2);
+
+    const secretHistory = await request(app.getHttpServer())
+      .get('/api/admin/policy/history/SECRET')
+      .set('Cookie', adminCookies)
+      .expect(200);
+
+    expect(secretHistory.body[0].bundleVersion).toBe(2);
+    expect(secretHistory.body[1].bundleVersion).toBe(1);
+
+    await request(app.getHttpServer())
+      .post('/api/admin/policy/publish')
+      .set('Cookie', adminCookies)
+      .send({
+        levelName: 'CONFIDENTIAL',
+        lifecycle: {
+          value: {
+            defaultValidityMinutes: 60,
+            maximumValidityMinutes: 30,
+            allowNeverExpire: false,
+            allowValidityExtensionLater: true,
+            allowFutureTrustedDevices: true,
+            allowOutwardResharing: true,
+          },
+        },
+        shareAvailability: {
+          value: {
+            allowOutwardSharing: true,
+            restrictToSelfOnly: false,
+            allowRecipientResharing: false,
+            allowMultipleOutwardShares: true,
+            allowUserTargetedSharing: true,
+            allowPasswordExtraction: true,
+            allowPublicLinks: false,
+          },
+        },
+        userTargetedSharing: {
+          value: {
+            defaultShareValidityMinutes: 60,
+            maximumShareValidityMinutes: 120,
+            allowRepeatDownload: true,
+            allowRecipientMultiDeviceAccess: true,
+          },
+        },
+        passwordExtraction: {
+          value: {
+            allowPasswordExtraction: true,
+            requireSystemGeneratedPassword: true,
+            maximumRetrievalCount: 3,
+          },
+        },
+        publicLinks: {
+          value: {
+            allowPublicLinks: false,
+            maximumPublicLinkValidityMinutes: 15,
+            maximumPublicLinkDownloadCount: 2,
+          },
+        },
+        liveTransfer: {
+          value: {
+            allowLiveTransfer: true,
+            allowPeerToPeer: true,
+            allowRelay: true,
+            allowPeerToPeerToRelayFallback: true,
+            allowLiveToStoredFallback: false,
+            retainLiveTransferRecords: true,
+            allowGroupedOrLargeLiveTransfer: true,
+          },
+        },
+      })
+      .expect(400);
+
+    await request(app.getHttpServer())
+      .post('/api/admin/policy/restore-defaults')
+      .set('Cookie', adminCookies)
+      .send({ defaultConfidentialityLevel: 'SECRET' })
+      .expect(201);
+
+    const restoredPolicy = await request(app.getHttpServer())
+      .get('/api/admin/policy')
+      .set('Cookie', adminCookies)
+      .expect(200);
+
+    expect(restoredPolicy.body.defaultConfidentialityLevel).toBe('SECRET');
+    const restoredSecret = restoredPolicy.body.currentBundles.find(
+      (bundle: { levelName: string }) => bundle.levelName === 'SECRET',
+    );
+    expect(restoredSecret.bundleVersion).toBe(3);
+  });
+
+  it('uses the persisted default confidentiality level for new uploads and exposes metadata-only operations summary', async () => {
+    const adminCookies = await login('owner', 'admin123456');
+
+    await request(app.getHttpServer())
+      .post('/api/admin/policy/publish')
+      .set('Cookie', adminCookies)
+      .send({
+        levelName: 'SECRET',
+        defaultConfidentialityLevel: 'CONFIDENTIAL',
+        lifecycle: {
+          value: {
+            defaultValidityMinutes: 300,
+            maximumValidityMinutes: 600,
+            allowNeverExpire: false,
+            allowValidityExtensionLater: true,
+            allowFutureTrustedDevices: true,
+            allowOutwardResharing: true,
+          },
+        },
+        shareAvailability: {
+          value: {
+            allowOutwardSharing: true,
+            restrictToSelfOnly: false,
+            allowRecipientResharing: false,
+            allowMultipleOutwardShares: true,
+            allowUserTargetedSharing: true,
+            allowPasswordExtraction: true,
+            allowPublicLinks: true,
+          },
+        },
+        userTargetedSharing: {
+          value: {
+            defaultShareValidityMinutes: 240,
+            maximumShareValidityMinutes: 480,
+            allowRepeatDownload: true,
+            allowRecipientMultiDeviceAccess: true,
+          },
+        },
+        passwordExtraction: {
+          value: {
+            allowPasswordExtraction: true,
+            requireSystemGeneratedPassword: false,
+            maximumRetrievalCount: 4,
+          },
+        },
+        publicLinks: {
+          value: {
+            allowPublicLinks: true,
+            maximumPublicLinkValidityMinutes: 120,
+            maximumPublicLinkDownloadCount: 4,
+          },
+        },
+        liveTransfer: {
+          value: {
+            allowLiveTransfer: true,
+            allowPeerToPeer: true,
+            allowRelay: true,
+            allowPeerToPeerToRelayFallback: true,
+            allowLiveToStoredFallback: true,
+            retainLiveTransferRecords: true,
+            allowGroupedOrLargeLiveTransfer: true,
+          },
+        },
+      })
+      .expect(201);
+
+    const invite = await request(app.getHttpServer())
+      .post('/api/admin/invites')
+      .set('Cookie', adminCookies)
+      .send({ expiresInMinutes: 30 })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post('/api/registration/register')
+      .send({
+        inviteCode: invite.body.code,
+        username: 'xena',
+        password: 'xena-password',
+      })
+      .expect(201);
+
+    const xena = await prisma.user.findUniqueOrThrow({ where: { username: 'xena' } });
+
+    await request(app.getHttpServer())
+      .post('/api/admin/users/approve')
+      .set('Cookie', adminCookies)
+      .send({ userId: xena.id })
+      .expect(201);
+
+    const xenaSessionCookies = await login('xena', 'xena-password');
+    const xenaTrustResponse = await request(app.getHttpServer())
+      .post('/api/trust/bootstrap-first-device')
+      .set('Cookie', xenaSessionCookies)
+      .send({
+        deviceLabel: 'Xena Browser 1',
+        devicePublicIdentity: 'xena-device-1',
+        userDomainPublicKey: 'xena-domain-key',
+      })
+      .expect(201);
+    const xenaCookies = mergeCookies(xenaSessionCookies, xenaTrustResponse.get('set-cookie'));
+
+    const prepare = await request(app.getHttpServer())
+      .post('/api/uploads/prepare')
+      .set('Cookie', xenaCookies)
+      .send({
+        contentKind: 'SELF_SPACE_TEXT',
+        requestedValidityMinutes: 30,
+      })
+      .expect(201);
+
+    expect(prepare.body.confidentialityLevel).toBe('CONFIDENTIAL');
+
+    const operationsSummary = await request(app.getHttpServer())
+      .get('/api/admin/operations/summary')
+      .set('Cookie', adminCookies)
+      .expect(200);
+
+    expect(operationsSummary.body.users.totalUsers).toBeGreaterThanOrEqual(2);
+    expect(operationsSummary.body.invites.activeInvites).toBeGreaterThanOrEqual(0);
+    expect(operationsSummary.body.storage.uploadedCiphertextBytes).toBeGreaterThanOrEqual(0);
+    expect(operationsSummary.body).not.toHaveProperty('textCiphertextBody');
+    expect(operationsSummary.body).not.toHaveProperty('sourceItemsList');
   });
 });

@@ -125,10 +125,57 @@ export class IdentityService {
     });
   }
 
+  async listInvites() {
+    return this.prisma.inviteCode.findMany({
+      include: {
+        createdBy: {
+          select: { id: true, username: true },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  async invalidateInvite(inviteId: string) {
+    const invite = await this.prisma.inviteCode.findUnique({ where: { id: inviteId } });
+
+    if (!invite) {
+      throw new NotFoundException('Invite not found');
+    }
+
+    if (invite.consumedAt) {
+      throw new BadRequestException('Consumed invite cannot be invalidated');
+    }
+
+    if (invite.invalidatedAt) {
+      return invite;
+    }
+
+    return this.prisma.inviteCode.update({
+      where: { id: inviteId },
+      data: { invalidatedAt: new Date() },
+    });
+  }
+
   async listPendingUsers() {
     return this.prisma.user.findMany({
       where: { admissionState: AdmissionState.PENDING_APPROVAL },
+      include: {
+        sessions: false,
+      },
       orderBy: { createdAt: 'asc' },
+    });
+  }
+
+  async listUsers() {
+    return this.prisma.user.findMany({
+      orderBy: { createdAt: 'asc' },
+      include: {
+        devices: {
+          where: { trustState: 'TRUSTED' },
+          select: { id: true },
+        },
+      },
     });
   }
 

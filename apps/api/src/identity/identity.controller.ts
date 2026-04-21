@@ -13,6 +13,7 @@ import { SessionGuard } from '../common/guards/session.guard';
 import type { AuthenticatedSession } from '../common/types/auth.types';
 import { BootstrapService } from './bootstrap.service';
 import { CreateInviteDto } from './dto/create-invite.dto';
+import { InvalidateInviteDto } from './dto/invalidate-invite.dto';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import { IdentityService } from './identity.service';
@@ -82,6 +83,13 @@ export class IdentityController {
   }
 
   @UseGuards(SessionGuard)
+  @Get('api/admin/invites')
+  async listInvites(@SessionActor() sessionActor: AuthenticatedSession) {
+    this.identityService.requireAdmin(sessionActor.role);
+    return this.identityService.listInvites();
+  }
+
+  @UseGuards(SessionGuard)
   @Post('api/admin/invites')
   async createInvite(
     @SessionActor() sessionActor: AuthenticatedSession,
@@ -89,5 +97,15 @@ export class IdentityController {
   ) {
     this.identityService.requireAdmin(sessionActor.role);
     return this.identityService.createInvite(sessionActor.userId, input.expiresInMinutes);
+  }
+
+  @UseGuards(SessionGuard)
+  @Post('api/admin/invites/invalidate')
+  async invalidateInvite(
+    @SessionActor() sessionActor: AuthenticatedSession,
+    @Body() input: InvalidateInviteDto,
+  ) {
+    this.identityService.requireAdmin(sessionActor.role);
+    return this.identityService.invalidateInvite(input.inviteId);
   }
 }

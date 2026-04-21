@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { AdminModule } from './admin/admin.module';
 import { ConfigModule } from '@nestjs/config';
 import { appConfig } from './config/app.config';
 import { IdentityModule } from './identity/identity.module';
@@ -19,6 +20,7 @@ import { UploadsModule } from './uploads/uploads.module';
       isGlobal: true,
       load: [appConfig],
     }),
+    AdminModule,
     PrismaModule,
     IdentityModule,
     PolicyModule,

@@ -3,7 +3,7 @@
 ## Phase
 
 - Current phase: implementation
-- Current phase segment: M7 password extraction and public links completed, moving into M8
+- Current phase segment: M8 admin control-plane completion implemented, moving into M9
 
 ## Progress
 
@@ -203,19 +203,24 @@
 - Added API e2e coverage for extraction password failure escalation, extraction count decrement on successful completion, confidential-level system-generated extraction passwords, public-link ticket issuance, public-link download-count decrement on ticket redemption, and policy blocking for disabled delivery modes
 - Confirmed that local Prisma schema sync is required whenever new write-side models are introduced, and pushed the `M7` schema with local `prisma db push --accept-data-loss` before validation
 - Confirmed that root build and API e2e validation now pass against the current `M1` through `M7` foundation implementation
+- Added the first minimal `M8` admin completion slice with invite listing and invalidation, user listing, policy admin state routes, versioned `PolicyBundle` publication, policy history, restore-defaults publication, persisted instance default confidentiality level, and metadata-only operations summary
+- Kept admin routes explicitly separate from content retrieval and delegated policy publication through the policy owner instead of mutating current bundles ad hoc in controllers
+- Added API e2e coverage for invite invalidation, policy version publication, policy-history visibility, restore-defaults version creation, persisted default-level use during upload preparation, validation rejection for invalid policy combinations, and operations summary metadata boundaries
+- Confirmed that local Prisma schema sync is required for the new `InstanceSetting` model before validation, then revalidated successfully
+- Confirmed that root build and API e2e validation now pass against the current `M1` through `M8` foundation implementation
 
 ## Current Focus
 
 - Preserve the accepted implementation-planning baseline as the source of truth for code work
-- Continue advancing from the validated `M1` through `M7` base into `M8` admin control-plane completion
-- Keep write-side policy publication and admin orchestration on top of the already validated source, share, extraction, and public-link domains
+- Continue advancing from the validated `M1` through `M8` base into `M9` live transfer and explicit stored fallback
+- Keep live transfer as a distinct subsystem layered on top of the stable stored-transfer and policy-admin foundations
 - Keep the deferred share-first path explicitly out of v1 scope
 
 ## Next Checkpoint
 
-- Record the verified `M7` extraction and public-link pass in project memory and git history
+- Record the verified `M8` admin control-plane pass in project memory and git history
 - Push the current checkpoint after verification and documentation updates
-- Continue into `M8` admin control-plane completion in milestone order from the now-validated write-side, projection, and outward-delivery base
+- Continue into `M9` live transfer and explicit stored fallback in milestone order from the now-validated write-side, projection, outward-delivery, and admin-policy base
 
 ## Notes
 
