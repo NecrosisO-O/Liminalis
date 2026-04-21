@@ -105,6 +105,9 @@
 - The current execution run has now extended the backend foundation through a first minimal `M10` implementation covering explicit current-browser trusted-access removal, recovery pending-display expiry cleanup, and snapshot-mode access regrant for source-item and share-object ordinary package families.
 - The current `M10` validation baseline now includes e2e coverage for trusted-access removal behaving separately from logout, blocked protected retrieval after trust removal, stale recovery pending-display cleanup, and explicit snapshot-mode regrant restoring protected access only after the maintenance action.
 - The accepted backend `v1` milestone chain `M1` through `M10` is now implemented and locally validated end-to-end in the current repository state.
+- The backend validation baseline now goes beyond the milestone e2e suite and includes one manual long-chain integration spec plus one focused edge-case backend spec covering invite expiry and reuse, session expiry and replay, repeat-download share semantics, public-link ticket expiry and repeat redemption, explicit `ShareObject` regrant, and live-transfer cancel plus fallback behavior.
+- Search route compatibility now accepts both `q` and `query`, and generic retrieval completion now dispatches by retrieval family so share retrieval attempts can complete through the generic retrieval completion endpoint as well as the share-specific route.
+- Frontend work must not start autonomously: any frontend implementation now requires collaborative discussion and iterative design with the user before coding begins.
 - The project should be developed deliberately rather than rushed into coding.
 - The design phase has started.
 - Initial design drafts are being recorded under `design/` before any architecture work.

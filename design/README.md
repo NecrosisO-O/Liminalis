@@ -46,6 +46,11 @@ This directory stores the approved design, architecture, and implementation-plan
 - `design/34-v1-api-and-route-planning.md`: detailed planning note for backend route families, frontend route boundaries, and late-versus-early API surfaces
 - `design/35-v1-milestone-decomposition-and-acceptance.md`: detailed planning note for milestone decomposition, scope boundaries, and acceptance criteria
 - `design/36-code-phase-macro-plan.md`: recorded macro plan for the code phase; execution still requires explicit user instruction
+- `design/37-frontend-shell-and-experience-architecture.md`: frontend planning note for shell boundaries, user/admin separation, and high-level experience structure
+- `design/38-frontend-route-and-bootstrap-architecture.md`: frontend planning note for top-level routes, bootstrap-driven shell selection, and site transitions
+- `design/39-workspace-information-architecture.md`: frontend planning note for the normal user workspace sections, navigation priorities, and object organization
+- `design/40-frontend-surface-and-interaction-baseline.md`: frontend planning note for detailed surface rules across access, delivery, live-transfer, and admin experiences
+- `design/41-frontend-build-work-plan.md`: frontend execution-planning note for phase order, mandatory read-before-build workflow, and later implementation guidance
 
 ## Current Status
 

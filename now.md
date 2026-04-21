@@ -3,7 +3,7 @@
 ## Phase
 
 - Current phase: implementation
-- Current phase segment: M10 resilience and maintenance polish completed
+- Current phase segment: backend implementation complete through `M1` to `M10`; frontend remains in design-and-planning preparation
 
 ## Progress
 
@@ -217,19 +217,48 @@
 - Kept trusted-access removal separate from logout semantics and kept snapshot-mode access widening available only through explicit maintenance routes rather than silent ordinary pairing side effects
 - Added API e2e coverage for current-browser trusted-access removal, blocked protected retrieval after local trust removal, stale recovery pending-display cleanup, and explicit snapshot-mode regrant restoring access to a newly trusted device only after the regrant action
 - Confirmed that final root build and API e2e validation now pass against the current `M1` through `M10` foundation implementation
+- Added post-milestone backend integration hardening for search-route parameter compatibility and generic retrieval-completion dispatch across source-item and share retrieval families
+- Added a manual long-chain backend integration spec covering cross-module `M1` through `M10` flows outside the milestone-by-milestone baseline e2e file
+- Added a focused backend edge-case spec covering invite expiry and reuse, session expiry and replay, repeat-download share behavior, public-link ticket expiry and repeat redemption, explicit `ShareObject` regrant, and live-transfer cancel plus fallback behavior
+- Confirmed that the standard API e2e suite, the manual long-chain integration spec, the focused edge-case spec, and API build validation all pass against the current backend implementation
+- Confirmed that frontend work must not begin autonomously and instead must be discussed and designed collaboratively with the user while backend-only autonomous work may continue when requested
+- Added the first frontend-planning document set under `design/37` through `design/40`, covering shell boundaries, route/bootstrap behavior, workspace information architecture, and surface/interaction baselines
+- Synchronized the frontend planning documents against the full design corpus and corrected them where earlier design-phase decisions were more specific
+- Recorded the accepted later frontend decisions that the timeline composer is bottom-docked and that its confidentiality and attachment controls are round buttons
+- Recorded the accepted frontend theme rule that the product supports both light mode and dark mode without changing existing visual semantics
+- Drafted the frontend execution plan under `design/41-frontend-build-work-plan.md`, including the mandatory read-before-build workflow and the full phase order for later frontend implementation
+- The user has now explicitly started frontend implementation work with a complete-v1 stop condition and no-backend-change constraint
+- Completed frontend Phase 1 by replacing the Vite placeholder in `apps/web` with the first user-site shell and route skeleton aligned to the accepted shell map
+- Added the separate `apps/admin` frontend site with its own Vite/React/TypeScript workspace, routing skeleton, and initial admin-shell placeholder surfaces
+- Added the first shared frontend foundation for both sites using React Router, TanStack Query, local CSS-based styling, light/dark theme support, and shell-aware placeholder routes
+- Wired the root workspace scripts so user and admin frontends can develop, build, lint, and test as first-class workspaces alongside the backend
+- Confirmed that `apps/web` and `apps/admin` both pass build, lint, and current test validation after the Phase 1 skeleton pass
+- Completed the first real entry-and-gating frontend pass by wiring login, registration, bootstrap-driven shell guards, waiting, and blocked routing against the existing backend session and bootstrap APIs
+- Completed the first trust-and-recovery frontend pass by wiring first-device setup, pairing-session creation and status, pairing approval/rejection, recovery submission, pending recovery-code display, and recovery acknowledgment against the existing trust APIs
+- Preserved frontend behavior against current backend reality, including handling recovery pending-display through its dedicated API rather than inventing unavailable bootstrap fields and keeping pairing UX aligned to the currently implemented trust semantics
+- Confirmed that the user frontend still passes build, lint, and current test validation after the Phase 2 and Phase 3 implementation pass
+- Completed the first real workspace and timeline pass by replacing the workspace placeholder with a stable shell, real navigation, light/dark theme toggle, `/api/timeline` data loading, and a bottom-docked lightweight composer that can already create self-space text items through the real upload prepare/finalize flow
+- Completed the first history, search, advanced upload, and settings pass by wiring `/api/history`, `/api/search`, advanced stored-transfer creation forms, and workspace theme controls into the user site
+- Completed the first item-first delivery pass by wiring share creation, extraction creation and recipient unlock flow, public-link direct-download flow, and the user-facing share tools route against the current backend APIs
+- Completed the first live-transfer and admin data pass by wiring live session creation/join/confirm/status/failure/fallback pages on the user site and replacing the admin-site placeholders with live overview, invites, approvals, users, policy, and system pages backed by current admin APIs
+- Confirmed that both `apps/web` and `apps/admin` still pass build, lint, and current test validation after the timeline, delivery, live-transfer, and admin implementation passes
 
 ## Current Focus
 
 - Preserve the accepted implementation-planning baseline as the source of truth for code work
-- Preserve the implemented `M1` through `M10` backend baseline as the current code-phase completion point
+- Preserve the implemented and expanded-tested `M1` through `M10` backend baseline as the current code-phase completion point
 - Keep any future work constrained by the accepted boundaries: session vs trust, source vs share, protected retrieval vs public-link delivery, stored transfer vs live transfer, and admin control plane vs user content access
+- Preserve the accepted frontend planning corpus under `design/37` through `design/41` as the source of truth for later frontend execution
+- Continue frontend execution in phase order, with full read-before-build discipline and no backend modifications
 - Keep the deferred share-first path explicitly out of v1 scope
+- Keep frontend implementation aligned to actual backend capability when backend behavior is narrower than idealized design intent, since backend changes are not allowed in the current run
+- Continue converting placeholder or skeletal routes into richer real flows while preserving the existing no-backend-change rule and accepted design boundaries
 
 ## Next Checkpoint
 
-- Record the verified `M10` resilience pass in project memory and git history
-- Push the current checkpoint after verification and documentation updates
-- Treat the current backend milestone plan as implemented and validated end-to-end for the accepted `v1` scope
+- Treat the backend as implementation-complete enough to support continued frontend execution under the accepted no-backend-change rule
+- Use `design/41-frontend-build-work-plan.md` as the execution guide for the ongoing frontend run
+- Continue the frontend run with object-detail deepening, tighter route/auth handling, and broader flow polish across user and admin sites
 
 ## Notes
 
