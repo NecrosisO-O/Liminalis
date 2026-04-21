@@ -16,8 +16,9 @@
 
 - The user confirmed the transition from design into architecture.
 - The user has now confirmed the transition from architecture into implementation.
-- The implementation phase is currently constrained to a planning-first subphase before any code is written.
+- The implementation phase is no longer planning-only; the user has explicitly authorized ongoing code execution.
 - The user accepted the first pre-coding implementation-planning decision baseline for `v1`.
+- The user expects autonomous troubleshooting during build and test work, with progress-document maintenance and stage-checkpoint commits and pushes during execution.
 
 ## Current Known Intent
 
@@ -70,6 +71,9 @@
 - The implementation-sequencing planning set now also includes stable backend domain/service boundaries, API/route families, and milestone-level acceptance criteria aligned to `M1` through `M10`.
 - The planning phase is now complete enough to support code execution, and later code work should use `design/16` through `design/35` as its primary implementation-planning baseline.
 - The code-phase macro plan is now recorded in `design/36-code-phase-macro-plan.md`, but implementation still must not begin until the user gives explicit start instruction.
+- Implementation has now explicitly started, beginning with foundation stabilization in the `M1` and `M2` area.
+- The first code-execution repair pass established Prisma 7 config compatibility, restored generated-client imports for the current TypeScript `NodeNext` setup, and brought the monorepo build back to a passing state.
+- Early-stage workspace test commands should tolerate an empty test set until real automated tests are added, so validation failures reflect actual regressions rather than missing test files.
 - The project should be developed deliberately rather than rushed into coding.
 - The design phase has started.
 - Initial design drafts are being recorded under `design/` before any architecture work.

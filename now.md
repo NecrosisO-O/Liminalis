@@ -3,7 +3,7 @@
 ## Phase
 
 - Current phase: implementation
-- Current phase segment: implementation planning
+- Current phase segment: code execution
 
 ## Progress
 
@@ -157,22 +157,30 @@
 - Turned the sequencing baseline into a backend domain/service breakdown, a route/API planning baseline, and milestone-level acceptance criteria for `M1` through `M10`
 - Completed the main implementation-sequencing planning set so later work can move from behavior notes into ticket decomposition and execution planning without reopening core domain boundaries
 - Recorded the code-phase macro plan under `design/36-code-phase-macro-plan.md` without starting implementation
+- The user has now explicitly authorized ongoing implementation work with autonomous bug fixing, progress-document updates, and stage-checkpoint commits
+- Code execution has now started from the `M1` and `M2` foundation area instead of remaining in planning only
+- Confirmed the existing repository code baseline as partial early implementation focused on identity, session, trusted-device, pairing, recovery, and Prisma schema foundations
+- Fixed the first API build blockers by adding Prisma 7 config, moving datasource URL configuration out of the schema file, regenerating the Prisma client, and aligning generated-client imports with the current NodeNext build setup
+- Fixed the first TypeScript decorator-signature compatibility errors by converting decorated controller-only type imports to `import type`
+- Confirmed that the full monorepo build now succeeds for both `api` and `web`
+- Adjusted workspace test commands so empty test suites do not fail the validation step during the current early implementation stage
 
 ## Current Focus
 
-- Preserve the completed implementation-planning baseline as the source of truth for future code work
-- Keep the recorded code-phase macro plan ready for execution once the user explicitly starts implementation
+- Execute code work against the accepted implementation-planning baseline in `design/16` through `design/35`
+- Stabilize the `M1` and `M2` foundation code so the backend can build, validate, and support the next implementation steps safely
 - Keep canonical summaries and detailed notes aligned when durable clarifications are accepted
-- Continue waiting for explicit user instruction before any implementation begins
+- Update project progress documents when material execution progress is made
 - Keep the deferred share-first path explicitly out of v1 scope
 
 ## Next Checkpoint
 
-- Wait for the user's explicit instruction before starting the code phase
-- Once instructed, execute the recorded macro plan and test all automatable work before final reporting
+- Continue `M1` and `M2` implementation hardening after the initial build-chain repair
+- Add or expand automated tests as real executable behavior surfaces become stable enough to verify
+- Create a first stage-checkpoint commit once the current foundation fixes are recorded and verified
 
 ## Notes
 
 - `memory.md` should be updated when durable decisions are made
 - `now.md` should be updated whenever progress changes materially
-- No code should be created during the current implementation-planning stage
+- Code work is now active and should continue under the accepted milestone ordering
