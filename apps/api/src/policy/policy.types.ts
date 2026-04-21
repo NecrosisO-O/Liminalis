@@ -95,3 +95,31 @@ export type PublicLinkCreationPolicyDecision = {
     policyBundleVersion: number;
   };
 };
+
+export type LiveTransferCreationPolicyInput = {
+  confidentialityLevel: ConfidentialityLevel;
+  groupedTransfer: boolean;
+  contentKind: UploadContentKind;
+};
+
+export type LiveTransferCreationPolicyDecision = {
+  allowed: boolean;
+  decisionReason: string;
+  policyBundle: PolicyBundle;
+  allowPeerToPeer: boolean;
+  allowRelay: boolean;
+  allowPeerToPeerToRelayFallback: boolean;
+  allowLiveToStoredFallback: boolean;
+  retainLiveTransferRecords: boolean;
+  allowGroupedOrLargeLiveTransfer: boolean;
+  snapshotFieldsToPersist: {
+    confidentialityLevel: ConfidentialityLevel;
+    allowPeerToPeer: boolean;
+    allowRelay: boolean;
+    allowPeerToPeerToRelayFallback: boolean;
+    allowLiveToStoredFallback: boolean;
+    retainLiveTransferRecords: boolean;
+    allowGroupedOrLargeLiveTransfer: boolean;
+    policyBundleVersion: number;
+  };
+};

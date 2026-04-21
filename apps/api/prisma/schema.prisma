@@ -143,6 +143,25 @@ enum PublicLinkState {
   INVALIDATED
 }
 
+enum LiveTransferSessionState {
+  CREATED
+  AWAITING_JOIN
+  AWAITING_CONFIRMATION
+  CONNECTING
+  ACTIVE
+  COMPLETED
+  EXPIRED
+  FAILED
+  CANCELLED
+}
+
+enum LiveTransferTransportState {
+  P2P_ATTEMPT
+  RELAY_ATTEMPT
+  P2P_ACTIVE
+  RELAY_ACTIVE
+}
+
 model User {
   id               String           @id @default(cuid())
   username         String           @unique
@@ -168,6 +187,9 @@ model User {
   searchDocuments     SearchDocumentProjection[]
   outgoingShares      ShareObject[]         @relation("OutgoingShares")
   incomingShares      ShareObject[]         @relation("IncomingShares")
+  initiatedLiveTransfers LiveTransferSession[] @relation("LiveTransferInitiator")
+  joinedLiveTransfers    LiveTransferSession[] @relation("LiveTransferJoiner")
+  liveTransferRecords    LiveTransferRecordProjection[]
 }
 
 model InviteCode {
@@ -207,6 +229,8 @@ model TrustedDevice {
   pairingRequests        PairingSession[]      @relation("PairingRequester")
   approvals              PairingSession[]      @relation("PairingApprover")
   retrievalAttempts      RetrievalAttempt[]
+  initiatedLiveTransfers LiveTransferSession[] @relation("LiveTransferInitiatorDevice")
+  joinedLiveTransfers    LiveTransferSession[] @relation("LiveTransferJoinerDevice")
 }
 
 model PairingSession {
@@ -270,6 +294,7 @@ model PolicyBundle {
   shareObjects          ShareObject[]
   extractionAccesses    ExtractionAccess[]
   publicLinkObjects     PublicLink[]
+  liveTransferSessions  LiveTransferSession[]
 
   @@unique([levelName, bundleVersion])
 }
@@ -280,6 +305,38 @@ model InstanceSetting {
   defaultConfidentialityLevel ConfidentialityLevel @default(SECRET)
   createdAt                   DateTime             @default(now())
   updatedAt                   DateTime             @updatedAt
+}
+
+model LiveTransferSession {
+  id                        String                     @id @default(cuid())
+  initiatorUserId           String
+  initiatorUser             User                       @relation("LiveTransferInitiator", fields: [initiatorUserId], references: [id])
+  initiatorDeviceId         String
+  initiatorDevice           TrustedDevice              @relation("LiveTransferInitiatorDevice", fields: [initiatorDeviceId], references: [id])
+  joinerUserId              String?
+  joinerUser                User?                      @relation("LiveTransferJoiner", fields: [joinerUserId], references: [id])
+  joinerDeviceId            String?
+  joinerDevice              TrustedDevice?             @relation("LiveTransferJoinerDevice", fields: [joinerDeviceId], references: [id])
+  confidentialityLevel      ConfidentialityLevel
+  policyBundleId            String
+  policyBundle              PolicyBundle               @relation(fields: [policyBundleId], references: [id])
+  policySnapshot            Json
+  state                     LiveTransferSessionState   @default(CREATED)
+  transportState            LiveTransferTransportState?
+  contentLabel              String
+  contentKind               UploadContentKind
+  groupedTransfer           Boolean                    @default(false)
+  relayAllowed              Boolean                    @default(false)
+  peerToPeerAllowed         Boolean                    @default(true)
+  peerToPeerToRelayFallback Boolean                    @default(false)
+  liveToStoredFallbackAllowed Boolean                  @default(false)
+  retainRecord              Boolean                    @default(false)
+  failureReason             String?
+  completedAt               DateTime?
+  expiresAt                 DateTime
+  recordProjections         LiveTransferRecordProjection[]
+  createdAt                 DateTime                   @default(now())
+  updatedAt                 DateTime                   @updatedAt
 }
 
 model UploadSession {
@@ -611,4 +668,24 @@ model SearchDocumentProjection {
   updatedAt            DateTime             @updatedAt
 
   @@unique([ownerUserId, sourceObjectType, sourceObjectId])
+}
+
+model LiveTransferRecordProjection {
+  id                   String                   @id @default(cuid())
+  ownerUserId          String
+  ownerUser            User                     @relation(fields: [ownerUserId], references: [id])
+  liveTransferSessionId String
+  liveTransferSession  LiveTransferSession      @relation(fields: [liveTransferSessionId], references: [id])
+  participantLabel     String
+  sessionOutcome       String
+  transportSummary     String?
+  contentLabel         String
+  contentKind          UploadContentKind
+  groupedTransfer      Boolean                  @default(false)
+  startedAt            DateTime
+  endedAt              DateTime?
+  projectedAt          DateTime                 @default(now())
+  updatedAt            DateTime                 @updatedAt
+
+  @@unique([ownerUserId, liveTransferSessionId])
 }

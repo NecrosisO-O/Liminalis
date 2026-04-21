@@ -10,6 +10,7 @@
     "build": "nest build",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "pretest": "npm run prisma:generate",
+    "pretest:e2e": "npm run prisma:generate",
     "start": "nest start",
     "start:dev": "tsx --env-file ../../.env ./node_modules/@nestjs/cli/bin/nest.js start --watch",
     "start:debug": "nest start --debug --watch",

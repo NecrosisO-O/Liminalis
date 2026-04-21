@@ -14,6 +14,8 @@ import {
 import {
   type ExtractionCreationPolicyDecision,
   type ExtractionCreationPolicyInput,
+  type LiveTransferCreationPolicyDecision,
+  type LiveTransferCreationPolicyInput,
   type PublicLinkCreationPolicyDecision,
   type PublicLinkCreationPolicyInput,
   type ShareCreationPolicyDecision,
@@ -410,6 +412,56 @@ export class PolicyService implements OnModuleInit {
         resolvedValidityMinutes,
         requestedDownloadCount: input.requestedDownloadCount,
         resolvedDownloadCount,
+        policyBundleVersion: bundle.bundleVersion,
+      },
+    };
+  }
+
+  async evaluateLiveTransferCreation(
+    input: LiveTransferCreationPolicyInput,
+  ): Promise<LiveTransferCreationPolicyDecision> {
+    const bundle = await this.getCurrentBundle(input.confidentialityLevel);
+    const liveTransfer = bundle.liveTransfer as Record<string, boolean | number | null>;
+
+    if (!Boolean(liveTransfer.allowLiveTransfer)) {
+      throw new BadRequestException('Live transfer is not allowed for this level');
+    }
+
+    if (input.contentKind === UploadContentKind.SELF_SPACE_TEXT) {
+      throw new BadRequestException('Live transfer does not support self-space text');
+    }
+
+    const allowGroupedOrLargeLiveTransfer = Boolean(liveTransfer.allowGroupedOrLargeLiveTransfer);
+    if (input.groupedTransfer && !allowGroupedOrLargeLiveTransfer) {
+      throw new BadRequestException('Grouped or large live transfer is not allowed for this level');
+    }
+
+    const allowPeerToPeer = Boolean(liveTransfer.allowPeerToPeer);
+    const allowRelay = Boolean(liveTransfer.allowRelay);
+    const allowPeerToPeerToRelayFallback = Boolean(
+      liveTransfer.allowPeerToPeerToRelayFallback,
+    );
+    const allowLiveToStoredFallback = Boolean(liveTransfer.allowLiveToStoredFallback);
+    const retainLiveTransferRecords = Boolean(liveTransfer.retainLiveTransferRecords);
+
+    return {
+      allowed: true,
+      decisionReason: 'allowed',
+      policyBundle: bundle,
+      allowPeerToPeer,
+      allowRelay,
+      allowPeerToPeerToRelayFallback,
+      allowLiveToStoredFallback,
+      retainLiveTransferRecords,
+      allowGroupedOrLargeLiveTransfer,
+      snapshotFieldsToPersist: {
+        confidentialityLevel: input.confidentialityLevel,
+        allowPeerToPeer,
+        allowRelay,
+        allowPeerToPeerToRelayFallback,
+        allowLiveToStoredFallback,
+        retainLiveTransferRecords,
+        allowGroupedOrLargeLiveTransfer,
         policyBundleVersion: bundle.bundleVersion,
       },
     };

@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { AdminModule } from './admin/admin.module';
 import { ConfigModule } from '@nestjs/config';
 import { appConfig } from './config/app.config';
+import { LiveTransferModule } from './live-transfer/live-transfer.module';
 import { IdentityModule } from './identity/identity.module';
 import { PolicyModule } from './policy/policy.module';
 import { PrismaModule } from './prisma/prisma.module';
@@ -21,6 +22,7 @@ import { UploadsModule } from './uploads/uploads.module';
       load: [appConfig],
     }),
     AdminModule,
+    LiveTransferModule,
     PrismaModule,
     IdentityModule,
     PolicyModule,
