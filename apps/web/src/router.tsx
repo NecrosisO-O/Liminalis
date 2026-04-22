@@ -21,7 +21,6 @@ import { DeviceRecoveryRotatedCodesPage } from './views/DeviceRecoveryRotatedCod
 import { AppTimelinePage } from './views/AppTimelinePage.tsx'
 import { AppUploadPage } from './views/AppUploadPage.tsx'
 import { AppHistoryPage } from './views/AppHistoryPage.tsx'
-import { AppSearchPage } from './views/AppSearchPage.tsx'
 import { AppItemDetailPage } from './views/AppItemDetailPage.tsx'
 import { AppSettingsPage } from './views/AppSettingsPage.tsx'
 import { PublicLinkPage } from './views/PublicLinkPage.tsx'
@@ -118,10 +117,6 @@ export const router = createBrowserRouter([
           {
             path: 'history',
             element: <AppHistoryPage />,
-          },
-          {
-            path: 'search',
-            element: <AppSearchPage />,
           },
           {
             path: 'items/:itemId',

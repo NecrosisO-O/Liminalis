@@ -15,7 +15,7 @@ export function LiveStartPage() {
     mutationFn: () =>
       api.createLiveTransferSession({
         contentLabel,
-        contentKind: groupedTransfer ? 'GROUPED_CONTENT' : 'FILE',
+        contentKind: groupedTransfer ? 'GROUPED_CONTENT' : 'SINGLE_FILE',
         confidentialityLevel,
         groupedTransfer,
       }),

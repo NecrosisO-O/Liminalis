@@ -249,7 +249,7 @@ export class ProjectionService {
     const visibleTypeLabel = this.visibleTypeLabel(sourceItem.contentKind, sourceItem.groupManifest !== null);
     const visibleSummary =
       sourceItem.contentKind === UploadContentKind.SELF_SPACE_TEXT
-        ? sourceItem.displayName ?? null
+        ? sourceItem.textCiphertextBody?.slice(0, 560) ?? sourceItem.displayName ?? null
         : null;
     const visibleSizeBytes =
       sourceItem.contentKind === UploadContentKind.SELF_SPACE_TEXT

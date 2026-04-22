@@ -28,9 +28,11 @@ async function request<T>(input: string, init?: RequestInit): Promise<T> {
       typeof body === 'object' &&
       body !== null &&
       'message' in body &&
-      typeof body.message === 'string'
+      (typeof body.message === 'string'
         ? body.message
-        : `Request failed with status ${response.status}`
+        : Array.isArray(body.message)
+          ? body.message.filter((entry: unknown): entry is string => typeof entry === 'string').join('; ')
+          : `Request failed with status ${response.status}`)
 
     throw new ApiError(message, response.status, body)
   }
@@ -97,6 +99,8 @@ export type TimelineItem = {
   id: string
   objectType: string
   objectId: string
+  sourceObjectType?: string
+  sourceObjectId?: string
   displayTitle: string | null
   visibleTypeLabel: string | null
   visibleSizeLabel: string | null
@@ -105,22 +109,49 @@ export type TimelineItem = {
   activeStatusLabel: string | null
   confidentialityLevel: 'SECRET' | 'CONFIDENTIAL' | 'TOP_SECRET'
   createdTime: string
+  validUntil?: string | null
   currentRetrievable: boolean
   visibleSummary?: string | null
 }
 
+export type SourceItemDetail = {
+  id: string
+  displayName: string | null
+  contentKind: string
+  confidentialityLevel: 'SECRET' | 'CONFIDENTIAL' | 'TOP_SECRET'
+  state: string
+  validUntil: string | null
+  createdAt: string
+  updatedAt: string
+  textCiphertextBody: string | null
+  groupManifest?: {
+    structureKind?: string | null
+    itemCount?: number | null
+  } | null
+}
+
 export type HistoryEntry = {
   id: string
-  objectType: string
-  objectId: string
+  objectType?: string
+  objectId?: string
+  sourceObjectType?: string
+  sourceObjectId?: string
   displayTitle: string | null
-  visibleContentTypeLabel: string | null
+  visibleTypeLabel: string | null
   sourceLabel: string | null
   confidentialityLevel: 'SECRET' | 'CONFIDENTIAL' | 'TOP_SECRET'
   createdTime: string
-  currentRetainedStatus: string | null
-  currentRetrievable: boolean
+  statusTime?: string | null
+  retainedStatus: string | null
+  retrievable: boolean
   concreteReason: string | null
+  visibleSummary?: string | null
+  sourceItem?: {
+    validUntil: string | null
+  } | null
+  shareObject?: {
+    validUntil: string | null
+  } | null
 }
 
 export type SearchDocument = {
@@ -136,7 +167,7 @@ export type SearchDocument = {
 }
 
 export type PrepareUploadInput = {
-  contentKind: 'SELF_SPACE_TEXT' | 'FILE' | 'GROUPED_CONTENT'
+  contentKind: 'SELF_SPACE_TEXT' | 'SINGLE_FILE' | 'GROUPED_CONTENT'
   groupStructureKind?: 'MULTI_FILE' | 'FOLDER'
   confidentialityLevel?: 'SECRET' | 'CONFIDENTIAL' | 'TOP_SECRET'
   requestedValidityMinutes?: number
@@ -178,7 +209,7 @@ export type PublicLinkCreationInput = {
 
 export type LiveTransferCreateInput = {
   contentLabel: string
-  contentKind: 'FILE' | 'GROUPED_CONTENT'
+  contentKind: 'SINGLE_FILE' | 'GROUPED_CONTENT'
   confidentialityLevel?: 'SECRET' | 'CONFIDENTIAL' | 'TOP_SECRET'
   groupedTransfer?: boolean
 }
@@ -272,6 +303,10 @@ export const api = {
 
   getTimeline() {
     return request<TimelineItem[]>('/api/timeline')
+  },
+
+  getSourceItem(sourceItemId: string) {
+    return request<SourceItemDetail>(`/api/source-items/${sourceItemId}`)
   },
 
   getHistory() {
