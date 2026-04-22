@@ -1,7 +1,7 @@
-import { useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { api } from '../lib/api.ts'
+import { api, type TimelineItem } from '../lib/api.ts'
 import { useTimelineQuery } from '../hooks/useTimelineQuery.ts'
 
 const confidentialityOptions = ['SECRET', 'CONFIDENTIAL', 'TOP_SECRET'] as const
@@ -23,29 +23,102 @@ function formatTime(input: string) {
   }).format(new Date(input))
 }
 
-function validityClass(index: number) {
-  if (index % 3 === 0) {
+function validityClass(item: TimelineItem) {
+  if (!item.validUntil) {
     return 'safe'
   }
 
-  if (index % 3 === 1) {
+  const validUntil = new Date(item.validUntil).getTime()
+  const now = Date.now()
+
+  if (!Number.isFinite(validUntil) || validUntil <= now) {
+    return 'urgent'
+  }
+
+  const remainingMs = validUntil - now
+
+  if (remainingMs <= 10 * 60 * 1000) {
+    return 'urgent'
+  }
+
+  if (remainingMs <= 30 * 60 * 1000) {
     return 'warning'
   }
 
-  return 'urgent'
+  return 'safe'
+}
+
+function confidentialityClass(level: 'SECRET' | 'CONFIDENTIAL' | 'TOP_SECRET') {
+  return `confidentiality-${level.toLowerCase()}`
+}
+
+function preferredTextContent(primary: string | null | undefined, fallback: string) {
+  return primary && primary.trim() !== '' ? primary : fallback
+}
+
+function timelineObjectType(item: TimelineItem) {
+  return (item.sourceObjectType ?? item.objectType ?? '').toLowerCase()
+}
+
+function timelineObjectId(item: TimelineItem) {
+  return item.sourceObjectId ?? item.objectId ?? item.id
+}
+
+type TimelineTextBubbleProps = {
+  item: TimelineItem
+  isExpanded: boolean
+  onToggle: () => void
+}
+
+function TimelineTextBubble({ item, isExpanded, onToggle }: TimelineTextBubbleProps) {
+  const objectType = timelineObjectType(item)
+  const objectId = timelineObjectId(item)
+  const collapsedText = preferredTextContent(item.visibleSummary, item.displayTitle ?? 'Text item')
+  const fullTextQuery = useQuery({
+    queryKey: ['source-item', objectId],
+    queryFn: () => api.getSourceItem(objectId),
+    enabled: isExpanded && objectType === 'source_item' && objectId !== '',
+    retry: false,
+  })
+  const expandedText = preferredTextContent(fullTextQuery.data?.textCiphertextBody, collapsedText)
+  const textContent = isExpanded ? expandedText : collapsedText
+  const isLongText = collapsedText.length > 220 || expandedText.length > collapsedText.length
+
+  return (
+    <div className={`text-bubble ${confidentialityClass(item.confidentialityLevel)}`}>
+      <p className={isExpanded ? 'text-bubble-content expanded' : 'text-bubble-content'}>{textContent}</p>
+      {isLongText ? (
+        <button className="text-toggle" type="button" onClick={onToggle}>
+          {isExpanded ? 'Collapse' : 'Expand'}
+        </button>
+      ) : null}
+    </div>
+  )
 }
 
 export function AppTimelinePage() {
   const queryClient = useQueryClient()
   const timelineQuery = useTimelineQuery()
+  const timelineStreamRef = useRef<HTMLDivElement | null>(null)
+  const didAutoScrollRef = useRef(false)
   const composerTextareaRef = useRef<HTMLTextAreaElement | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const [selectedConfidentiality, setSelectedConfidentiality] =
     useState<(typeof confidentialityOptions)[number]>('SECRET')
   const [textValue, setTextValue] = useState('')
-  const [fileError, setFileError] = useState<string | null>(null)
+  const [fileToast, setFileToast] = useState<{ tone: 'success' | 'error'; message: string } | null>(null)
   const [expandedTextIds, setExpandedTextIds] = useState<string[]>([])
+  const [showJumpToBottom, setShowJumpToBottom] = useState(false)
   const hasText = textValue.trim() !== ''
+
+  useEffect(() => {
+    if (!fileToast) {
+      return
+    }
+
+    const timeout = window.setTimeout(() => setFileToast(null), 3000)
+    return () => window.clearTimeout(timeout)
+  }, [fileToast])
 
   useLayoutEffect(() => {
     const textarea = composerTextareaRef.current
@@ -86,6 +159,37 @@ export function AppTimelinePage() {
     )
   }, [timelineQuery.data])
 
+  useLayoutEffect(() => {
+    if (timelineQuery.isLoading || groupedTimeline.length === 0 || didAutoScrollRef.current) {
+      return
+    }
+
+    const stream = timelineStreamRef.current
+    if (!stream) {
+      return
+    }
+
+    stream.scrollTop = stream.scrollHeight
+    setShowJumpToBottom(false)
+    didAutoScrollRef.current = true
+  }, [groupedTimeline.length, timelineQuery.isLoading])
+
+  useLayoutEffect(() => {
+    const stream = timelineStreamRef.current
+    if (!stream) {
+      return
+    }
+
+    const updateJumpButton = () => {
+      const distanceFromBottom = stream.scrollHeight - stream.clientHeight - stream.scrollTop
+      setShowJumpToBottom(distanceFromBottom > 120)
+    }
+
+    updateJumpButton()
+    stream.addEventListener('scroll', updateJumpButton)
+    return () => stream.removeEventListener('scroll', updateJumpButton)
+  }, [groupedTimeline.length])
+
   const sendTextMutation = useMutation({
     mutationFn: async () => {
       const prepared = await api.prepareUpload({
@@ -106,8 +210,9 @@ export function AppTimelinePage() {
 
   const sendFileMutation = useMutation({
     mutationFn: async (file: File) => {
+      setFileToast({ tone: 'success', message: `Uploading ${file.name}...` })
       const prepared = await api.prepareUpload({
-        contentKind: 'FILE',
+        contentKind: 'SINGLE_FILE',
         confidentialityLevel: selectedConfidentiality,
         displayName: file.name,
       })
@@ -124,12 +229,19 @@ export function AppTimelinePage() {
       })
     },
     onSuccess: async () => {
-      setFileError(null)
+      setFileToast({ tone: 'success', message: 'File added to timeline.' })
       if (fileInputRef.current) {
         fileInputRef.current.value = ''
       }
       await queryClient.invalidateQueries({ queryKey: ['timeline'] })
       await queryClient.invalidateQueries({ queryKey: ['history'] })
+      requestAnimationFrame(() => {
+        timelineStreamRef.current?.scrollTo({ top: timelineStreamRef.current.scrollHeight, behavior: 'smooth' })
+      })
+    },
+    onError: (error) => {
+      const message = error instanceof Error ? error.message : 'File upload failed.'
+      setFileToast({ tone: 'error', message })
     },
   })
 
@@ -152,12 +264,12 @@ export function AppTimelinePage() {
     }
 
     if (file.size > maxLightweightFileBytes) {
-      setFileError('Files larger than 90MB must use the advanced upload page.')
+      const message = 'Files larger than 90MB must use the advanced upload page.'
+      setFileToast({ tone: 'error', message })
       event.target.value = ''
       return
     }
 
-    setFileError(null)
     sendFileMutation.mutate(file)
   }
 
@@ -167,10 +279,23 @@ export function AppTimelinePage() {
     )
   }
 
+  function scrollTimelineToBottom() {
+    const stream = timelineStreamRef.current
+    if (!stream) {
+      return
+    }
+
+    stream.scrollTo({ top: stream.scrollHeight, behavior: 'smooth' })
+  }
+
   return (
-    <section className="workspace-page">
+    <section className="workspace-page timeline-workspace-page">
       <div className="panel page-panel timeline-shell-panel">
-        <div className="timeline-stream-shell">
+        {fileToast ? (
+          <div className={fileToast.tone === 'error' ? 'timeline-toast error' : 'timeline-toast'}>{fileToast.message}</div>
+        ) : null}
+
+        <div ref={timelineStreamRef} className="timeline-stream-shell">
           {timelineQuery.isLoading ? (
             <div className="timeline-state" />
           ) : groupedTimeline.length === 0 ? (
@@ -181,12 +306,12 @@ export function AppTimelinePage() {
                 <div className="timeline-group-label">{group.label}</div>
 
                 <div className="timeline-stream-list">
-                  {group.items.map((item, index) => {
-                    const isText = item.objectType === 'source_item' && item.visibleTypeLabel === 'text'
-                    const sideClass = item.objectType === 'source_item' ? 'right' : 'left'
-                    const textContent = item.visibleSummary ?? item.displayTitle ?? 'Text item'
+                  {group.items.map((item) => {
+                    const objectType = timelineObjectType(item)
+                    const objectId = timelineObjectId(item)
+                    const isText = item.visibleTypeLabel === 'text'
+                    const sideClass = objectType === 'source_item' ? 'right' : 'left'
                     const isExpanded = expandedTextIds.includes(item.id)
-                    const isLongText = textContent.length > 220
 
                     return (
                       <article
@@ -202,19 +327,14 @@ export function AppTimelinePage() {
                           </div>
 
                           {isText ? (
-                            <div className={`text-bubble confidentiality-${item.confidentialityLevel.toLowerCase()}`}>
-                              <p className={isExpanded ? 'text-bubble-content expanded' : 'text-bubble-content'}>
-                                {textContent}
-                              </p>
-                              {isLongText ? (
-                                <button className="text-toggle" type="button" onClick={() => toggleExpandedText(item.id)}>
-                                  {isExpanded ? 'Collapse' : 'Expand'}
-                                </button>
-                              ) : null}
-                            </div>
+                            <TimelineTextBubble
+                              item={item}
+                              isExpanded={isExpanded}
+                              onToggle={() => toggleExpandedText(item.id)}
+                            />
                           ) : (
-                            <Link to={`/app/items/${item.objectId}`} className="file-card file-card-link">
-                              <div className={`file-icon confidentiality-${item.confidentialityLevel.toLowerCase()}`}>
+                            <Link to={`/app/items/${objectId}`} className="file-card file-card-link">
+                              <div className={`file-icon ${confidentialityClass(item.confidentialityLevel)}`}>
                                 {item.groupedItemCount ? 'G' : 'F'}
                               </div>
 
@@ -227,7 +347,7 @@ export function AppTimelinePage() {
                                 </span>
                               </div>
 
-                              <div className={`validity-dot ${validityClass(index)}`} aria-hidden="true" />
+                              <div className={`validity-dot ${validityClass(item)}`} aria-hidden="true" />
                             </Link>
                           )}
                         </div>
@@ -240,6 +360,12 @@ export function AppTimelinePage() {
           )}
         </div>
 
+        {showJumpToBottom ? (
+          <button className="jump-to-bottom-button" type="button" onClick={scrollTimelineToBottom} aria-label="Jump to bottom">
+            ↓
+          </button>
+        ) : null}
+
         <div className="timeline-bottom-composer">
           <input
             ref={fileInputRef}
@@ -250,7 +376,7 @@ export function AppTimelinePage() {
 
           <div className={hasText ? 'timeline-composer-placeholder real-composer has-text' : 'timeline-composer-placeholder real-composer'}>
             <button
-              className={`round-button confidentiality-button confidentiality-${selectedConfidentiality.toLowerCase()}`}
+              className={`round-button confidentiality-button ${confidentialityClass(selectedConfidentiality)}`}
               type="button"
               aria-label="Confidentiality"
               onClick={() => setSelectedConfidentiality((current) => nextConfidentiality(current))}
@@ -284,8 +410,6 @@ export function AppTimelinePage() {
             </button>
           </div>
 
-          {fileError ? <p className="error-text composer-error">{fileError}</p> : null}
-          {sendFileMutation.isPending ? <p className="muted composer-status">Uploading file...</p> : null}
         </div>
       </div>
     </section>

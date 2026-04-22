@@ -20,6 +20,18 @@ export class ProjectionsService {
       where: {
         ownerUserId: userId,
       },
+      include: {
+        sourceItem: {
+          select: {
+            validUntil: true,
+          },
+        },
+        shareObject: {
+          select: {
+            validUntil: true,
+          },
+        },
+      },
       orderBy: { createdTime: 'desc' },
     });
   }
