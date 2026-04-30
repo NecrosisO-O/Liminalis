@@ -34,7 +34,12 @@ export class PublicLinksController {
       `attachment; filename="${download.fileName.replace(/"/g, '')}"`,
     );
     response.on('finish', () => {
-      void this.publicLinksService.completePublicDownload(download.publicLinkId);
+      void this.publicLinksService.finishPublicDownload(download.reservationTicketToken);
+    });
+    response.on('close', () => {
+      if (!response.writableEnded) {
+        void this.publicLinksService.releasePublicDownload(download.reservationTicketToken);
+      }
     });
 
     return new StreamableFile(download.stream);

@@ -85,34 +85,103 @@ export class PublicLinksService {
 
     const parts = this.extractStorageParts(publicLink.sourceItem.storageBinding);
     const contentLength = parts.reduce((sum, part) => sum + part.byteSize, 0);
+
+    const reservation = await this.reservePublicDownload(publicLink.id);
+    if (!reservation) {
+      throw this.invalidPublicLink();
+    }
+
     const stream = Readable.from(this.readParts(parts.map((part) => part.storageKey)));
 
     return {
       publicLinkId: publicLink.id,
+      reservationTicketToken: reservation.ticketToken,
       stream,
       contentLength,
       fileName: publicLink.sourceItem.displayName ?? 'liminalis-download.bin',
     };
   }
 
-  async completePublicDownload(publicLinkId: string) {
-    const publicLink = await this.prisma.publicLink.findUnique({
-      where: { id: publicLinkId },
-    });
-
-    if (!publicLink || publicLink.state !== PublicLinkState.ACTIVE) {
-      return null;
-    }
-
-    const remaining = Math.max(0, publicLink.remainingDownloadCount - 1);
-    const state = remaining === 0 ? PublicLinkState.EXHAUSTED : PublicLinkState.ACTIVE;
-
-    return this.prisma.publicLink.update({
-      where: { id: publicLink.id },
-      data: {
-        remainingDownloadCount: remaining,
-        state,
+  async finishPublicDownload(ticketToken: string) {
+    return this.prisma.publicLinkDeliveryTicket.updateMany({
+      where: {
+        ticketToken,
+        redeemedAt: null,
       },
+      data: { redeemedAt: new Date() },
+    });
+  }
+
+  async releasePublicDownload(ticketToken: string) {
+    return this.prisma.$transaction(async (tx) => {
+      const ticket = await tx.publicLinkDeliveryTicket.findUnique({
+        where: { ticketToken },
+        include: {
+          publicLink: {
+            include: { sourceItem: true },
+          },
+        },
+      });
+
+      if (!ticket || ticket.redeemedAt) {
+        return null;
+      }
+
+      await tx.publicLinkDeliveryTicket.delete({ where: { id: ticket.id } });
+
+      const canReactivate =
+        ticket.publicLink.state === PublicLinkState.EXHAUSTED &&
+        ticket.publicLink.sourceItem.state === SourceItemState.ACTIVE &&
+        (!ticket.publicLink.sourceItem.validUntil ||
+          ticket.publicLink.sourceItem.validUntil >= new Date()) &&
+        (!ticket.publicLink.validUntil || ticket.publicLink.validUntil >= new Date());
+
+      return tx.publicLink.update({
+        where: { id: ticket.publicLinkId },
+        data: {
+          remainingDownloadCount: { increment: 1 },
+          state: canReactivate ? PublicLinkState.ACTIVE : ticket.publicLink.state,
+        },
+      });
+    });
+  }
+
+  private async reservePublicDownload(publicLinkId: string) {
+    return this.prisma.$transaction(async (tx) => {
+      const update = await tx.publicLink.updateMany({
+        where: {
+          id: publicLinkId,
+          state: PublicLinkState.ACTIVE,
+          remainingDownloadCount: { gt: 0 },
+        },
+        data: {
+          remainingDownloadCount: { decrement: 1 },
+        },
+      });
+
+      if (update.count !== 1) {
+        return null;
+      }
+
+      const refreshed = await tx.publicLink.findUniqueOrThrow({
+        where: { id: publicLinkId },
+        select: { remainingDownloadCount: true },
+      });
+
+      if (refreshed.remainingDownloadCount <= 0) {
+        await tx.publicLink.update({
+          where: { id: publicLinkId },
+          data: { state: PublicLinkState.EXHAUSTED },
+        });
+      }
+
+      return tx.publicLinkDeliveryTicket.create({
+        data: {
+          publicLinkId,
+          ticketToken: crypto.randomUUID(),
+          expiresAt: new Date(Date.now() + 10 * 60_000),
+        },
+      });
     });
   }
 
@@ -153,16 +222,7 @@ export class PublicLinksService {
       throw this.invalidPublicLink();
     }
 
-    const publicLink = await this.refreshPublicLinkState(ticket.publicLink.id);
-    if (publicLink.state !== PublicLinkState.ACTIVE) {
-      throw this.invalidPublicLink();
-    }
-
-    await this.prisma.publicLinkDeliveryTicket.update({
-      where: { id: ticket.id },
-      data: { redeemedAt: new Date() },
-    });
-    await this.completePublicDownload(publicLink.id);
+    const publicLink = await this.redeemIssuedTicket(ticket.id, ticket.publicLink.id);
 
     return {
       publicLinkId: publicLink.id,
@@ -170,6 +230,68 @@ export class PublicLinksService {
       storageBinding: publicLink.sourceItem.storageBinding,
       contentKind: publicLink.sourceItem.contentKind,
     };
+  }
+
+  private async redeemIssuedTicket(ticketId: string, publicLinkId: string) {
+    return this.prisma.$transaction(async (tx) => {
+      const publicLink = await tx.publicLink.findUniqueOrThrow({
+        where: { id: publicLinkId },
+        include: { sourceItem: true },
+      });
+
+      if (
+        publicLink.state !== PublicLinkState.ACTIVE ||
+        publicLink.sourceItem.state !== SourceItemState.ACTIVE ||
+        (publicLink.sourceItem.validUntil && publicLink.sourceItem.validUntil < new Date()) ||
+        (publicLink.validUntil && publicLink.validUntil < new Date()) ||
+        publicLink.remainingDownloadCount <= 0
+      ) {
+        throw this.invalidPublicLink();
+      }
+
+      const ticketUpdate = await tx.publicLinkDeliveryTicket.updateMany({
+        where: {
+          id: ticketId,
+          redeemedAt: null,
+          expiresAt: { gte: new Date() },
+        },
+        data: { redeemedAt: new Date() },
+      });
+
+      if (ticketUpdate.count !== 1) {
+        throw this.invalidPublicLink();
+      }
+
+      const linkUpdate = await tx.publicLink.updateMany({
+        where: {
+          id: publicLinkId,
+          state: PublicLinkState.ACTIVE,
+          remainingDownloadCount: { gt: 0 },
+        },
+        data: {
+          remainingDownloadCount: { decrement: 1 },
+        },
+      });
+
+      if (linkUpdate.count !== 1) {
+        throw this.invalidPublicLink();
+      }
+
+      const refreshed = await tx.publicLink.findUniqueOrThrow({
+        where: { id: publicLinkId },
+        include: { sourceItem: true },
+      });
+
+      if (refreshed.remainingDownloadCount <= 0) {
+        return tx.publicLink.update({
+          where: { id: publicLinkId },
+          data: { state: PublicLinkState.EXHAUSTED },
+          include: { sourceItem: true },
+        });
+      }
+
+      return refreshed;
+    });
   }
 
   private async refreshPublicLinkStateByToken(linkToken: string) {

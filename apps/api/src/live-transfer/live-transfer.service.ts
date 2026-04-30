@@ -429,6 +429,16 @@ export class LiveTransferService {
     this.assertParticipant(session, userId, trustedDeviceId);
     this.assertRelayActive(session);
     const counterpart = this.resolveCounterpart(session, userId, trustedDeviceId);
+    const previousChunk = await this.prisma.liveTransferRelayChunk.findUnique({
+      where: {
+        sessionId_senderDeviceId_sequence: {
+          sessionId: session.id,
+          senderDeviceId: trustedDeviceId,
+          sequence,
+        },
+      },
+      select: { storageKey: true },
+    });
     const stored = await this.storageService.writeLiveTransferRelayChunk({
       sessionId: session.id,
       senderDeviceId: trustedDeviceId,
@@ -436,7 +446,7 @@ export class LiveTransferService {
       body,
     });
 
-    return this.prisma.liveTransferRelayChunk.upsert({
+    const relayChunk = await this.prisma.liveTransferRelayChunk.upsert({
       where: {
         sessionId_senderDeviceId_sequence: {
           sessionId: session.id,
@@ -461,6 +471,12 @@ export class LiveTransferService {
         checksum: stored.checksum,
       },
     });
+
+    if (previousChunk && previousChunk.storageKey !== stored.storageKey) {
+      await this.storageService.remove(previousChunk.storageKey);
+    }
+
+    return relayChunk;
   }
 
   async listRelayChunks(userId: string, trustedDeviceId: string | null, sessionId: string) {

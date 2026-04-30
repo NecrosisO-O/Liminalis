@@ -1,5 +1,6 @@
 import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
 import { SessionActor } from '../common/decorators/session.decorator';
+import { AdminGuard } from '../common/guards/admin.guard';
 import { SessionGuard } from '../common/guards/session.guard';
 import type { AuthenticatedSession } from '../common/types/auth.types';
 import { ApproveUserDto } from './dto/approve-user.dto';
@@ -7,13 +8,12 @@ import { ToggleUserDto } from './dto/toggle-user.dto';
 import { IdentityService } from './identity.service';
 
 @Controller('api/admin/users')
-@UseGuards(SessionGuard)
+@UseGuards(SessionGuard, AdminGuard)
 export class AdminUsersController {
   constructor(private readonly identityService: IdentityService) {}
 
   @Get()
-  async listUsers(@SessionActor() sessionActor: AuthenticatedSession) {
-    this.identityService.requireAdmin(sessionActor.role);
+  async listUsers() {
     return this.identityService.listUsers();
   }
 
@@ -22,19 +22,16 @@ export class AdminUsersController {
     @SessionActor() sessionActor: AuthenticatedSession,
     @Body() input: ApproveUserDto,
   ) {
-    this.identityService.requireAdmin(sessionActor.role);
     return this.identityService.approveUser(input.userId, sessionActor.userId);
   }
 
   @Post('disable')
-  async disable(@SessionActor() sessionActor: AuthenticatedSession, @Body() input: ToggleUserDto) {
-    this.identityService.requireAdmin(sessionActor.role);
+  async disable(@Body() input: ToggleUserDto) {
     return this.identityService.disableUser(input.userId);
   }
 
   @Post('enable')
-  async enable(@SessionActor() sessionActor: AuthenticatedSession, @Body() input: ToggleUserDto) {
-    this.identityService.requireAdmin(sessionActor.role);
+  async enable(@Body() input: ToggleUserDto) {
     return this.identityService.enableUser(input.userId);
   }
 }

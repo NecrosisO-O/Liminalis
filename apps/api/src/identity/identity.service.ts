@@ -208,6 +208,7 @@ export class IdentityService {
         approvedAt: new Date(),
         approvedById: adminId,
       },
+      select: this.safeUserProjection(),
     });
   }
 
@@ -215,6 +216,7 @@ export class IdentityService {
     return this.prisma.user.update({
       where: { id: userId },
       data: { enablementState: EnablementState.DISABLED },
+      select: this.safeUserProjection(),
     });
   }
 
@@ -222,6 +224,23 @@ export class IdentityService {
     return this.prisma.user.update({
       where: { id: userId },
       data: { enablementState: EnablementState.ENABLED },
+      select: this.safeUserProjection(),
     });
+  }
+
+  private safeUserProjection() {
+    return {
+      id: true,
+      username: true,
+      email: true,
+      role: true,
+      admissionState: true,
+      enablementState: true,
+      approvedAt: true,
+      approvedById: true,
+      storageQuotaBytes: true,
+      createdAt: true,
+      updatedAt: true,
+    } as const;
   }
 }

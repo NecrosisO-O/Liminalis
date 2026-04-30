@@ -9,6 +9,7 @@ import {
 } from '@nestjs/common';
 import type { Response } from 'express';
 import { SessionActor } from '../common/decorators/session.decorator';
+import { AdminGuard } from '../common/guards/admin.guard';
 import { SessionGuard } from '../common/guards/session.guard';
 import type { AuthenticatedSession } from '../common/types/auth.types';
 import { BootstrapService } from './bootstrap.service';
@@ -78,37 +79,30 @@ export class IdentityController {
     );
   }
 
-  @UseGuards(SessionGuard)
+  @UseGuards(SessionGuard, AdminGuard)
   @Get('api/admin/pending-users')
-  async listPendingUsers(@SessionActor() sessionActor: AuthenticatedSession) {
-    this.identityService.requireAdmin(sessionActor.role);
+  async listPendingUsers() {
     return this.identityService.listPendingUsers();
   }
 
-  @UseGuards(SessionGuard)
+  @UseGuards(SessionGuard, AdminGuard)
   @Get('api/admin/invites')
-  async listInvites(@SessionActor() sessionActor: AuthenticatedSession) {
-    this.identityService.requireAdmin(sessionActor.role);
+  async listInvites() {
     return this.identityService.listInvites();
   }
 
-  @UseGuards(SessionGuard)
+  @UseGuards(SessionGuard, AdminGuard)
   @Post('api/admin/invites')
   async createInvite(
     @SessionActor() sessionActor: AuthenticatedSession,
     @Body() input: CreateInviteDto,
   ) {
-    this.identityService.requireAdmin(sessionActor.role);
     return this.identityService.createInvite(sessionActor.userId, input.expiresInMinutes);
   }
 
-  @UseGuards(SessionGuard)
+  @UseGuards(SessionGuard, AdminGuard)
   @Post('api/admin/invites/invalidate')
-  async invalidateInvite(
-    @SessionActor() sessionActor: AuthenticatedSession,
-    @Body() input: InvalidateInviteDto,
-  ) {
-    this.identityService.requireAdmin(sessionActor.role);
+  async invalidateInvite(@Body() input: InvalidateInviteDto) {
     return this.identityService.invalidateInvite(input.inviteId);
   }
 }

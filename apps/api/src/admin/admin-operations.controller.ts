@@ -1,23 +1,16 @@
 import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { SessionActor } from '../common/decorators/session.decorator';
+import { AdminGuard } from '../common/guards/admin.guard';
 import { SessionGuard } from '../common/guards/session.guard';
-import type { AuthenticatedSession } from '../common/types/auth.types';
-import { IdentityService } from '../identity/identity.service';
 import { SetStorageQuotaDto } from './dto/set-storage-quota.dto';
 
 @Controller('api/admin/operations')
-@UseGuards(SessionGuard)
+@UseGuards(SessionGuard, AdminGuard)
 export class AdminOperationsController {
-  constructor(
-    private readonly identityService: IdentityService,
-    private readonly prisma: PrismaService,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   @Get('summary')
-  async getSummary(@SessionActor() sessionActor: AuthenticatedSession) {
-    this.identityService.requireAdmin(sessionActor.role);
-
+  async getSummary() {
     const [
       totalUsers,
       pendingUsers,
@@ -65,9 +58,7 @@ export class AdminOperationsController {
   }
 
   @Get('storage/users')
-  async getPerUserStorage(@SessionActor() sessionActor: AuthenticatedSession) {
-    this.identityService.requireAdmin(sessionActor.role);
-
+  async getPerUserStorage() {
     const [settings, users] = await Promise.all([
       this.prisma.instanceSetting.findUnique({
         where: { singletonKey: 'default' },
@@ -116,12 +107,7 @@ export class AdminOperationsController {
   }
 
   @Post('storage/quota')
-  async setStorageQuota(
-    @SessionActor() sessionActor: AuthenticatedSession,
-    @Body() input: SetStorageQuotaDto,
-  ) {
-    this.identityService.requireAdmin(sessionActor.role);
-
+  async setStorageQuota(@Body() input: SetStorageQuotaDto) {
     if (input.userId) {
       return this.prisma.user.update({
         where: { id: input.userId },

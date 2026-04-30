@@ -141,6 +141,16 @@ export class UploadsService {
       body,
     });
 
+    const previousPart = await this.prisma.uploadPart.findUnique({
+      where: {
+        uploadSessionId_partNumber: {
+          uploadSessionId,
+          partNumber,
+        },
+      },
+      select: { storageKey: true },
+    });
+
     try {
       await this.requireStorageQuotaForPart(userId, uploadSessionId, partNumber, stored.byteSize);
     } catch (error) {
@@ -168,6 +178,10 @@ export class UploadsService {
         checksum: stored.checksum,
       },
     });
+
+    if (previousPart && previousPart.storageKey !== stored.storageKey) {
+      await this.storageService.remove(previousPart.storageKey);
+    }
 
     await this.prisma.uploadSession.update({
       where: { id: uploadSessionId },
