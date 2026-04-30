@@ -11,16 +11,20 @@ import {
   ProtectedObjectType,
   RetrievalAttemptStatus,
   RetrievalFamily,
+  ShareObjectState,
   SourceItemState,
 } from '../../generated/prisma/index.js';
 import { PrismaService } from '../prisma/prisma.service';
 import { ProjectionService } from '../projections/projection.service';
+import { StorageService } from '../storage/storage.service';
+import { Readable } from 'stream';
 
 @Injectable()
 export class RetrievalService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly projectionService: ProjectionService,
+    private readonly storageService: StorageService,
   ) {}
 
   async getAttempt(retrievalAttemptId: string) {
@@ -55,6 +59,7 @@ export class RetrievalService {
           where: { status: 'CURRENT' },
           include: {
             ordinaryPackageFamily: true,
+            recoveryPackageFamily: true,
           },
         },
       },
@@ -82,12 +87,7 @@ export class RetrievalService {
       throw new BadRequestException('AccessGrantSet not found');
     }
 
-    if (
-      grantSet.grantSubjectMode === AccessGrantSubjectMode.OWNER_DEVICE_SNAPSHOT &&
-      !grantSet.snapshotDeviceIds.includes(trustedDeviceId)
-    ) {
-      throw new ForbiddenException('Trusted device is not eligible for this source item');
-    }
+    const packageSelection = await this.selectOwnerPackageFamily(userId, trustedDeviceId, grantSet);
 
     const attempt = await this.prisma.retrievalAttempt.upsert({
         where: {
@@ -122,15 +122,15 @@ export class RetrievalService {
     if (!packageReference) {
       packageReference = await this.prisma.packageReference.create({
         data: {
-          packageFamilyId: grantSet.ordinaryPackageFamilyId,
-          packageFamilyKind: PackageFamilyKind.OWNER_ORDINARY,
+          packageFamilyId: packageSelection.packageFamily.id,
+          packageFamilyKind: packageSelection.kind,
           protectedObjectType: ProtectedObjectType.SOURCE_ITEM,
           protectedObjectId: sourceItemId,
           eligibleSubjectUserId: userId,
           eligibleSubjectDeviceId: trustedDeviceId,
-          packageFamilyVersion: grantSet.ordinaryPackageFamily.familyVersion,
+          packageFamilyVersion: packageSelection.packageFamily.familyVersion,
           wrappedPayloadReference:
-            grantSet.ordinaryPackageFamily.referenceBlob as Prisma.InputJsonValue,
+            packageSelection.packageFamily.referenceBlob as Prisma.InputJsonValue,
           expiresAt: new Date(Date.now() + 10 * 60_000),
           retrievalAttempt: {
             connect: { id: attempt.id },
@@ -229,5 +229,163 @@ export class RetrievalService {
           ? SourceItemState.PURGED
           : completed.sourceItem?.state ?? null,
       };
+  }
+
+  async createDownloadStreamForAttempt(
+    userId: string,
+    trustedDeviceId: string | null,
+    retrievalAttemptId: string,
+  ) {
+    if (!trustedDeviceId) {
+      throw new ForbiddenException('Trusted device required');
+    }
+
+    const attempt = await this.prisma.retrievalAttempt.findUnique({
+      where: { id: retrievalAttemptId },
+      include: {
+        sourceItem: true,
+        shareObject: {
+          include: { sourceItem: true },
+        },
+      },
+    });
+
+    if (
+      !attempt ||
+      attempt.requestingUserId !== userId ||
+      attempt.requestingDeviceId !== trustedDeviceId ||
+      (attempt.retrievalFamily !== RetrievalFamily.SOURCE_ITEM_OWNER &&
+        attempt.retrievalFamily !== RetrievalFamily.SHARE_OBJECT_RECIPIENT)
+    ) {
+      throw new NotFoundException('Retrieval attempt not found');
+    }
+
+    if (
+      attempt.status !== RetrievalAttemptStatus.IN_PROGRESS &&
+      attempt.status !== RetrievalAttemptStatus.ISSUED
+    ) {
+      throw new BadRequestException('Retrieval attempt is not downloadable');
+    }
+
+    if (attempt.shareObject && attempt.shareObject.state !== ShareObjectState.ACTIVE) {
+      throw new BadRequestException('Share object is not retrievable');
+    }
+
+    const sourceItem = attempt.sourceItem ?? attempt.shareObject?.sourceItem ?? null;
+    if (!sourceItem) {
+      throw new NotFoundException('Source item not found');
+    }
+
+    if (sourceItem.state !== SourceItemState.ACTIVE) {
+      throw new BadRequestException('Source item is not retrievable');
+    }
+
+    if (sourceItem.validUntil && sourceItem.validUntil < new Date()) {
+      await this.prisma.sourceItem.update({
+        where: { id: sourceItem.id },
+        data: { state: SourceItemState.EXPIRED },
+      });
+      await this.projectionService.projectSourceItem(sourceItem.id);
+      throw new BadRequestException('Source item expired');
+    }
+
+    const parts = this.extractStorageParts(sourceItem.storageBinding);
+    const contentLength = parts.reduce((sum, part) => sum + part.byteSize, 0);
+    const stream = Readable.from(this.readParts(parts.map((part) => part.storageKey)));
+
+    return {
+      stream,
+      contentLength,
+      fileName: sourceItem.displayName ?? 'liminalis-download.bin',
+    };
+  }
+
+  private extractStorageParts(storageBinding: unknown) {
+    if (!storageBinding || typeof storageBinding !== 'object' || !('parts' in storageBinding)) {
+      throw new BadRequestException('Source item has no stored file bytes');
+    }
+
+    const parts = (storageBinding as { parts?: unknown }).parts;
+    if (!Array.isArray(parts) || parts.length === 0) {
+      throw new BadRequestException('Source item has no stored file bytes');
+    }
+
+    return parts.map((part) => {
+      if (
+        !part ||
+        typeof part !== 'object' ||
+        typeof (part as { storageKey?: unknown }).storageKey !== 'string' ||
+        typeof (part as { byteSize?: unknown }).byteSize !== 'number'
+      ) {
+        throw new BadRequestException('Stored file binding is invalid');
+      }
+
+      return {
+        storageKey: (part as { storageKey: string }).storageKey,
+        byteSize: (part as { byteSize: number }).byteSize,
+      };
+    });
+  }
+
+  private async *readParts(storageKeys: string[]) {
+    for (const storageKey of storageKeys) {
+      const stream = this.storageService.createReadStream(storageKey);
+      for await (const chunk of stream) {
+        yield chunk;
+      }
+    }
+  }
+
+  private async selectOwnerPackageFamily(
+    userId: string,
+    trustedDeviceId: string,
+    grantSet: {
+      grantSubjectMode: AccessGrantSubjectMode;
+      snapshotDeviceIds: string[];
+      recoveryEnabled: boolean;
+      ordinaryPackageFamily: {
+        id: string;
+        familyVersion: number;
+        referenceBlob: unknown;
+      };
+      recoveryPackageFamily: {
+        id: string;
+        familyVersion: number;
+        referenceBlob: unknown;
+      } | null;
+    },
+  ) {
+    const ordinaryEligible =
+      grantSet.grantSubjectMode !== AccessGrantSubjectMode.OWNER_DEVICE_SNAPSHOT ||
+      grantSet.snapshotDeviceIds.includes(trustedDeviceId);
+
+    if (ordinaryEligible) {
+      return {
+        kind: PackageFamilyKind.OWNER_ORDINARY,
+        packageFamily: grantSet.ordinaryPackageFamily,
+      };
+    }
+
+    const trustedDevice = await this.prisma.trustedDevice.findFirst({
+      where: {
+        id: trustedDeviceId,
+        userId,
+        trustState: 'TRUSTED',
+      },
+      select: { recoveryEstablishedAt: true },
+    });
+
+    if (
+      grantSet.recoveryEnabled &&
+      grantSet.recoveryPackageFamily &&
+      trustedDevice?.recoveryEstablishedAt
+    ) {
+      return {
+        kind: PackageFamilyKind.OWNER_RECOVERY,
+        packageFamily: grantSet.recoveryPackageFamily,
+      };
+    }
+
+    throw new ForbiddenException('Trusted device is not eligible for this source item');
   }
 }

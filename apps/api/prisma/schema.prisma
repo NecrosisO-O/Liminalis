@@ -172,11 +172,14 @@ model User {
   enablementState  EnablementState  @default(ENABLED)
   approvedAt       DateTime?
   approvedById     String?
+  storageQuotaBytes Int?
   createdAt        DateTime         @default(now())
   updatedAt        DateTime         @updatedAt
   sessions         Session[]
   invitesCreated   InviteCode[]     @relation("InvitesCreated")
   devices          TrustedDevice[]
+  sentLiveTransferSignals LiveTransferSignalMessage[] @relation("LiveTransferSignalSenderUser")
+  receivedLiveTransferSignals LiveTransferSignalMessage[] @relation("LiveTransferSignalRecipientUser")
   recoverySet      RecoveryCredentialSet?
   wrappingKeys     UserDomainWrappingKey[]
   uploadSessions   UploadSession[]
@@ -222,6 +225,8 @@ model TrustedDevice {
   label                  String
   trustState             DeviceTrustState      @default(UNTRUSTED)
   trustEstablishedAt     DateTime?
+  recoveryRequestedAt    DateTime?
+  recoveryEstablishedAt  DateTime?
   publicIdentityVersion  Int                   @default(1)
   publicIdentityPayload  String?
   createdAt              DateTime              @default(now())
@@ -231,6 +236,8 @@ model TrustedDevice {
   retrievalAttempts      RetrievalAttempt[]
   initiatedLiveTransfers LiveTransferSession[] @relation("LiveTransferInitiatorDevice")
   joinedLiveTransfers    LiveTransferSession[] @relation("LiveTransferJoinerDevice")
+  sentLiveTransferSignals LiveTransferSignalMessage[] @relation("LiveTransferSignalSenderDevice")
+  receivedLiveTransferSignals LiveTransferSignalMessage[] @relation("LiveTransferSignalRecipientDevice")
 }
 
 model PairingSession {
@@ -303,6 +310,7 @@ model InstanceSetting {
   id                          String               @id @default(cuid())
   singletonKey                String               @unique
   defaultConfidentialityLevel ConfidentialityLevel @default(SECRET)
+  defaultStorageQuotaBytes    Int                  @default(1073741824)
   createdAt                   DateTime             @default(now())
   updatedAt                   DateTime             @updatedAt
 }
@@ -323,6 +331,9 @@ model LiveTransferSession {
   policySnapshot            Json
   state                     LiveTransferSessionState   @default(CREATED)
   transportState            LiveTransferTransportState?
+  sessionCode               String?                    @unique
+  initiatorConfirmedAt      DateTime?
+  joinerConfirmedAt         DateTime?
   contentLabel              String
   contentKind               UploadContentKind
   groupedTransfer           Boolean                    @default(false)
@@ -331,12 +342,54 @@ model LiveTransferSession {
   peerToPeerToRelayFallback Boolean                    @default(false)
   liveToStoredFallbackAllowed Boolean                  @default(false)
   retainRecord              Boolean                    @default(false)
+  storedFallbackUploadSessionId String?
   failureReason             String?
   completedAt               DateTime?
   expiresAt                 DateTime
   recordProjections         LiveTransferRecordProjection[]
+  signalMessages            LiveTransferSignalMessage[]
+  relayChunks               LiveTransferRelayChunk[]
   createdAt                 DateTime                   @default(now())
   updatedAt                 DateTime                   @updatedAt
+}
+
+model LiveTransferSignalMessage {
+  id                String              @id @default(cuid())
+  sessionId         String
+  session           LiveTransferSession @relation(fields: [sessionId], references: [id])
+  senderUserId      String
+  senderUser        User                @relation("LiveTransferSignalSenderUser", fields: [senderUserId], references: [id])
+  senderDeviceId    String
+  senderDevice      TrustedDevice       @relation("LiveTransferSignalSenderDevice", fields: [senderDeviceId], references: [id])
+  recipientUserId   String
+  recipientUser     User                @relation("LiveTransferSignalRecipientUser", fields: [recipientUserId], references: [id])
+  recipientDeviceId String
+  recipientDevice   TrustedDevice       @relation("LiveTransferSignalRecipientDevice", fields: [recipientDeviceId], references: [id])
+  kind              String
+  payload           Json
+  readAt            DateTime?
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+
+  @@index([sessionId, recipientDeviceId, readAt])
+}
+
+model LiveTransferRelayChunk {
+  id                String              @id @default(cuid())
+  sessionId         String
+  session           LiveTransferSession @relation(fields: [sessionId], references: [id])
+  senderDeviceId    String
+  recipientDeviceId String
+  sequence          Int
+  storageKey        String
+  byteSize          Int
+  checksum          String?
+  receivedAt        DateTime?
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+
+  @@unique([sessionId, senderDeviceId, sequence])
+  @@index([sessionId, recipientDeviceId, receivedAt])
 }
 
 model UploadSession {
@@ -391,6 +444,7 @@ model SourceItem {
   displayName            String?
   textCiphertextBody     String?
   storageBinding         Json?
+  storageBytes           Int                   @default(0)
   validUntil             DateTime?
   burnAfterReadEnabled   Boolean               @default(false)
   uploadSession          UploadSession?        @relation("UploadSessionFinalizedSourceItem")
@@ -402,6 +456,8 @@ model SourceItem {
   historyEntry           HistoryEntryProjection?
   searchDocument         SearchDocumentProjection?
   shares                 ShareObject[]
+  extractionAccesses     ExtractionAccess[]
+  publicLinks            PublicLink[]
   createdAt              DateTime              @default(now())
   updatedAt              DateTime              @updatedAt
 }
@@ -438,8 +494,10 @@ model ShareObject {
 
 model ExtractionAccess {
   id                             String                @id @default(cuid())
-  shareObjectId                  String                @unique
-  shareObject                    ShareObject            @relation(fields: [shareObjectId], references: [id])
+  sourceItemId                   String
+  sourceItem                     SourceItem             @relation(fields: [sourceItemId], references: [id])
+  shareObjectId                  String?               @unique
+  shareObject                    ShareObject?           @relation(fields: [shareObjectId], references: [id])
   policyBundleId                 String
   policyBundle                   PolicyBundle           @relation(fields: [policyBundleId], references: [id])
   policySnapshot                 Json
@@ -459,8 +517,10 @@ model ExtractionAccess {
 
 model PublicLink {
   id                      String                   @id @default(cuid())
-  shareObjectId           String
-  shareObject             ShareObject               @relation(fields: [shareObjectId], references: [id])
+  sourceItemId            String
+  sourceItem              SourceItem                @relation(fields: [sourceItemId], references: [id])
+  shareObjectId           String?
+  shareObject             ShareObject?              @relation(fields: [shareObjectId], references: [id])
   policyBundleId          String
   policyBundle            PolicyBundle              @relation(fields: [policyBundleId], references: [id])
   policySnapshot          Json

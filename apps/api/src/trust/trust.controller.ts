@@ -37,8 +37,17 @@ export class TrustController {
   async createPairingSession(
     @SessionActor() sessionActor: AuthenticatedSession,
     @Body() input: CreatePairingSessionDto,
+    @Res({ passthrough: true }) response: Response,
   ) {
-    return this.trustService.createPairingSession(sessionActor.userId, input);
+    const result = await this.trustService.createPairingSession(sessionActor.userId, input);
+
+    response.cookie('liminalis_trusted_device', result.requesterDeviceId, {
+      httpOnly: true,
+      sameSite: 'lax',
+      secure: false,
+    });
+
+    return result;
   }
 
   @UseGuards(SessionGuard)
@@ -52,17 +61,12 @@ export class TrustController {
   async approvePairing(
     @SessionActor() sessionActor: AuthenticatedSession,
     @Body() input: ApprovePairingDto,
-    @Res({ passthrough: true }) response: Response,
   ) {
-    const result = await this.trustService.approvePairing(sessionActor.userId, input);
-
-    response.cookie('liminalis_trusted_device', result.requesterDeviceId, {
-      httpOnly: true,
-      sameSite: 'lax',
-      secure: false,
-    });
-
-    return result;
+    return this.trustService.approvePairing(
+      sessionActor.userId,
+      sessionActor.trustedDeviceId,
+      input,
+    );
   }
 
   @UseGuards(SessionGuard)
@@ -71,7 +75,11 @@ export class TrustController {
     @SessionActor() sessionActor: AuthenticatedSession,
     @Body() input: RejectPairingDto,
   ) {
-    return this.trustService.rejectPairing(sessionActor.userId, input);
+    return this.trustService.rejectPairing(
+      sessionActor.userId,
+      sessionActor.trustedDeviceId,
+      input,
+    );
   }
 
   @UseGuards(SessionGuard)

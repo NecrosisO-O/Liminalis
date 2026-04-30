@@ -1,13 +1,14 @@
 import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
 import { SessionActor } from '../common/decorators/session.decorator';
 import { SessionGuard } from '../common/guards/session.guard';
+import { TrustedDeviceGuard } from '../common/guards/trusted-device.guard';
 import type { AuthenticatedSession } from '../common/types/auth.types';
 import { CompleteRetrievalDto } from '../retrieval/dto/complete-retrieval.dto';
 import { CreateShareDto } from './dto/create-share.dto';
 import { SharesService } from './shares.service';
 
 @Controller('api/shares')
-@UseGuards(SessionGuard)
+@UseGuards(SessionGuard, TrustedDeviceGuard)
 export class SharesController {
   constructor(private readonly sharesService: SharesService) {}
 

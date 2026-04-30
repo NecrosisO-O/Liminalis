@@ -6,7 +6,7 @@ import { IdentityService } from './identity.service';
 export class BootstrapService {
   constructor(private readonly identityService: IdentityService) {}
 
-  async getBootstrapState(userId: string) {
+  async getBootstrapState(userId: string, trustedDeviceId: string | null) {
     const user = await this.identityService.getUserById(userId);
 
     if (user.enablementState === EnablementState.DISABLED) {
@@ -27,10 +27,11 @@ export class BootstrapService {
 
     const trustedDevices = user.devices.filter((device) => device.trustState === 'TRUSTED');
     const requiresFirstDeviceBootstrap = trustedDevices.length === 0;
+    const currentBrowserTrusted = trustedDeviceId !== null;
 
     return {
       accountState: 'active',
-      trustState: requiresFirstDeviceBootstrap ? 'untrusted' : 'trusted',
+      trustState: currentBrowserTrusted ? 'trusted' : 'untrusted',
       requiresFirstDeviceBootstrap,
       hasRecoverySet: Boolean(user.recoverySet),
       hasCurrentWrappingKey: user.wrappingKeys.length > 0,

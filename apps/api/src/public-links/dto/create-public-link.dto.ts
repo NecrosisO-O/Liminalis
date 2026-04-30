@@ -2,7 +2,7 @@ import { IsInt, IsOptional, IsString, Min } from 'class-validator';
 
 export class CreatePublicLinkDto {
   @IsString()
-  shareObjectId!: string;
+  sourceItemId!: string;
 
   @IsOptional()
   @IsInt()

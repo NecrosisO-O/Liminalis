@@ -1,14 +1,16 @@
-import { Body, Controller, Param, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Res, StreamableFile, UseGuards } from '@nestjs/common';
+import type { Response } from 'express';
 import { RetrievalFamily } from '../../generated/prisma/index.js';
 import { SessionActor } from '../common/decorators/session.decorator';
 import { SessionGuard } from '../common/guards/session.guard';
+import { TrustedDeviceGuard } from '../common/guards/trusted-device.guard';
 import type { AuthenticatedSession } from '../common/types/auth.types';
 import { SharesService } from '../shares/shares.service';
 import { CompleteRetrievalDto } from './dto/complete-retrieval.dto';
 import { RetrievalService } from './retrieval.service';
 
 @Controller('api/retrieval')
-@UseGuards(SessionGuard)
+@UseGuards(SessionGuard, TrustedDeviceGuard)
 export class RetrievalController {
   constructor(
     private readonly retrievalService: RetrievalService,
@@ -52,5 +54,27 @@ export class RetrievalController {
       retrievalAttemptId,
       input.success,
     );
+  }
+
+  @Get('attempts/:retrievalAttemptId/download')
+  async downloadAttempt(
+    @SessionActor() sessionActor: AuthenticatedSession,
+    @Param('retrievalAttemptId') retrievalAttemptId: string,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    const download = await this.retrievalService.createDownloadStreamForAttempt(
+      sessionActor.userId,
+      sessionActor.trustedDeviceId,
+      retrievalAttemptId,
+    );
+
+    response.setHeader('Content-Type', 'application/octet-stream');
+    response.setHeader('Content-Length', String(download.contentLength));
+    response.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${download.fileName.replace(/"/g, '')}"`,
+    );
+
+    return new StreamableFile(download.stream);
   }
 }

@@ -1,15 +1,29 @@
-import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  ParseIntPipe,
+  Post,
+  Req,
+  Res,
+  StreamableFile,
+  UseGuards,
+} from '@nestjs/common';
+import type { Request, Response } from 'express';
 import { SessionActor } from '../common/decorators/session.decorator';
 import { SessionGuard } from '../common/guards/session.guard';
+import { TrustedDeviceGuard } from '../common/guards/trusted-device.guard';
 import type { AuthenticatedSession } from '../common/types/auth.types';
 import { ConfirmLiveTransferDto } from './dto/confirm-live-transfer.dto';
 import { CreateLiveTransferDto } from './dto/create-live-transfer.dto';
 import { JoinLiveTransferDto } from './dto/join-live-transfer.dto';
+import { SendLiveSignalDto } from './dto/send-live-signal.dto';
 import { UpdateLiveTransportDto } from './dto/update-live-transport.dto';
 import { LiveTransferService } from './live-transfer.service';
 
 @Controller('api/live-transfer')
-@UseGuards(SessionGuard)
+@UseGuards(SessionGuard, TrustedDeviceGuard)
 export class LiveTransferController {
   constructor(private readonly liveTransferService: LiveTransferService) {}
 
@@ -62,6 +76,95 @@ export class LiveTransferController {
       sessionActor.trustedDeviceId,
       sessionId,
       input,
+    );
+  }
+
+  @Post('sessions/:sessionId/signals')
+  async sendSignal(
+    @SessionActor() sessionActor: AuthenticatedSession,
+    @Param('sessionId') sessionId: string,
+    @Body() input: SendLiveSignalDto,
+  ) {
+    return this.liveTransferService.sendSignal(
+      sessionActor.userId,
+      sessionActor.trustedDeviceId,
+      sessionId,
+      input,
+    );
+  }
+
+  @Get('sessions/:sessionId/signals')
+  async listSignals(
+    @SessionActor() sessionActor: AuthenticatedSession,
+    @Param('sessionId') sessionId: string,
+  ) {
+    return this.liveTransferService.listSignals(
+      sessionActor.userId,
+      sessionActor.trustedDeviceId,
+      sessionId,
+    );
+  }
+
+  @Post('sessions/:sessionId/relay/chunks/:sequence')
+  async uploadRelayChunk(
+    @SessionActor() sessionActor: AuthenticatedSession,
+    @Param('sessionId') sessionId: string,
+    @Param('sequence', ParseIntPipe) sequence: number,
+    @Req() request: Request,
+  ) {
+    return this.liveTransferService.uploadRelayChunk(
+      sessionActor.userId,
+      sessionActor.trustedDeviceId,
+      sessionId,
+      sequence,
+      request,
+    );
+  }
+
+  @Get('sessions/:sessionId/relay/chunks')
+  async listRelayChunks(
+    @SessionActor() sessionActor: AuthenticatedSession,
+    @Param('sessionId') sessionId: string,
+  ) {
+    return this.liveTransferService.listRelayChunks(
+      sessionActor.userId,
+      sessionActor.trustedDeviceId,
+      sessionId,
+    );
+  }
+
+  @Get('sessions/:sessionId/relay/chunks/:chunkId/blob')
+  async downloadRelayChunk(
+    @SessionActor() sessionActor: AuthenticatedSession,
+    @Param('sessionId') sessionId: string,
+    @Param('chunkId') chunkId: string,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    const download = await this.liveTransferService.createRelayChunkReadStream(
+      sessionActor.userId,
+      sessionActor.trustedDeviceId,
+      sessionId,
+      chunkId,
+    );
+
+    response.setHeader('Content-Type', 'application/octet-stream');
+    response.setHeader('Content-Length', String(download.contentLength));
+    response.setHeader('Content-Disposition', `attachment; filename="relay-${download.sequence}.bin"`);
+
+    return new StreamableFile(download.stream);
+  }
+
+  @Post('sessions/:sessionId/relay/chunks/:chunkId/ack')
+  async acknowledgeRelayChunk(
+    @SessionActor() sessionActor: AuthenticatedSession,
+    @Param('sessionId') sessionId: string,
+    @Param('chunkId') chunkId: string,
+  ) {
+    return this.liveTransferService.acknowledgeRelayChunk(
+      sessionActor.userId,
+      sessionActor.trustedDeviceId,
+      sessionId,
+      chunkId,
     );
   }
 

@@ -1,11 +1,12 @@
 import { Controller, Get, Query, UseGuards } from '@nestjs/common';
 import { SessionActor } from '../common/decorators/session.decorator';
 import { SessionGuard } from '../common/guards/session.guard';
+import { TrustedDeviceGuard } from '../common/guards/trusted-device.guard';
 import type { AuthenticatedSession } from '../common/types/auth.types';
 import { ProjectionsService } from './projections.service';
 
 @Controller('api')
-@UseGuards(SessionGuard)
+@UseGuards(SessionGuard, TrustedDeviceGuard)
 export class ProjectionsController {
   constructor(private readonly projectionsService: ProjectionsService) {}
 

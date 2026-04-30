@@ -11,13 +11,14 @@ import {
   PackageFamilyKind,
   ProtectedObjectType,
   SourceItemState,
-  type User,
   UploadContentKind,
   UploadSessionPhase,
 } from '../../generated/prisma/index.js';
+import type { Readable } from 'stream';
 import { PrismaService } from '../prisma/prisma.service';
 import { PolicyService } from '../policy/policy.service';
 import { ProjectionService } from '../projections/projection.service';
+import { StorageService } from '../storage/storage.service';
 import { PrepareUploadDto } from './dto/prepare-upload.dto';
 import { RegisterUploadPartDto } from './dto/register-upload-part.dto';
 import { FinalizeUploadDto } from './dto/finalize-upload.dto';
@@ -30,6 +31,7 @@ export class UploadsService {
     private readonly prisma: PrismaService,
     private readonly policyService: PolicyService,
     private readonly projectionService: ProjectionService,
+    private readonly storageService: StorageService,
   ) {}
 
   async prepareUpload(userId: string, input: PrepareUploadDto) {
@@ -80,6 +82,13 @@ export class UploadsService {
       throw new BadRequestException('Text uploads do not accept file parts');
     }
 
+    if (!input.storageKey.startsWith(`uploads/${userId}/${uploadSessionId}/`)) {
+      throw new BadRequestException('Upload part storage key does not belong to this session');
+    }
+
+    await this.storageService.requireExistingObject(input.storageKey, input.byteSize);
+    await this.requireStorageQuotaForPart(userId, uploadSessionId, input.partNumber, input.byteSize);
+
     await this.prisma.uploadPart.upsert({
       where: {
         uploadSessionId_partNumber: {
@@ -109,6 +118,71 @@ export class UploadsService {
     return { ok: true };
   }
 
+  async storeUploadPartBody(
+    userId: string,
+    uploadSessionId: string,
+    partNumber: number,
+    body: Readable,
+  ) {
+    if (partNumber < 1 || !Number.isInteger(partNumber)) {
+      throw new BadRequestException('Part number must be a positive integer');
+    }
+
+    const session = await this.requireOwnedActiveUploadSession(userId, uploadSessionId);
+
+    if (session.contentKind === UploadContentKind.SELF_SPACE_TEXT) {
+      throw new BadRequestException('Text uploads do not accept file parts');
+    }
+
+    const stored = await this.storageService.writeUploadPart({
+      userId,
+      uploadSessionId,
+      partNumber,
+      body,
+    });
+
+    try {
+      await this.requireStorageQuotaForPart(userId, uploadSessionId, partNumber, stored.byteSize);
+    } catch (error) {
+      await this.storageService.remove(stored.storageKey);
+      throw error;
+    }
+
+    const part = await this.prisma.uploadPart.upsert({
+      where: {
+        uploadSessionId_partNumber: {
+          uploadSessionId,
+          partNumber,
+        },
+      },
+      update: {
+        storageKey: stored.storageKey,
+        byteSize: stored.byteSize,
+        checksum: stored.checksum,
+      },
+      create: {
+        uploadSessionId,
+        partNumber,
+        storageKey: stored.storageKey,
+        byteSize: stored.byteSize,
+        checksum: stored.checksum,
+      },
+    });
+
+    await this.prisma.uploadSession.update({
+      where: { id: uploadSessionId },
+      data: { phase: UploadSessionPhase.UPLOADING },
+    });
+
+    return {
+      uploadPartId: part.id,
+      partNumber: part.partNumber,
+      storageKey: part.storageKey,
+      byteSize: part.byteSize,
+      checksum: part.checksum,
+    };
+  }
+
   async finalizeUpload(userId: string, uploadSessionId: string, input: FinalizeUploadDto) {
     const session = await this.requireOwnedActiveUploadSession(userId, uploadSessionId);
     const policySnapshot = session.policySnapshot as Record<string, unknown>;
@@ -130,12 +204,24 @@ export class UploadsService {
 
     const sourceItem = await this.prisma.$transaction(async (tx) => {
       const partCount = await tx.uploadPart.count({ where: { uploadSessionId } });
+      const parts = await tx.uploadPart.findMany({
+        where: { uploadSessionId },
+        orderBy: { partNumber: 'asc' },
+        select: {
+          partNumber: true,
+          storageKey: true,
+          byteSize: true,
+          checksum: true,
+        },
+      });
+      const storageBytes = parts.reduce((sum, part) => sum + part.byteSize, 0);
       const storageBinding =
         session.contentKind === UploadContentKind.SELF_SPACE_TEXT
           ? Prisma.JsonNull
           : ({
               uploadSessionId,
               partCount,
+              parts,
             } as Prisma.InputJsonValue);
 
       const created = await tx.sourceItem.create({
@@ -150,6 +236,7 @@ export class UploadsService {
           displayName: input.displayName ?? null,
           textCiphertextBody: input.textCiphertextBody ?? null,
           storageBinding,
+          storageBytes,
           validUntil:
             session.resolvedValidityMinutes && session.resolvedValidityMinutes > 0
               ? new Date(Date.now() + session.resolvedValidityMinutes * 60_000)
@@ -306,5 +393,48 @@ export class UploadsService {
     }
 
     return user;
+  }
+
+  private async requireStorageQuotaForPart(
+    userId: string,
+    uploadSessionId: string,
+    partNumber: number,
+    incomingByteSize: number,
+  ) {
+    const [usage, existingPart, user, settings] = await Promise.all([
+      this.prisma.uploadPart.aggregate({
+        where: {
+          uploadSession: {
+            uploaderUserId: userId,
+          },
+        },
+        _sum: { byteSize: true },
+      }),
+      this.prisma.uploadPart.findUnique({
+        where: {
+          uploadSessionId_partNumber: {
+            uploadSessionId,
+            partNumber,
+          },
+        },
+      }),
+      this.prisma.user.findUnique({
+        where: { id: userId },
+        select: { storageQuotaBytes: true },
+      }),
+      this.prisma.instanceSetting.findUnique({
+        where: { singletonKey: 'default' },
+        select: { defaultStorageQuotaBytes: true },
+      }),
+    ]);
+
+    const quotaBytes = user?.storageQuotaBytes ?? settings?.defaultStorageQuotaBytes ?? 1_073_741_824;
+    const currentBytes = usage._sum.byteSize ?? 0;
+    const replacedBytes = existingPart?.byteSize ?? 0;
+    const projectedBytes = currentBytes - replacedBytes + incomingByteSize;
+
+    if (projectedBytes > quotaBytes) {
+      throw new ForbiddenException('Storage quota exceeded');
+    }
   }
 }

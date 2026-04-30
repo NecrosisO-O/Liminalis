@@ -30,6 +30,19 @@ export class ProjectionService {
       return;
     }
 
+    if (sourceItem.burnAfterReadEnabled && sourceItem.state === SourceItemState.PURGED) {
+      await this.prisma.activeTimelineItemProjection.deleteMany({
+        where: { sourceItemId: sourceItem.id },
+      });
+      await this.prisma.historyEntryProjection.deleteMany({
+        where: { sourceItemId: sourceItem.id },
+      });
+      await this.prisma.searchDocumentProjection.deleteMany({
+        where: { sourceItemId: sourceItem.id },
+      });
+      return;
+    }
+
     const visibility = this.buildSourceVisibility(sourceItem);
     const title = sourceItem.displayName ?? this.fallbackTitle(sourceItem.contentKind);
 
@@ -247,10 +260,7 @@ export class ProjectionService {
     },
   ) {
     const visibleTypeLabel = this.visibleTypeLabel(sourceItem.contentKind, sourceItem.groupManifest !== null);
-    const visibleSummary =
-      sourceItem.contentKind === UploadContentKind.SELF_SPACE_TEXT
-        ? sourceItem.textCiphertextBody?.slice(0, 560) ?? sourceItem.displayName ?? null
-        : null;
+    const visibleSummary = null;
     const visibleSizeBytes =
       sourceItem.contentKind === UploadContentKind.SELF_SPACE_TEXT
         ? sourceItem.textCiphertextBody?.length ?? null
@@ -261,9 +271,12 @@ export class ProjectionService {
         : null
       : null;
 
-    const currentRetrievable = sourceItem.state === SourceItemState.ACTIVE;
+    const isExpired = sourceItem.validUntil !== null && sourceItem.validUntil < new Date();
+    const currentRetrievable = sourceItem.state === SourceItemState.ACTIVE && !isExpired;
     const retainedStatus =
-      sourceItem.state === SourceItemState.ACTIVE
+      sourceItem.state === SourceItemState.ACTIVE && isExpired
+        ? 'expired'
+        : sourceItem.state === SourceItemState.ACTIVE
         ? 'active'
         : sourceItem.state === SourceItemState.EXPIRED
           ? 'expired'

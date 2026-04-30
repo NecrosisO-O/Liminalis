@@ -72,7 +72,10 @@ export class IdentityController {
   @UseGuards(SessionGuard)
   @Get('api/bootstrap')
   async bootstrap(@SessionActor() sessionActor: AuthenticatedSession) {
-    return this.bootstrapService.getBootstrapState(sessionActor.userId);
+    return this.bootstrapService.getBootstrapState(
+      sessionActor.userId,
+      sessionActor.trustedDeviceId,
+    );
   }
 
   @UseGuards(SessionGuard)

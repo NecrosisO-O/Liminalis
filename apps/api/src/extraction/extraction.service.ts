@@ -12,7 +12,8 @@ import {
   ProtectedObjectType,
   RetrievalAttemptStatus,
   RetrievalFamily,
-  ShareObjectState,
+  SourceItemState,
+  UploadContentKind,
 } from '../../generated/prisma/index.js';
 import { PolicyService } from '../policy/policy.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -27,38 +28,50 @@ export class ExtractionService {
   ) {}
 
   async createExtraction(ownerUserId: string, input: CreateExtractionDto) {
-    const share = await this.prisma.shareObject.findFirst({
+    const sourceItem = await this.prisma.sourceItem.findFirst({
       where: {
-        id: input.shareObjectId,
+        id: input.sourceItemId,
         ownerUserId,
       },
+      include: { ownerUser: true },
     });
 
-    if (!share) {
-      throw new NotFoundException('Share object not found');
+    if (!sourceItem) {
+      throw new NotFoundException('Source item not found');
     }
 
-    if (share.state !== ShareObjectState.ACTIVE) {
-      throw new BadRequestException('Share object is not eligible for extraction');
+    if (sourceItem.state !== SourceItemState.ACTIVE) {
+      throw new BadRequestException('Source item is not eligible for extraction');
     }
 
-    if (await this.prisma.extractionAccess.findUnique({ where: { shareObjectId: share.id } })) {
-      throw new BadRequestException('Extraction access already exists for this share');
+    if (sourceItem.validUntil && sourceItem.validUntil < new Date()) {
+      await this.prisma.sourceItem.update({
+        where: { id: sourceItem.id },
+        data: { state: SourceItemState.EXPIRED },
+      });
+      throw new BadRequestException('Source item expired');
+    }
+
+    if (sourceItem.contentKind === UploadContentKind.SELF_SPACE_TEXT) {
+      throw new BadRequestException('Text items cannot be extracted outward in v1');
     }
 
     const decision = await this.policyService.evaluateExtractionCreation({
-      confidentialityLevel: share.confidentialityLevel,
+      confidentialityLevel: sourceItem.confidentialityLevel,
       requestedValidityMinutes: input.requestedValidityMinutes ?? null,
       requestedRetrievalCount: input.requestedRetrievalCount ?? null,
     });
 
     const password = this.resolvePassword(input.password, decision.requireSystemGeneratedPassword);
     const passwordHash = await argon2.hash(password);
+    const candidateValidUntil = decision.resolvedValidityMinutes
+      ? new Date(Date.now() + decision.resolvedValidityMinutes * 60_000)
+      : null;
 
     const extraction = await this.prisma.$transaction(async (tx) => {
       const created = await tx.extractionAccess.create({
         data: {
-          shareObjectId: share.id,
+          sourceItemId: sourceItem.id,
           policyBundleId: decision.policyBundle.id,
           policySnapshot: decision.snapshotFieldsToPersist as Prisma.InputJsonValue,
           state: ExtractionAccessState.ACTIVE,
@@ -67,24 +80,22 @@ export class ExtractionService {
           requireSystemGeneratedPassword: decision.requireSystemGeneratedPassword,
           configuredRetrievalCount: decision.resolvedRetrievalCount,
           remainingRetrievalCount: decision.resolvedRetrievalCount,
-          validUntil: decision.resolvedValidityMinutes
-            ? new Date(Date.now() + decision.resolvedValidityMinutes * 60_000)
-            : share.validUntil,
+          validUntil: this.clampValidUntil(candidateValidUntil, sourceItem.validUntil),
         },
       });
 
       await tx.packageFamily.create({
         data: {
-          protectedObjectType: ProtectedObjectType.SHARE_OBJECT,
-          protectedObjectId: share.id,
-          shareObjectId: share.id,
+          protectedObjectType: ProtectedObjectType.SOURCE_ITEM,
+          protectedObjectId: sourceItem.id,
+          sourceItemId: sourceItem.id,
           extractionAccessId: created.id,
           kind: PackageFamilyKind.PASSWORD_EXTRACTION,
           familyVersion: 1,
           issueTrigger: 'extraction_created',
           referenceBlob: {
             packageFamily: 'password_extraction',
-            shareObjectId: share.id,
+            sourceItemId: sourceItem.id,
             extractionAccessId: created.id,
           },
         },
@@ -106,14 +117,7 @@ export class ExtractionService {
   async getExtractionEntry(entryToken: string) {
     const extraction = await this.prisma.extractionAccess.findUnique({
       where: { entryToken },
-      include: {
-        shareObject: {
-          include: {
-            ownerUser: true,
-            sourceItem: true,
-          },
-        },
-      },
+      select: { id: true },
     });
 
     if (!extraction) {
@@ -128,18 +132,7 @@ export class ExtractionService {
       requiresCaptcha: refreshed.state === ExtractionAccessState.CHALLENGE_REQUIRED,
       remainingRetrievalCount: refreshed.remainingRetrievalCount,
       validUntil: refreshed.validUntil,
-      metadata:
-        refreshed.state === ExtractionAccessState.ACTIVE ||
-        refreshed.state === ExtractionAccessState.CHALLENGE_REQUIRED
-          ? {
-              displayTitle:
-                refreshed.shareObject.sourceItem.displayName ??
-                this.fallbackTitle(refreshed.shareObject.sourceItem.contentKind),
-              senderUsername: refreshed.shareObject.ownerUser.username,
-              confidentialityLevel: refreshed.shareObject.confidentialityLevel,
-              contentKind: refreshed.shareObject.sourceItem.contentKind,
-            }
-          : null,
+      metadata: null,
     };
   }
 
@@ -150,17 +143,7 @@ export class ExtractionService {
   ) {
     const extraction = await this.prisma.extractionAccess.findUnique({
       where: { entryToken },
-      include: {
-        shareObject: {
-          include: {
-            sourceItem: true,
-          },
-        },
-        packageFamilies: {
-          where: { kind: PackageFamilyKind.PASSWORD_EXTRACTION },
-          orderBy: { familyVersion: 'desc' },
-        },
-      },
+      select: { id: true },
     });
 
     if (!extraction) {
@@ -173,27 +156,22 @@ export class ExtractionService {
       throw new BadRequestException('Captcha required');
     }
 
-    if (refreshed.state === ExtractionAccessState.CHALLENGE_REQUIRED && input.captchaSatisfied) {
-      await this.prisma.extractionAccess.update({
-        where: { id: refreshed.id },
-        data: { state: ExtractionAccessState.ACTIVE },
-      });
-    }
-
-    if (refreshed.state !== ExtractionAccessState.ACTIVE && refreshed.state !== ExtractionAccessState.CHALLENGE_REQUIRED) {
+    if (
+      refreshed.state !== ExtractionAccessState.ACTIVE &&
+      refreshed.state !== ExtractionAccessState.CHALLENGE_REQUIRED
+    ) {
       throw new BadRequestException('Extraction access is not retrievable');
     }
 
     const passwordOk = await argon2.verify(refreshed.passwordHash, input.password).catch(() => false);
     if (!passwordOk) {
       const failedAttempts = refreshed.failedPasswordAttempts + 1;
-      const nextState = failedAttempts >= 1 ? ExtractionAccessState.CHALLENGE_REQUIRED : refreshed.state;
 
       await this.prisma.extractionAccess.update({
         where: { id: refreshed.id },
         data: {
           failedPasswordAttempts: failedAttempts,
-          state: nextState,
+          state: ExtractionAccessState.CHALLENGE_REQUIRED,
         },
       });
 
@@ -218,9 +196,9 @@ export class ExtractionService {
       },
       create: {
         retrievalFamily: RetrievalFamily.EXTRACTION_ACCESS,
-        targetObjectType: ProtectedObjectType.SHARE_OBJECT,
-        targetObjectId: refreshed.shareObjectId,
-        shareObjectId: refreshed.shareObjectId,
+        targetObjectType: ProtectedObjectType.SOURCE_ITEM,
+        targetObjectId: refreshed.sourceItemId,
+        sourceItemId: refreshed.sourceItemId,
         extractionAccessId: refreshed.id,
         status: RetrievalAttemptStatus.IN_PROGRESS,
         attemptScopeKey,
@@ -235,8 +213,8 @@ export class ExtractionService {
         data: {
           packageFamilyId: packageFamily.id,
           packageFamilyKind: PackageFamilyKind.PASSWORD_EXTRACTION,
-          protectedObjectType: ProtectedObjectType.SHARE_OBJECT,
-          protectedObjectId: refreshed.shareObjectId,
+          protectedObjectType: ProtectedObjectType.SOURCE_ITEM,
+          protectedObjectId: refreshed.sourceItemId,
           packageFamilyVersion: packageFamily.familyVersion,
           wrappedPayloadReference: packageFamily.referenceBlob as Prisma.InputJsonValue,
           expiresAt: new Date(Date.now() + 10 * 60_000),
@@ -261,9 +239,16 @@ export class ExtractionService {
       packageReferenceId: packageReference.id,
       packageFamilyKind: packageReference.packageFamilyKind,
       wrappedPayloadReference: packageReference.wrappedPayloadReference,
-      sourceItemId: refreshed.shareObject.sourceItemId,
-      textCiphertextBody: refreshed.shareObject.sourceItem.textCiphertextBody,
-      contentKind: refreshed.shareObject.sourceItem.contentKind,
+      sourceItemId: refreshed.sourceItemId,
+      storageBinding: refreshed.sourceItem.storageBinding,
+      contentKind: refreshed.sourceItem.contentKind,
+      metadata: {
+        displayTitle:
+          refreshed.sourceItem.displayName ?? this.fallbackTitle(refreshed.sourceItem.contentKind),
+        senderUsername: refreshed.sourceItem.ownerUser.username,
+        confidentialityLevel: refreshed.sourceItem.confidentialityLevel,
+        contentKind: refreshed.sourceItem.contentKind,
+      },
       expiresAt: packageReference.expiresAt,
       remainingRetrievalCount: refreshed.remainingRetrievalCount,
     };
@@ -354,11 +339,8 @@ export class ExtractionService {
     const extraction = await this.prisma.extractionAccess.findUniqueOrThrow({
       where: { id: extractionAccessId },
       include: {
-        shareObject: {
-          include: {
-            ownerUser: true,
-            sourceItem: true,
-          },
+        sourceItem: {
+          include: { ownerUser: true },
         },
         packageFamilies: {
           where: { kind: PackageFamilyKind.PASSWORD_EXTRACTION },
@@ -369,7 +351,9 @@ export class ExtractionService {
 
     let nextState = extraction.state;
 
-    if (extraction.shareObject.state !== ShareObjectState.ACTIVE) {
+    if (extraction.sourceItem.state !== SourceItemState.ACTIVE) {
+      nextState = ExtractionAccessState.INVALIDATED;
+    } else if (extraction.sourceItem.validUntil && extraction.sourceItem.validUntil < new Date()) {
       nextState = ExtractionAccessState.INVALIDATED;
     } else if (extraction.validUntil && extraction.validUntil < new Date()) {
       nextState = ExtractionAccessState.EXPIRED;
@@ -382,11 +366,8 @@ export class ExtractionService {
         where: { id: extraction.id },
         data: { state: nextState },
         include: {
-          shareObject: {
-            include: {
-              ownerUser: true,
-              sourceItem: true,
-            },
+          sourceItem: {
+            include: { ownerUser: true },
           },
           packageFamilies: {
             where: { kind: PackageFamilyKind.PASSWORD_EXTRACTION },
@@ -399,11 +380,19 @@ export class ExtractionService {
     return extraction;
   }
 
-  private fallbackTitle(contentKind: string) {
-    if (contentKind === 'SELF_SPACE_TEXT') {
-      return 'text item';
+  private clampValidUntil(candidate: Date | null, sourceValidUntil: Date | null) {
+    if (!candidate) {
+      return sourceValidUntil;
     }
 
+    if (!sourceValidUntil) {
+      return candidate;
+    }
+
+    return candidate < sourceValidUntil ? candidate : sourceValidUntil;
+  }
+
+  private fallbackTitle(contentKind: string) {
     if (contentKind === 'GROUPED_CONTENT') {
       return 'grouped item';
     }

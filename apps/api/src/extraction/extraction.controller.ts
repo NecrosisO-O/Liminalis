@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
 import { SessionActor } from '../common/decorators/session.decorator';
 import { SessionGuard } from '../common/guards/session.guard';
+import { TrustedDeviceGuard } from '../common/guards/trusted-device.guard';
 import type { AuthenticatedSession } from '../common/types/auth.types';
 import { CompleteRetrievalDto } from '../retrieval/dto/complete-retrieval.dto';
 import { CreateExtractionDto } from './dto/create-extraction.dto';
@@ -12,7 +13,7 @@ export class ExtractionController {
   constructor(private readonly extractionService: ExtractionService) {}
 
   @Post()
-  @UseGuards(SessionGuard)
+  @UseGuards(SessionGuard, TrustedDeviceGuard)
   async createExtraction(
     @SessionActor() sessionActor: AuthenticatedSession,
     @Body() input: CreateExtractionDto,

@@ -48,7 +48,6 @@ export class ProjectionsService {
         ownerUserId: userId,
         OR: [
           { displayTitle: { contains: normalized, mode: 'insensitive' } },
-          { visibleSummary: { contains: normalized, mode: 'insensitive' } },
           { sourceLabel: { contains: normalized, mode: 'insensitive' } },
           { visibleTypeLabel: { contains: normalized, mode: 'insensitive' } },
           { visibleStatusLabel: { contains: normalized, mode: 'insensitive' } },

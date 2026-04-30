@@ -33,6 +33,8 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
     await prisma.retrievalAttempt.deleteMany();
     await prisma.packageReference.deleteMany();
     await prisma.publicLinkDeliveryTicket.deleteMany();
+    await prisma.liveTransferSignalMessage.deleteMany();
+    await prisma.liveTransferRelayChunk.deleteMany();
     await prisma.activeTimelineItemProjection.deleteMany();
     await prisma.historyEntryProjection.deleteMany();
     await prisma.searchDocumentProjection.deleteMany();
@@ -100,6 +102,50 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
 
   function mergeCookies(...cookieSets: Array<string[] | undefined>) {
     return cookieSets.flatMap((cookieSet) => cookieSet ?? []);
+  }
+
+  function parseBinaryResponse(
+    response: NodeJS.ReadableStream,
+    callback: (error: Error | null, body: Buffer) => void,
+  ) {
+    const chunks: Buffer[] = [];
+    response.on('data', (chunk: Buffer) => chunks.push(Buffer.from(chunk)));
+    response.on('end', () => callback(null, Buffer.concat(chunks)));
+    response.on('error', (error: Error) => callback(error, Buffer.alloc(0)));
+  }
+
+  async function createStoredFileSource(
+    cookies: string[],
+    input: {
+      displayName: string;
+      confidentialityLevel?: 'SECRET' | 'CONFIDENTIAL' | 'TOP_SECRET';
+      requestedValidityMinutes?: number;
+      body?: Buffer;
+    },
+  ) {
+    const prepare = await request(app.getHttpServer())
+      .post('/api/uploads/prepare')
+      .set('Cookie', cookies)
+      .send({
+        contentKind: 'SINGLE_FILE',
+        confidentialityLevel: input.confidentialityLevel ?? 'SECRET',
+        requestedValidityMinutes: input.requestedValidityMinutes ?? 30,
+        displayName: input.displayName,
+      })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post(`/api/uploads/${prepare.body.uploadSessionId}/parts/1/blob`)
+      .set('Cookie', cookies)
+      .set('Content-Type', 'application/octet-stream')
+      .send(input.body ?? Buffer.from(`bytes:${input.displayName}`))
+      .expect(201);
+
+    return request(app.getHttpServer())
+      .post(`/api/uploads/${prepare.body.uploadSessionId}/finalize`)
+      .set('Cookie', cookies)
+      .send({ displayName: input.displayName })
+      .expect(201);
   }
 
   it('keeps pending users on the waiting bootstrap surface until admin approval', async () => {
@@ -218,10 +264,11 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
 
     expect(bootstrapResponse.body.trustedDeviceId).toBeTruthy();
     expect(bootstrapResponse.body.recoveryCodes).toHaveLength(3);
+    const carolTrustedCookies = mergeCookies(carolCookies, bootstrapResponse.get('set-cookie'));
 
     await request(app.getHttpServer())
       .get('/api/bootstrap')
-      .set('Cookie', carolCookies)
+      .set('Cookie', carolTrustedCookies)
       .expect(200)
       .expect((response) => {
         expect(response.body.accountState).toBe('active');
@@ -260,7 +307,7 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
 
     const daveCookies = await login('dave', 'dave-password');
 
-    await request(app.getHttpServer())
+    const daveFirstDevice = await request(app.getHttpServer())
       .post('/api/trust/bootstrap-first-device')
       .set('Cookie', daveCookies)
       .send({
@@ -269,6 +316,7 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
         userDomainPublicKey: 'dave-domain-key',
       })
       .expect(201);
+    const daveTrustedCookies = mergeCookies(daveCookies, daveFirstDevice.get('set-cookie'));
 
     const pairingSession = await request(app.getHttpServer())
       .post('/api/trust/pairing-sessions')
@@ -293,7 +341,7 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
 
     await request(app.getHttpServer())
       .post('/api/trust/pairing/approve')
-      .set('Cookie', daveCookies)
+      .set('Cookie', daveTrustedCookies)
       .send({ pairingSessionId: pairingSession.body.id })
       .expect(201);
 
@@ -364,6 +412,18 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
         userDomainPublicKey: 'erin-domain-key',
       })
       .expect(201);
+    const erinTrustedCookies = mergeCookies(erinCookies, firstDevice.get('set-cookie'));
+
+    const frankFirstDevice = await request(app.getHttpServer())
+      .post('/api/trust/bootstrap-first-device')
+      .set('Cookie', frankCookies)
+      .send({
+        deviceLabel: 'Frank Browser 1',
+        devicePublicIdentity: 'frank-device-1',
+        userDomainPublicKey: 'frank-domain-key',
+      })
+      .expect(201);
+    const frankTrustedCookies = mergeCookies(frankCookies, frankFirstDevice.get('set-cookie'));
 
     const pairingSession = await request(app.getHttpServer())
       .post('/api/trust/pairing-sessions')
@@ -376,13 +436,13 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
 
     await request(app.getHttpServer())
       .post('/api/trust/pairing/approve')
-      .set('Cookie', frankCookies)
+      .set('Cookie', frankTrustedCookies)
       .send({ pairingSessionId: pairingSession.body.id })
       .expect(400);
 
     const recoveryAttempt = await request(app.getHttpServer())
       .post('/api/recovery/attempt')
-      .set('Cookie', erinCookies)
+      .set('Cookie', erinTrustedCookies)
       .send({
         recoveryCode: firstDevice.body.recoveryCodes[0],
         deviceLabel: 'Erin Recovery Browser',
@@ -392,7 +452,7 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
 
     const pendingDisplay = await request(app.getHttpServer())
       .get('/api/recovery/pending-display')
-      .set('Cookie', erinCookies)
+      .set('Cookie', erinTrustedCookies)
       .expect(200);
 
     expect(pendingDisplay.body.recoveryCodes).toHaveLength(3);
@@ -400,12 +460,12 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
 
     await request(app.getHttpServer())
       .post(`/api/recovery/acknowledge/${recoveryAttempt.body.pendingTrustedDeviceId}`)
-      .set('Cookie', erinCookies)
+      .set('Cookie', erinTrustedCookies)
       .expect(201);
 
     await request(app.getHttpServer())
       .get('/api/recovery/pending-display')
-      .set('Cookie', erinCookies)
+      .set('Cookie', erinTrustedCookies)
       .expect(404);
   });
 
@@ -446,6 +506,7 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
         userDomainPublicKey: 'gina-domain-key',
       })
       .expect(201);
+    const ginaTrustedCookies = mergeCookies(ginaCookies, bootstrapResponse.get('set-cookie'));
 
     await request(app.getHttpServer())
       .post('/api/admin/users/disable')
@@ -454,23 +515,33 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
       .expect(201);
 
     await request(app.getHttpServer())
+      .get('/api/bootstrap')
+      .set('Cookie', ginaTrustedCookies)
+      .expect(200)
+      .expect({
+        accountState: 'blocked',
+        trustState: 'none',
+        requiresFirstDeviceBootstrap: false,
+      });
+
+    await request(app.getHttpServer())
       .post('/api/trust/pairing-sessions')
-      .set('Cookie', ginaCookies)
+      .set('Cookie', ginaTrustedCookies)
       .send({
         deviceLabel: 'Gina Browser 2',
         devicePublicIdentity: 'gina-device-2',
       })
-      .expect(401);
+      .expect(403);
 
     await request(app.getHttpServer())
       .post('/api/recovery/attempt')
-      .set('Cookie', ginaCookies)
+      .set('Cookie', ginaTrustedCookies)
       .send({
         recoveryCode: bootstrapResponse.body.recoveryCodes[0],
         deviceLabel: 'Gina Recovery Browser',
         devicePublicIdentity: 'gina-recovery-device',
       })
-      .expect(401);
+      .expect(403);
   });
 
   it('creates a self-space text source item with locked policy snapshot and access structure', async () => {
@@ -501,7 +572,7 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
 
     const harryCookies = await login('harry', 'harry-password');
 
-    await request(app.getHttpServer())
+    const harryTrustResponse = await request(app.getHttpServer())
       .post('/api/trust/bootstrap-first-device')
       .set('Cookie', harryCookies)
       .send({
@@ -510,10 +581,11 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
         userDomainPublicKey: 'harry-domain-key',
       })
       .expect(201);
+    const harryTrustedCookies = mergeCookies(harryCookies, harryTrustResponse.get('set-cookie'));
 
     const prepare = await request(app.getHttpServer())
       .post('/api/uploads/prepare')
-      .set('Cookie', harryCookies)
+      .set('Cookie', harryTrustedCookies)
       .send({
         contentKind: 'SELF_SPACE_TEXT',
         confidentialityLevel: 'SECRET',
@@ -527,7 +599,7 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
 
     const finalized = await request(app.getHttpServer())
       .post(`/api/uploads/${prepare.body.uploadSessionId}/finalize`)
-      .set('Cookie', harryCookies)
+      .set('Cookie', harryTrustedCookies)
       .send({
         textCiphertextBody: 'ciphertext-text-body',
         displayName: 'secret-note',
@@ -536,7 +608,7 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
 
     const sourceItem = await request(app.getHttpServer())
       .get(`/api/source-items/${finalized.body.sourceItemId}`)
-      .set('Cookie', harryCookies)
+      .set('Cookie', harryTrustedCookies)
       .expect(200);
 
     expect(sourceItem.body.contentKind).toBe('SELF_SPACE_TEXT');
@@ -573,7 +645,7 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
 
     const ivyCookies = await login('ivy', 'ivy-password');
 
-    await request(app.getHttpServer())
+    const ivyTrustResponse = await request(app.getHttpServer())
       .post('/api/trust/bootstrap-first-device')
       .set('Cookie', ivyCookies)
       .send({
@@ -582,10 +654,11 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
         userDomainPublicKey: 'ivy-domain-key',
       })
       .expect(201);
+    const ivyTrustedCookies = mergeCookies(ivyCookies, ivyTrustResponse.get('set-cookie'));
 
     const prepare = await request(app.getHttpServer())
       .post('/api/uploads/prepare')
-      .set('Cookie', ivyCookies)
+      .set('Cookie', ivyTrustedCookies)
       .send({
         contentKind: 'SINGLE_FILE',
         confidentialityLevel: 'CONFIDENTIAL',
@@ -596,7 +669,7 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
 
     await request(app.getHttpServer())
       .post(`/api/uploads/${prepare.body.uploadSessionId}/finalize`)
-      .set('Cookie', ivyCookies)
+      .set('Cookie', ivyTrustedCookies)
       .send({ displayName: 'document.bin' })
       .expect(400);
   });
@@ -629,7 +702,7 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
 
     const janeCookies = await login('jane', 'jane-password');
 
-    await request(app.getHttpServer())
+    const janeTrustResponse = await request(app.getHttpServer())
       .post('/api/trust/bootstrap-first-device')
       .set('Cookie', janeCookies)
       .send({
@@ -638,10 +711,11 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
         userDomainPublicKey: 'jane-domain-key',
       })
       .expect(201);
+    const janeTrustedCookies = mergeCookies(janeCookies, janeTrustResponse.get('set-cookie'));
 
     const prepare = await request(app.getHttpServer())
       .post('/api/uploads/prepare')
-      .set('Cookie', janeCookies)
+      .set('Cookie', janeTrustedCookies)
       .send({
         contentKind: 'GROUPED_CONTENT',
         groupStructureKind: 'FOLDER',
@@ -653,19 +727,16 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
 
     expect(prepare.body.policySnapshot.allowFutureTrustedDevices).toBe(false);
 
-    await request(app.getHttpServer())
-      .post(`/api/uploads/${prepare.body.uploadSessionId}/parts`)
-      .set('Cookie', janeCookies)
-      .send({
-        partNumber: 1,
-        storageKey: 'uploads/jane/folder/part-1.bin',
-        byteSize: 1024,
-      })
+    const uploadedPart = await request(app.getHttpServer())
+      .post(`/api/uploads/${prepare.body.uploadSessionId}/parts/1/blob`)
+      .set('Cookie', janeTrustedCookies)
+      .set('Content-Type', 'application/octet-stream')
+      .send(Buffer.alloc(1024, 7))
       .expect(201);
 
     const finalize = await request(app.getHttpServer())
       .post(`/api/uploads/${prepare.body.uploadSessionId}/finalize`)
-      .set('Cookie', janeCookies)
+      .set('Cookie', janeTrustedCookies)
       .send({
         displayName: 'folder-bundle',
         manifest: {
@@ -675,7 +746,7 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
               displayName: 'report.pdf',
               relativePath: 'folder/report.pdf',
               memberSize: 1024,
-              blobRef: 'uploads/jane/folder/part-1.bin',
+              blobRef: uploadedPart.body.storageKey,
             },
           ],
         },
@@ -684,13 +755,28 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
 
     const sourceItem = await request(app.getHttpServer())
       .get(`/api/source-items/${finalize.body.sourceItemId}`)
-      .set('Cookie', janeCookies)
+      .set('Cookie', janeTrustedCookies)
       .expect(200);
 
     expect(sourceItem.body.groupManifest).toBeTruthy();
+    expect(sourceItem.body.storageBytes).toBe(1024);
     expect(sourceItem.body.accessGrantSets).toHaveLength(1);
     expect(sourceItem.body.accessGrantSets[0].grantSubjectMode).toBe('OWNER_DEVICE_SNAPSHOT');
     expect(sourceItem.body.packageFamilies).toHaveLength(2);
+
+    const retrieval = await request(app.getHttpServer())
+      .post(`/api/retrieval/source-items/${finalize.body.sourceItemId}/attempts/jane-file-download`)
+      .set('Cookie', janeTrustedCookies)
+      .expect(201);
+
+    const download = await request(app.getHttpServer())
+      .get(`/api/retrieval/attempts/${retrieval.body.retrievalAttemptId}/download`)
+      .set('Cookie', janeTrustedCookies)
+      .buffer(true)
+      .parse(parseBinaryResponse)
+      .expect(200);
+
+    expect(download.body).toEqual(Buffer.alloc(1024, 7));
   });
 
   it('issues a protected self-retrieval attempt only for a trusted device and completes it explicitly', async () => {
@@ -976,9 +1062,7 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
 
     expect(activeHistory.retainedStatus).toBe('active');
     expect(activeHistory.retrievable).toBe(true);
-    expect(burnedHistory.retainedStatus).toBe('purged');
-    expect(burnedHistory.retrievable).toBe(false);
-    expect(burnedHistory.concreteReason).toBe('purged');
+    expect(burnedHistory).toBeUndefined();
 
     const searchActive = await request(app.getHttpServer())
       .get('/api/search')
@@ -1161,24 +1245,11 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
       .expect(201);
     const quinnCookies = mergeCookies(quinnSessionCookies, quinnTrustResponse.get('set-cookie'));
 
-    const prepare = await request(app.getHttpServer())
-      .post('/api/uploads/prepare')
-      .set('Cookie', piperCookies)
-      .send({
-        contentKind: 'SELF_SPACE_TEXT',
-        confidentialityLevel: 'TOP_SECRET',
-        requestedValidityMinutes: 30,
-      })
-      .expect(201);
-
-    const finalize = await request(app.getHttpServer())
-      .post(`/api/uploads/${prepare.body.uploadSessionId}/finalize`)
-      .set('Cookie', piperCookies)
-      .send({
-        displayName: 'no-repeat share',
-        textCiphertextBody: 'ciphertext no-repeat body',
-      })
-      .expect(201);
+    const finalize = await createStoredFileSource(piperCookies, {
+      displayName: 'no-repeat share.bin',
+      confidentialityLevel: 'TOP_SECRET',
+      requestedValidityMinutes: 30,
+    });
 
     await request(app.getHttpServer())
       .post('/api/shares')
@@ -1335,24 +1406,11 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
       .expect(201);
     const sorenCookies = mergeCookies(sorenSessionCookies, sorenTrustResponse.get('set-cookie'));
 
-    const prepare = await request(app.getHttpServer())
-      .post('/api/uploads/prepare')
-      .set('Cookie', rheaCookies)
-      .send({
-        contentKind: 'SELF_SPACE_TEXT',
-        confidentialityLevel: 'SECRET',
-        requestedValidityMinutes: 30,
-      })
-      .expect(201);
-
-    const finalize = await request(app.getHttpServer())
-      .post(`/api/uploads/${prepare.body.uploadSessionId}/finalize`)
-      .set('Cookie', rheaCookies)
-      .send({
-        displayName: 'extractable note',
-        textCiphertextBody: 'ciphertext extractable body',
-      })
-      .expect(201);
+    const finalize = await createStoredFileSource(rheaCookies, {
+      displayName: 'extractable.bin',
+      confidentialityLevel: 'SECRET',
+      requestedValidityMinutes: 30,
+    });
 
     const share = await request(app.getHttpServer())
       .post('/api/shares')
@@ -1373,7 +1431,7 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
       .post('/api/extraction')
       .set('Cookie', rheaCookies)
       .send({
-        shareObjectId: share.body.shareObjectId,
+        sourceItemId: finalize.body.sourceItemId,
         password: 'custom-password-1',
         requestedRetrievalCount: 2,
       })
@@ -1393,6 +1451,7 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
 
     expect(challenge.body.state).toBe('CHALLENGE_REQUIRED');
     expect(challenge.body.requiresCaptcha).toBe(true);
+    expect(challenge.body.metadata).toBeNull();
 
     const extractionAttempt = await request(app.getHttpServer())
       .post(`/api/extraction/${extraction.body.entryToken}/attempts/extract-attempt-1`)
@@ -1487,24 +1546,11 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
       .expect(201);
     const ulricCookies = mergeCookies(ulricSessionCookies, ulricTrustResponse.get('set-cookie'));
 
-    const prepare = await request(app.getHttpServer())
-      .post('/api/uploads/prepare')
-      .set('Cookie', taliaCookies)
-      .send({
-        contentKind: 'SELF_SPACE_TEXT',
-        confidentialityLevel: 'CONFIDENTIAL',
-        requestedValidityMinutes: 30,
-      })
-      .expect(201);
-
-    const finalize = await request(app.getHttpServer())
-      .post(`/api/uploads/${prepare.body.uploadSessionId}/finalize`)
-      .set('Cookie', taliaCookies)
-      .send({
-        displayName: 'confidential note',
-        textCiphertextBody: 'ciphertext confidential body',
-      })
-      .expect(201);
+    const finalize = await createStoredFileSource(taliaCookies, {
+      displayName: 'confidential.bin',
+      confidentialityLevel: 'CONFIDENTIAL',
+      requestedValidityMinutes: 30,
+    });
 
     const share = await request(app.getHttpServer())
       .post('/api/shares')
@@ -1520,7 +1566,7 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
       .post('/api/extraction')
       .set('Cookie', taliaCookies)
       .send({
-        shareObjectId: share.body.shareObjectId,
+        sourceItemId: finalize.body.sourceItemId,
         password: 'ignored-custom-password',
         requestedRetrievalCount: 2,
       })
@@ -1544,24 +1590,11 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
       },
     });
 
-    const prepareBlocked = await request(app.getHttpServer())
-      .post('/api/uploads/prepare')
-      .set('Cookie', taliaCookies)
-      .send({
-        contentKind: 'SELF_SPACE_TEXT',
-        confidentialityLevel: 'CONFIDENTIAL',
-        requestedValidityMinutes: 30,
-      })
-      .expect(201);
-
-    const finalizeBlocked = await request(app.getHttpServer())
-      .post(`/api/uploads/${prepareBlocked.body.uploadSessionId}/finalize`)
-      .set('Cookie', taliaCookies)
-      .send({
-        displayName: 'blocked extraction note',
-        textCiphertextBody: 'ciphertext blocked extraction body',
-      })
-      .expect(201);
+    const finalizeBlocked = await createStoredFileSource(taliaCookies, {
+      displayName: 'blocked-extraction.bin',
+      confidentialityLevel: 'CONFIDENTIAL',
+      requestedValidityMinutes: 30,
+    });
 
     const blockedShare = await request(app.getHttpServer())
       .post('/api/shares')
@@ -1577,7 +1610,7 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
       .post('/api/extraction')
       .set('Cookie', taliaCookies)
       .send({
-        shareObjectId: blockedShare.body.shareObjectId,
+        sourceItemId: finalizeBlocked.body.sourceItemId,
         requestedRetrievalCount: 1,
       })
       .expect(400);
@@ -1660,24 +1693,12 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
       .expect(201);
     const wynnCookies = mergeCookies(wynnSessionCookies, wynnTrustResponse.get('set-cookie'));
 
-    const prepare = await request(app.getHttpServer())
-      .post('/api/uploads/prepare')
-      .set('Cookie', veraCookies)
-      .send({
-        contentKind: 'SELF_SPACE_TEXT',
-        confidentialityLevel: 'SECRET',
-        requestedValidityMinutes: 30,
-      })
-      .expect(201);
-
-    const finalize = await request(app.getHttpServer())
-      .post(`/api/uploads/${prepare.body.uploadSessionId}/finalize`)
-      .set('Cookie', veraCookies)
-      .send({
-        displayName: 'public note',
-        textCiphertextBody: 'ciphertext public body',
-      })
-      .expect(201);
+    const finalize = await createStoredFileSource(veraCookies, {
+      displayName: 'public.bin',
+      confidentialityLevel: 'SECRET',
+      requestedValidityMinutes: 30,
+      body: Buffer.from('public-link-bytes'),
+    });
 
     const share = await request(app.getHttpServer())
       .post('/api/shares')
@@ -1698,7 +1719,7 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
       .post('/api/public-links')
       .set('Cookie', veraCookies)
       .send({
-        shareObjectId: share.body.shareObjectId,
+        sourceItemId: finalize.body.sourceItemId,
         requestedValidityMinutes: 30,
         requestedDownloadCount: 2,
       })
@@ -1706,29 +1727,27 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
 
     expect(publicLink.body.remainingDownloadCount).toBe(2);
 
-    const linkInfo = await request(app.getHttpServer())
+    const firstDownload = await request(app.getHttpServer())
       .get(`/api/public-links/${publicLink.body.linkToken}`)
+      .buffer(true)
+      .parse(parseBinaryResponse)
       .expect(200);
 
-    expect(linkInfo.body.state).toBe('ACTIVE');
-    expect(linkInfo.body.remainingDownloadCount).toBe(2);
+    expect(firstDownload.body).toEqual(Buffer.from('public-link-bytes'));
 
     const ticket = await request(app.getHttpServer())
       .post(`/api/public-links/${publicLink.body.linkToken}/tickets`)
       .expect(201);
 
-    const redeemed = await request(app.getHttpServer())
+    await request(app.getHttpServer())
       .post(`/api/public-links/tickets/${ticket.body.ticketToken}/redeem`)
       .expect(201);
 
-    expect(redeemed.body.remainingDownloadCount).toBe(1);
-    expect(redeemed.body.textCiphertextBody).toBe('ciphertext public body');
-
-    const afterRedeem = await request(app.getHttpServer())
-      .get(`/api/public-links/${publicLink.body.linkToken}`)
-      .expect(200);
-
-    expect(afterRedeem.body.remainingDownloadCount).toBe(1);
+    const afterRedeem = await prisma.publicLink.findUniqueOrThrow({
+      where: { id: publicLink.body.publicLinkId },
+    });
+    expect(afterRedeem.remainingDownloadCount).toBe(0);
+    expect(afterRedeem.state).toBe('EXHAUSTED');
 
     await prisma.policyBundle.updateMany({
       where: { levelName: 'SECRET', isCurrent: true },
@@ -1745,24 +1764,11 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
       },
     });
 
-    const prepareBlocked = await request(app.getHttpServer())
-      .post('/api/uploads/prepare')
-      .set('Cookie', veraCookies)
-      .send({
-        contentKind: 'SELF_SPACE_TEXT',
-        confidentialityLevel: 'SECRET',
-        requestedValidityMinutes: 30,
-      })
-      .expect(201);
-
-    const finalizeBlocked = await request(app.getHttpServer())
-      .post(`/api/uploads/${prepareBlocked.body.uploadSessionId}/finalize`)
-      .set('Cookie', veraCookies)
-      .send({
-        displayName: 'blocked public note',
-        textCiphertextBody: 'ciphertext blocked public body',
-      })
-      .expect(201);
+    const finalizeBlocked = await createStoredFileSource(veraCookies, {
+      displayName: 'blocked-public.bin',
+      confidentialityLevel: 'SECRET',
+      requestedValidityMinutes: 30,
+    });
 
     const blockedShare = await request(app.getHttpServer())
       .post('/api/shares')
@@ -1778,7 +1784,7 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
       .post('/api/public-links')
       .set('Cookie', veraCookies)
       .send({
-        shareObjectId: blockedShare.body.shareObjectId,
+        sourceItemId: finalizeBlocked.body.sourceItemId,
         requestedDownloadCount: 1,
       })
       .expect(400);
@@ -2221,8 +2227,45 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
       .send({ confirmed: true })
       .expect(201)
       .expect((response) => {
+        expect(response.body.state).toBe('AWAITING_CONFIRMATION');
+        expect(response.body.transportState).toBeNull();
+      });
+
+    await request(app.getHttpServer())
+      .post(`/api/live-transfer/sessions/${liveSession.body.liveTransferSessionId}/transport`)
+      .set('Cookie', yaraCookies)
+      .send({ transportState: 'P2P_ACTIVE' })
+      .expect(400);
+
+    await request(app.getHttpServer())
+      .post(`/api/live-transfer/sessions/${liveSession.body.liveTransferSessionId}/confirm`)
+      .set('Cookie', zaneCookies)
+      .send({ confirmed: true })
+      .expect(201)
+      .expect((response) => {
         expect(response.body.state).toBe('CONNECTING');
         expect(response.body.transportState).toBe('P2P_ATTEMPT');
+      });
+
+    await request(app.getHttpServer())
+      .post(`/api/live-transfer/sessions/${liveSession.body.liveTransferSessionId}/signals`)
+      .set('Cookie', yaraCookies)
+      .send({ kind: 'offer', payload: { sdp: 'fake-offer' } })
+      .expect(201);
+
+    const pendingSignals = await request(app.getHttpServer())
+      .get(`/api/live-transfer/sessions/${liveSession.body.liveTransferSessionId}/signals`)
+      .set('Cookie', zaneCookies)
+      .expect(200);
+    expect(pendingSignals.body).toHaveLength(1);
+    expect(pendingSignals.body[0].kind).toBe('offer');
+
+    await request(app.getHttpServer())
+      .get(`/api/live-transfer/sessions/${liveSession.body.liveTransferSessionId}/signals`)
+      .set('Cookie', zaneCookies)
+      .expect(200)
+      .expect((response) => {
+        expect(response.body).toHaveLength(0);
       });
 
     await request(app.getHttpServer())
@@ -2347,6 +2390,12 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
       .expect(201);
 
     await request(app.getHttpServer())
+      .post(`/api/live-transfer/sessions/${topSecretSession.body.liveTransferSessionId}/confirm`)
+      .set('Cookie', bramCookies)
+      .send({ confirmed: true })
+      .expect(201);
+
+    await request(app.getHttpServer())
       .post(`/api/live-transfer/sessions/${topSecretSession.body.liveTransferSessionId}/transport`)
       .set('Cookie', amberCookies)
       .send({ transportState: 'RELAY_ATTEMPT' })
@@ -2371,6 +2420,12 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
     await request(app.getHttpServer())
       .post(`/api/live-transfer/sessions/${confidentialSession.body.liveTransferSessionId}/confirm`)
       .set('Cookie', amberCookies)
+      .send({ confirmed: true })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post(`/api/live-transfer/sessions/${confidentialSession.body.liveTransferSessionId}/confirm`)
+      .set('Cookie', bramCookies)
       .send({ confirmed: true })
       .expect(201);
 
@@ -2416,6 +2471,12 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
       .expect(201);
 
     await request(app.getHttpServer())
+      .post(`/api/live-transfer/sessions/${secretSession.body.liveTransferSessionId}/confirm`)
+      .set('Cookie', bramCookies)
+      .send({ confirmed: true })
+      .expect(201);
+
+    await request(app.getHttpServer())
       .post(`/api/live-transfer/sessions/${secretSession.body.liveTransferSessionId}/fail`)
       .set('Cookie', amberCookies)
       .send({ reason: 'transport_exhausted' })
@@ -2426,7 +2487,7 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
       .set('Cookie', amberCookies)
       .expect(201)
       .expect((response) => {
-        expect(response.body.handoffRequired).toBe(true);
+        expect(response.body.uploadSessionId).toBeTruthy();
         expect(response.body.contentLabel).toBe('secret fallback file');
         expect(response.body.confidentialityLevel).toBe('SECRET');
       });
@@ -2505,7 +2566,7 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
       .expect(200);
   });
 
-  it('cleans expired pending recovery display and requires explicit snapshot-mode regrant to regain protected access', async () => {
+  it('cleans expired pending recovery display while acknowledged recovery devices regain historical top-secret access', async () => {
     const adminCookies = await login('owner', 'admin123456');
 
     const invite = await request(app.getHttpServer())
@@ -2619,19 +2680,30 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
       .set('Cookie', secondDeviceCookies)
       .expect(403);
 
-    await request(app.getHttpServer())
-      .post('/api/maintenance/regrant')
-      .set('Cookie', dorianCookies)
+    const secondRecoveryAttempt = await request(app.getHttpServer())
+      .post('/api/recovery/attempt')
+      .set('Cookie', dorianSessionCookies)
       .send({
-        protectedObjectType: 'SOURCE_ITEM',
-        protectedObjectId: finalize.body.sourceItemId,
+        recoveryCode: recoveryAttempt.body.recoveryCodes[0],
+        deviceLabel: 'Dorian Recovery Browser 2',
+        devicePublicIdentity: 'dorian-recovery-device-2',
       })
       .expect(201);
 
+    const recoveryAcknowledge = await request(app.getHttpServer())
+      .post(`/api/recovery/acknowledge/${secondRecoveryAttempt.body.pendingTrustedDeviceId}`)
+      .set('Cookie', dorianSessionCookies)
+      .expect(201);
+    const recoveryCookies = mergeCookies(dorianSessionCookies, recoveryAcknowledge.get('set-cookie'));
+
     await request(app.getHttpServer())
       .post(`/api/retrieval/source-items/${finalize.body.sourceItemId}/attempts/snapshot-attempt-2`)
-      .set('Cookie', secondDeviceCookies)
-      .expect(201);
+      .set('Cookie', recoveryCookies)
+      .expect(201)
+      .expect((response) => {
+        expect(response.body.packageFamilyKind).toBe('OWNER_RECOVERY');
+        expect(response.body.textCiphertextBody).toBe('ciphertext snapshot body');
+      });
 
     expect(recoveryAttempt.body.pendingTrustedDeviceId).toBeTruthy();
   });

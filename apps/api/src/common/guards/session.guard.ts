@@ -28,7 +28,10 @@ export class SessionGuard implements CanActivate {
       throw new UnauthorizedException('Invalid session');
     }
 
-    const trustedDeviceId = request.cookies?.liminalis_trusted_device ?? null;
+    const trustedDeviceId = await this.sessionsService.resolveTrustedDeviceId(
+      session.userId,
+      request.cookies?.liminalis_trusted_device,
+    );
 
     request.sessionActor = {
       sessionId: session.id,

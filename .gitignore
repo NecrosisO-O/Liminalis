@@ -11,4 +11,5 @@ apps/api/prisma/dev.db-journal
 apps/api/generated/
 apps/api/uploads/
 apps/api/storage/
+.liminalis-storage/
 .DS_Store

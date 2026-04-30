@@ -15,6 +15,8 @@ import {
   ShareObjectInactiveReason,
   ShareObjectState,
   type SourceItem,
+  SourceItemState,
+  UploadContentKind,
 } from '../../generated/prisma/index.js';
 import { PrismaService } from '../prisma/prisma.service';
 import { ProjectionService } from '../projections/projection.service';
@@ -43,6 +45,19 @@ export class SharesService {
 
     if (!sourceItem) {
       throw new NotFoundException('Source item not found');
+    }
+
+    if (sourceItem.contentKind === UploadContentKind.SELF_SPACE_TEXT) {
+      throw new BadRequestException('Text items cannot be shared outward in v1');
+    }
+
+    if (sourceItem.validUntil && sourceItem.validUntil < new Date()) {
+      await this.prisma.sourceItem.update({
+        where: { id: sourceItem.id },
+        data: { state: SourceItemState.EXPIRED },
+      });
+      await this.projectionService.projectSourceItem(sourceItem.id);
+      throw new BadRequestException('Source item expired');
     }
 
     const recipient = await this.prisma.user.findUnique({
@@ -75,9 +90,12 @@ export class SharesService {
           confidentialityLevel: sourceItem.confidentialityLevel,
           policyBundleId: decision.policyBundle.id,
           policySnapshot: decision.snapshotFieldsToPersist,
-          validUntil: decision.resolvedValidityMinutes
-            ? new Date(Date.now() + decision.resolvedValidityMinutes * 60_000)
-            : null,
+          validUntil: this.clampValidUntil(
+            decision.resolvedValidityMinutes
+              ? new Date(Date.now() + decision.resolvedValidityMinutes * 60_000)
+              : null,
+            sourceItem.validUntil,
+          ),
           allowRepeatDownload: decision.allowRepeatDownload,
           allowRecipientMultiDeviceAccess: decision.allowRecipientMultiDeviceAccess,
           burnAfterReadEnabled: sourceItem.burnAfterReadEnabled,
@@ -173,7 +191,7 @@ export class SharesService {
         sourceItem: true,
         accessGrantSets: {
           where: { status: 'CURRENT' },
-          include: { ordinaryPackageFamily: true },
+          include: { ordinaryPackageFamily: true, recoveryPackageFamily: true },
         },
       },
     });
@@ -184,6 +202,16 @@ export class SharesService {
 
     if (share.state !== ShareObjectState.ACTIVE) {
       throw new BadRequestException('Share object is not retrievable');
+    }
+
+    if (share.sourceItem.state !== SourceItemState.ACTIVE) {
+      await this.invalidateShareFromSource(share.id);
+      throw new BadRequestException('Source item is not retrievable');
+    }
+
+    if (share.sourceItem.validUntil && share.sourceItem.validUntil < new Date()) {
+      await this.invalidateShareFromSource(share.id);
+      throw new BadRequestException('Source item expired');
     }
 
     if (share.validUntil && share.validUntil < new Date()) {
@@ -203,12 +231,7 @@ export class SharesService {
       throw new BadRequestException('AccessGrantSet not found');
     }
 
-    if (
-      grantSet.grantSubjectMode === AccessGrantSubjectMode.RECIPIENT_DEVICE_SNAPSHOT &&
-      !grantSet.snapshotDeviceIds.includes(trustedDeviceId)
-    ) {
-      throw new ForbiddenException('Trusted device is not eligible for this share');
-    }
+    const packageSelection = await this.selectRecipientPackageFamily(userId, trustedDeviceId, grantSet);
 
     const attempt = await this.prisma.retrievalAttempt.upsert({
       where: {
@@ -241,15 +264,15 @@ export class SharesService {
     if (!packageReference) {
       packageReference = await this.prisma.packageReference.create({
         data: {
-          packageFamilyId: grantSet.ordinaryPackageFamilyId,
-          packageFamilyKind: PackageFamilyKind.RECIPIENT_ORDINARY,
+          packageFamilyId: packageSelection.packageFamily.id,
+          packageFamilyKind: packageSelection.kind,
           protectedObjectType: ProtectedObjectType.SHARE_OBJECT,
           protectedObjectId: shareObjectId,
           eligibleSubjectUserId: userId,
           eligibleSubjectDeviceId: trustedDeviceId,
-          packageFamilyVersion: grantSet.ordinaryPackageFamily.familyVersion,
+          packageFamilyVersion: packageSelection.packageFamily.familyVersion,
           wrappedPayloadReference:
-            grantSet.ordinaryPackageFamily.referenceBlob as Prisma.InputJsonValue,
+            packageSelection.packageFamily.referenceBlob as Prisma.InputJsonValue,
           expiresAt: new Date(Date.now() + 10 * 60_000),
           retrievalAttempt: {
             connect: { id: attempt.id },
@@ -361,5 +384,81 @@ export class SharesService {
       where: { recipientUserId: userId },
       orderBy: { createdAt: 'desc' },
     });
+  }
+
+  private clampValidUntil(candidate: Date | null, sourceValidUntil: Date | null) {
+    if (!candidate) {
+      return sourceValidUntil;
+    }
+
+    if (!sourceValidUntil) {
+      return candidate;
+    }
+
+    return candidate < sourceValidUntil ? candidate : sourceValidUntil;
+  }
+
+  private async invalidateShareFromSource(shareObjectId: string) {
+    await this.prisma.shareObject.update({
+      where: { id: shareObjectId },
+      data: {
+        state: ShareObjectState.INACTIVE,
+        inactiveReason: ShareObjectInactiveReason.SOURCE_INVALIDATED,
+      },
+    });
+    await this.projectionService.projectShareObject(shareObjectId);
+  }
+
+  private async selectRecipientPackageFamily(
+    userId: string,
+    trustedDeviceId: string,
+    grantSet: {
+      grantSubjectMode: AccessGrantSubjectMode;
+      snapshotDeviceIds: string[];
+      recoveryEnabled: boolean;
+      ordinaryPackageFamily: {
+        id: string;
+        familyVersion: number;
+        referenceBlob: unknown;
+      };
+      recoveryPackageFamily: {
+        id: string;
+        familyVersion: number;
+        referenceBlob: unknown;
+      } | null;
+    },
+  ) {
+    const ordinaryEligible =
+      grantSet.grantSubjectMode !== AccessGrantSubjectMode.RECIPIENT_DEVICE_SNAPSHOT ||
+      grantSet.snapshotDeviceIds.includes(trustedDeviceId);
+
+    if (ordinaryEligible) {
+      return {
+        kind: PackageFamilyKind.RECIPIENT_ORDINARY,
+        packageFamily: grantSet.ordinaryPackageFamily,
+      };
+    }
+
+    const trustedDevice = await this.prisma.trustedDevice.findFirst({
+      where: {
+        id: trustedDeviceId,
+        userId,
+        trustState: 'TRUSTED',
+      },
+      select: { recoveryEstablishedAt: true },
+    });
+
+    if (
+      grantSet.recoveryEnabled &&
+      grantSet.recoveryPackageFamily &&
+      trustedDevice?.recoveryEstablishedAt
+    ) {
+      return {
+        kind: PackageFamilyKind.RECIPIENT_RECOVERY,
+        packageFamily: grantSet.recoveryPackageFamily,
+      };
+    }
+
+    throw new ForbiddenException('Trusted device is not eligible for this share');
   }
 }

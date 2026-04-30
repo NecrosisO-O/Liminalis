@@ -1,6 +1,8 @@
-import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Res, StreamableFile, UseGuards } from '@nestjs/common';
+import type { Response } from 'express';
 import { SessionActor } from '../common/decorators/session.decorator';
 import { SessionGuard } from '../common/guards/session.guard';
+import { TrustedDeviceGuard } from '../common/guards/trusted-device.guard';
 import type { AuthenticatedSession } from '../common/types/auth.types';
 import { CreatePublicLinkDto } from './dto/create-public-link.dto';
 import { PublicLinksService } from './public-links.service';
@@ -10,7 +12,7 @@ export class PublicLinksController {
   constructor(private readonly publicLinksService: PublicLinksService) {}
 
   @Post()
-  @UseGuards(SessionGuard)
+  @UseGuards(SessionGuard, TrustedDeviceGuard)
   async createPublicLink(
     @SessionActor() sessionActor: AuthenticatedSession,
     @Body() input: CreatePublicLinkDto,
@@ -19,8 +21,23 @@ export class PublicLinksController {
   }
 
   @Get(':linkToken')
-  async getPublicLink(@Param('linkToken') linkToken: string) {
-    return this.publicLinksService.getPublicLink(linkToken);
+  async downloadPublicLink(
+    @Param('linkToken') linkToken: string,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    const download = await this.publicLinksService.createPublicDownload(linkToken);
+
+    response.setHeader('Content-Type', 'application/octet-stream');
+    response.setHeader('Content-Length', String(download.contentLength));
+    response.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${download.fileName.replace(/"/g, '')}"`,
+    );
+    response.on('finish', () => {
+      void this.publicLinksService.completePublicDownload(download.publicLinkId);
+    });
+
+    return new StreamableFile(download.stream);
   }
 
   @Post(':linkToken/tickets')

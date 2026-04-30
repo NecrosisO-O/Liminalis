@@ -1,7 +1,13 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { PublicLinkState, ShareObjectState } from '../../generated/prisma/index.js';
+import { Readable } from 'stream';
+import {
+  PublicLinkState,
+  SourceItemState,
+  UploadContentKind,
+} from '../../generated/prisma/index.js';
 import { PolicyService } from '../policy/policy.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { StorageService } from '../storage/storage.service';
 import { CreatePublicLinkDto } from './dto/create-public-link.dto';
 
 @Injectable()
@@ -9,42 +15,56 @@ export class PublicLinksService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly policyService: PolicyService,
+    private readonly storageService: StorageService,
   ) {}
 
   async createPublicLink(ownerUserId: string, input: CreatePublicLinkDto) {
-    const share = await this.prisma.shareObject.findFirst({
+    const sourceItem = await this.prisma.sourceItem.findFirst({
       where: {
-        id: input.shareObjectId,
+        id: input.sourceItemId,
         ownerUserId,
       },
     });
 
-    if (!share) {
-      throw new NotFoundException('Share object not found');
+    if (!sourceItem) {
+      throw new NotFoundException('Source item not found');
     }
 
-    if (share.state !== ShareObjectState.ACTIVE) {
-      throw new BadRequestException('Share object is not eligible for public links');
+    if (sourceItem.state !== SourceItemState.ACTIVE) {
+      throw new BadRequestException('Source item is not eligible for public links');
+    }
+
+    if (sourceItem.validUntil && sourceItem.validUntil < new Date()) {
+      await this.prisma.sourceItem.update({
+        where: { id: sourceItem.id },
+        data: { state: SourceItemState.EXPIRED },
+      });
+      throw new BadRequestException('Source item expired');
+    }
+
+    if (sourceItem.contentKind === UploadContentKind.SELF_SPACE_TEXT) {
+      throw new BadRequestException('Text items cannot be linked outward in v1');
     }
 
     const decision = await this.policyService.evaluatePublicLinkCreation({
-      confidentialityLevel: share.confidentialityLevel,
+      confidentialityLevel: sourceItem.confidentialityLevel,
       requestedValidityMinutes: input.requestedValidityMinutes ?? null,
       requestedDownloadCount: input.requestedDownloadCount ?? null,
     });
+    const candidateValidUntil = decision.resolvedValidityMinutes
+      ? new Date(Date.now() + decision.resolvedValidityMinutes * 60_000)
+      : null;
 
     const publicLink = await this.prisma.publicLink.create({
       data: {
-        shareObjectId: share.id,
+        sourceItemId: sourceItem.id,
         policyBundleId: decision.policyBundle.id,
         policySnapshot: decision.snapshotFieldsToPersist,
         state: PublicLinkState.ACTIVE,
         linkToken: crypto.randomUUID(),
         configuredDownloadCount: decision.resolvedDownloadCount,
         remainingDownloadCount: decision.resolvedDownloadCount,
-        validUntil: decision.resolvedValidityMinutes
-          ? new Date(Date.now() + decision.resolvedValidityMinutes * 60_000)
-          : share.validUntil,
+        validUntil: this.clampValidUntil(candidateValidUntil, sourceItem.validUntil),
       },
     });
 
@@ -56,22 +76,51 @@ export class PublicLinksService {
     };
   }
 
-  async getPublicLink(linkToken: string) {
+  async createPublicDownload(linkToken: string) {
     const publicLink = await this.refreshPublicLinkStateByToken(linkToken);
+
+    if (publicLink.state !== PublicLinkState.ACTIVE) {
+      throw this.invalidPublicLink();
+    }
+
+    const parts = this.extractStorageParts(publicLink.sourceItem.storageBinding);
+    const contentLength = parts.reduce((sum, part) => sum + part.byteSize, 0);
+    const stream = Readable.from(this.readParts(parts.map((part) => part.storageKey)));
 
     return {
       publicLinkId: publicLink.id,
-      state: publicLink.state,
-      validUntil: publicLink.validUntil,
-      remainingDownloadCount: publicLink.remainingDownloadCount,
+      stream,
+      contentLength,
+      fileName: publicLink.sourceItem.displayName ?? 'liminalis-download.bin',
     };
+  }
+
+  async completePublicDownload(publicLinkId: string) {
+    const publicLink = await this.prisma.publicLink.findUnique({
+      where: { id: publicLinkId },
+    });
+
+    if (!publicLink || publicLink.state !== PublicLinkState.ACTIVE) {
+      return null;
+    }
+
+    const remaining = Math.max(0, publicLink.remainingDownloadCount - 1);
+    const state = remaining === 0 ? PublicLinkState.EXHAUSTED : PublicLinkState.ACTIVE;
+
+    return this.prisma.publicLink.update({
+      where: { id: publicLink.id },
+      data: {
+        remainingDownloadCount: remaining,
+        state,
+      },
+    });
   }
 
   async issueDeliveryTicket(linkToken: string) {
     const publicLink = await this.refreshPublicLinkStateByToken(linkToken);
 
     if (publicLink.state !== PublicLinkState.ACTIVE) {
-      throw new BadRequestException('Public link is not downloadable');
+      throw this.invalidPublicLink();
     }
 
     const ticket = await this.prisma.publicLinkDeliveryTicket.create({
@@ -94,58 +143,32 @@ export class PublicLinksService {
       include: {
         publicLink: {
           include: {
-            shareObject: {
-              include: {
-                sourceItem: true,
-              },
-            },
+            sourceItem: true,
           },
         },
       },
     });
 
-    if (!ticket || ticket.expiresAt < new Date()) {
-      throw new NotFoundException('Delivery ticket not found');
+    if (!ticket || ticket.expiresAt < new Date() || ticket.redeemedAt) {
+      throw this.invalidPublicLink();
     }
 
     const publicLink = await this.refreshPublicLinkState(ticket.publicLink.id);
     if (publicLink.state !== PublicLinkState.ACTIVE) {
-      throw new BadRequestException('Public link is not downloadable');
+      throw this.invalidPublicLink();
     }
 
-    const updated = await this.prisma.$transaction(async (tx) => {
-      await tx.publicLinkDeliveryTicket.update({
-        where: { id: ticket.id },
-        data: { redeemedAt: new Date() },
-      });
-
-      const remaining = Math.max(0, publicLink.remainingDownloadCount - 1);
-      const state = remaining === 0 ? PublicLinkState.EXHAUSTED : PublicLinkState.ACTIVE;
-
-      return tx.publicLink.update({
-        where: { id: publicLink.id },
-        data: {
-          remainingDownloadCount: remaining,
-          state,
-        },
-        include: {
-          shareObject: {
-            include: {
-              sourceItem: true,
-            },
-          },
-        },
-      });
+    await this.prisma.publicLinkDeliveryTicket.update({
+      where: { id: ticket.id },
+      data: { redeemedAt: new Date() },
     });
+    await this.completePublicDownload(publicLink.id);
 
     return {
-      publicLinkId: updated.id,
-      state: updated.state,
-      remainingDownloadCount: updated.remainingDownloadCount,
-      sourceItemId: updated.shareObject.sourceItemId,
-      storageBinding: updated.shareObject.sourceItem.storageBinding,
-      textCiphertextBody: updated.shareObject.sourceItem.textCiphertextBody,
-      contentKind: updated.shareObject.sourceItem.contentKind,
+      publicLinkId: publicLink.id,
+      sourceItemId: publicLink.sourceItemId,
+      storageBinding: publicLink.sourceItem.storageBinding,
+      contentKind: publicLink.sourceItem.contentKind,
     };
   }
 
@@ -153,7 +176,7 @@ export class PublicLinksService {
     const publicLink = await this.prisma.publicLink.findUnique({ where: { linkToken } });
 
     if (!publicLink) {
-      throw new NotFoundException('Public link not found');
+      throw this.invalidPublicLink();
     }
 
     return this.refreshPublicLinkState(publicLink.id);
@@ -163,13 +186,15 @@ export class PublicLinksService {
     const publicLink = await this.prisma.publicLink.findUniqueOrThrow({
       where: { id: publicLinkId },
       include: {
-        shareObject: true,
+        sourceItem: true,
       },
     });
 
     let nextState = publicLink.state;
 
-    if (publicLink.shareObject.state !== ShareObjectState.ACTIVE) {
+    if (publicLink.sourceItem.state !== SourceItemState.ACTIVE) {
+      nextState = PublicLinkState.INVALIDATED;
+    } else if (publicLink.sourceItem.validUntil && publicLink.sourceItem.validUntil < new Date()) {
       nextState = PublicLinkState.INVALIDATED;
     } else if (publicLink.validUntil && publicLink.validUntil < new Date()) {
       nextState = PublicLinkState.EXPIRED;
@@ -181,9 +206,62 @@ export class PublicLinksService {
       return this.prisma.publicLink.update({
         where: { id: publicLink.id },
         data: { state: nextState },
+        include: { sourceItem: true },
       });
     }
 
     return publicLink;
+  }
+
+  private extractStorageParts(storageBinding: unknown) {
+    if (!storageBinding || typeof storageBinding !== 'object' || !('parts' in storageBinding)) {
+      throw this.invalidPublicLink();
+    }
+
+    const parts = (storageBinding as { parts?: unknown }).parts;
+    if (!Array.isArray(parts) || parts.length === 0) {
+      throw this.invalidPublicLink();
+    }
+
+    return parts.map((part) => {
+      if (
+        !part ||
+        typeof part !== 'object' ||
+        typeof (part as { storageKey?: unknown }).storageKey !== 'string' ||
+        typeof (part as { byteSize?: unknown }).byteSize !== 'number'
+      ) {
+        throw this.invalidPublicLink();
+      }
+
+      return {
+        storageKey: (part as { storageKey: string }).storageKey,
+        byteSize: (part as { byteSize: number }).byteSize,
+      };
+    });
+  }
+
+  private async *readParts(storageKeys: string[]) {
+    for (const storageKey of storageKeys) {
+      const stream = this.storageService.createReadStream(storageKey);
+      for await (const chunk of stream) {
+        yield chunk;
+      }
+    }
+  }
+
+  private clampValidUntil(candidate: Date | null, sourceValidUntil: Date | null) {
+    if (!candidate) {
+      return sourceValidUntil;
+    }
+
+    if (!sourceValidUntil) {
+      return candidate;
+    }
+
+    return candidate < sourceValidUntil ? candidate : sourceValidUntil;
+  }
+
+  private invalidPublicLink() {
+    return new NotFoundException('Public link is invalid');
   }
 }

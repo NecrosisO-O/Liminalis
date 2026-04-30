@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { randomUUID } from 'crypto';
+import { DeviceTrustState } from '../../generated/prisma/index.js';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
@@ -39,10 +40,6 @@ export class SessionsService {
       return null;
     }
 
-    if (session.user.enablementState === 'DISABLED') {
-      return null;
-    }
-
     await this.prisma.session.update({
       where: { id: session.id },
       data: {
@@ -52,6 +49,23 @@ export class SessionsService {
     });
 
     return session;
+  }
+
+  async resolveTrustedDeviceId(userId: string, trustedDeviceId: string | null | undefined) {
+    if (!trustedDeviceId) {
+      return null;
+    }
+
+    const device = await this.prisma.trustedDevice.findFirst({
+      where: {
+        id: trustedDeviceId,
+        userId,
+        trustState: DeviceTrustState.TRUSTED,
+      },
+      select: { id: true },
+    });
+
+    return device?.id ?? null;
   }
 
   async destroySession(token: string) {

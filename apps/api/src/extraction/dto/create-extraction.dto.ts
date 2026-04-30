@@ -2,7 +2,7 @@ import { IsInt, IsOptional, IsString, Min, MinLength } from 'class-validator';
 
 export class CreateExtractionDto {
   @IsString()
-  shareObjectId!: string;
+  sourceItemId!: string;
 
   @IsOptional()
   @IsString()

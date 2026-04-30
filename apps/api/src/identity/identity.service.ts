@@ -160,8 +160,18 @@ export class IdentityService {
   async listPendingUsers() {
     return this.prisma.user.findMany({
       where: { admissionState: AdmissionState.PENDING_APPROVAL },
-      include: {
-        sessions: false,
+      select: {
+        id: true,
+        username: true,
+        email: true,
+        role: true,
+        admissionState: true,
+        enablementState: true,
+        approvedAt: true,
+        approvedById: true,
+        storageQuotaBytes: true,
+        createdAt: true,
+        updatedAt: true,
       },
       orderBy: { createdAt: 'asc' },
     });
@@ -170,10 +180,21 @@ export class IdentityService {
   async listUsers() {
     return this.prisma.user.findMany({
       orderBy: { createdAt: 'asc' },
-      include: {
+      select: {
+        id: true,
+        username: true,
+        email: true,
+        role: true,
+        admissionState: true,
+        enablementState: true,
+        approvedAt: true,
+        approvedById: true,
+        storageQuotaBytes: true,
+        createdAt: true,
+        updatedAt: true,
         devices: {
           where: { trustState: 'TRUSTED' },
-          select: { id: true },
+          select: { id: true, label: true, trustEstablishedAt: true },
         },
       },
     });

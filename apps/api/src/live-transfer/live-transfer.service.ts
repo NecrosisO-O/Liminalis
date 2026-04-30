@@ -4,6 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { Readable } from 'stream';
 import { Prisma } from '../../generated/prisma/index.js';
 import {
   LiveTransferSessionState,
@@ -12,6 +13,8 @@ import {
 } from '../../generated/prisma/index.js';
 import { PolicyService } from '../policy/policy.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { StorageService } from '../storage/storage.service';
+import { UploadsService } from '../uploads/uploads.service';
 import { CreateLiveTransferDto } from './dto/create-live-transfer.dto';
 import { UpdateLiveTransportDto } from './dto/update-live-transport.dto';
 
@@ -22,6 +25,8 @@ export class LiveTransferService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly policyService: PolicyService,
+    private readonly storageService: StorageService,
+    private readonly uploadsService: UploadsService,
   ) {}
 
   async createSession(userId: string, trustedDeviceId: string | null, input: CreateLiveTransferDto) {
@@ -56,7 +61,7 @@ export class LiveTransferService {
         peerToPeerToRelayFallback: decision.allowPeerToPeerToRelayFallback,
         liveToStoredFallbackAllowed: decision.allowLiveToStoredFallback,
         retainRecord: decision.retainLiveTransferRecords,
-        failureReason: sessionCode,
+        sessionCode,
         expiresAt: new Date(Date.now() + this.awaitingJoinTtlMs),
       },
     });
@@ -119,15 +124,37 @@ export class LiveTransferService {
       return cancelled;
     }
 
+    if (session.state !== LiveTransferSessionState.AWAITING_CONFIRMATION) {
+      throw new BadRequestException('Live-transfer session is not awaiting confirmation');
+    }
+
+    if (!session.joinerUserId || !session.joinerDeviceId) {
+      throw new BadRequestException('Live-transfer session has no joined participant');
+    }
+
+    const isInitiator =
+      session.initiatorUserId === userId && session.initiatorDeviceId === trustedDeviceId;
+    const confirmationPatch = isInitiator
+      ? { initiatorConfirmedAt: new Date() }
+      : { joinerConfirmedAt: new Date() };
+    const initiatorConfirmedAt = isInitiator ? confirmationPatch.initiatorConfirmedAt : session.initiatorConfirmedAt;
+    const joinerConfirmedAt = isInitiator ? session.joinerConfirmedAt : confirmationPatch.joinerConfirmedAt;
+    const bothConfirmed = Boolean(initiatorConfirmedAt && joinerConfirmedAt);
+
     const updated = await this.prisma.liveTransferSession.update({
       where: { id: session.id },
       data: {
-        state: LiveTransferSessionState.CONNECTING,
-        transportState: session.peerToPeerAllowed
-          ? LiveTransferTransportState.P2P_ATTEMPT
-          : session.relayAllowed
-            ? LiveTransferTransportState.RELAY_ATTEMPT
-            : null,
+        ...confirmationPatch,
+        state: bothConfirmed
+          ? LiveTransferSessionState.CONNECTING
+          : LiveTransferSessionState.AWAITING_CONFIRMATION,
+        transportState: bothConfirmed
+          ? session.peerToPeerAllowed
+            ? LiveTransferTransportState.P2P_ATTEMPT
+            : session.relayAllowed
+              ? LiveTransferTransportState.RELAY_ATTEMPT
+              : null
+          : session.transportState,
       },
     });
 
@@ -146,6 +173,15 @@ export class LiveTransferService {
     }
 
     this.assertParticipant(session, userId, trustedDeviceId);
+    this.assertTransportMutable(session);
+
+    if (
+      (input.transportState === LiveTransferTransportState.P2P_ATTEMPT ||
+        input.transportState === LiveTransferTransportState.P2P_ACTIVE) &&
+      !session.peerToPeerAllowed
+    ) {
+      throw new BadRequestException('Peer-to-peer transport is not allowed for this session');
+    }
 
     if (
       (input.transportState === LiveTransferTransportState.RELAY_ATTEMPT ||
@@ -156,11 +192,26 @@ export class LiveTransferService {
     }
 
     if (
-      input.transportState === LiveTransferTransportState.RELAY_ATTEMPT &&
+      (input.transportState === LiveTransferTransportState.RELAY_ATTEMPT ||
+        input.transportState === LiveTransferTransportState.RELAY_ACTIVE) &&
       session.transportState === LiveTransferTransportState.P2P_ATTEMPT &&
       !session.peerToPeerToRelayFallback
     ) {
       throw new BadRequestException('Peer-to-peer to relay fallback is not allowed for this session');
+    }
+
+    if (
+      input.transportState === LiveTransferTransportState.RELAY_ACTIVE &&
+      session.transportState !== LiveTransferTransportState.RELAY_ATTEMPT
+    ) {
+      throw new BadRequestException('Relay transport must be attempted before activation');
+    }
+
+    if (
+      input.transportState === LiveTransferTransportState.P2P_ACTIVE &&
+      session.transportState !== LiveTransferTransportState.P2P_ATTEMPT
+    ) {
+      throw new BadRequestException('Peer-to-peer transport must be attempted before activation');
     }
 
     const nextState =
@@ -249,14 +300,270 @@ export class LiveTransferService {
       throw new BadRequestException('Live-to-stored fallback requires a failed or cancelled session');
     }
 
+    if (session.storedFallbackUploadSessionId) {
+      const existingUploadSession = await this.prisma.uploadSession.findUnique({
+        where: { id: session.storedFallbackUploadSessionId },
+      });
+
+      return {
+        liveTransferSessionId: session.id,
+        uploadSessionId: session.storedFallbackUploadSessionId,
+        contentLabel: session.contentLabel,
+        contentKind: session.contentKind,
+        confidentialityLevel: session.confidentialityLevel,
+        groupedTransfer: session.groupedTransfer,
+        expiresAt: existingUploadSession?.expiresAt ?? null,
+        policySnapshot: existingUploadSession?.policySnapshot ?? null,
+      };
+    }
+
+    const uploadSession = await this.uploadsService.prepareUpload(userId, {
+      contentKind: session.contentKind,
+      groupStructureKind: session.groupedTransfer ? 'MULTI_FILE' : undefined,
+      confidentialityLevel: session.confidentialityLevel,
+      displayName: session.contentLabel,
+    });
+
+    await this.prisma.liveTransferSession.update({
+      where: { id: session.id },
+      data: { storedFallbackUploadSessionId: uploadSession.uploadSessionId },
+    });
+
     return {
       liveTransferSessionId: session.id,
-      handoffRequired: true,
+      uploadSessionId: uploadSession.uploadSessionId,
       contentLabel: session.contentLabel,
       contentKind: session.contentKind,
       confidentialityLevel: session.confidentialityLevel,
       groupedTransfer: session.groupedTransfer,
+      expiresAt: uploadSession.expiresAt,
+      policySnapshot: uploadSession.policySnapshot,
     };
+  }
+
+  async sendSignal(
+    userId: string,
+    trustedDeviceId: string | null,
+    sessionId: string,
+    input: { kind: string; payload: Record<string, unknown> },
+  ) {
+    if (!trustedDeviceId) {
+      throw new ForbiddenException('Trusted device required');
+    }
+
+    const session = await this.prisma.liveTransferSession.findUnique({ where: { id: sessionId } });
+    if (!session) {
+      throw new NotFoundException('Live-transfer session not found');
+    }
+
+    this.assertParticipant(session, userId, trustedDeviceId);
+    this.assertCanExchangeTransportData(session);
+
+    const counterpart = this.resolveCounterpart(session, userId, trustedDeviceId);
+
+    return this.prisma.liveTransferSignalMessage.create({
+      data: {
+        sessionId: session.id,
+        senderUserId: userId,
+        senderDeviceId: trustedDeviceId,
+        recipientUserId: counterpart.userId,
+        recipientDeviceId: counterpart.deviceId,
+        kind: input.kind,
+        payload: input.payload as Prisma.InputJsonValue,
+      },
+    });
+  }
+
+  async listSignals(userId: string, trustedDeviceId: string | null, sessionId: string) {
+    if (!trustedDeviceId) {
+      throw new ForbiddenException('Trusted device required');
+    }
+
+    const session = await this.prisma.liveTransferSession.findUnique({ where: { id: sessionId } });
+    if (!session) {
+      throw new NotFoundException('Live-transfer session not found');
+    }
+
+    this.assertParticipant(session, userId, trustedDeviceId);
+
+    const messages = await this.prisma.liveTransferSignalMessage.findMany({
+      where: {
+        sessionId: session.id,
+        recipientUserId: userId,
+        recipientDeviceId: trustedDeviceId,
+        readAt: null,
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    if (messages.length > 0) {
+      await this.prisma.liveTransferSignalMessage.updateMany({
+        where: { id: { in: messages.map((message) => message.id) } },
+        data: { readAt: new Date() },
+      });
+    }
+
+    return messages;
+  }
+
+  async uploadRelayChunk(
+    userId: string,
+    trustedDeviceId: string | null,
+    sessionId: string,
+    sequence: number,
+    body: Readable,
+  ) {
+    if (!trustedDeviceId) {
+      throw new ForbiddenException('Trusted device required');
+    }
+
+    if (sequence < 1 || !Number.isInteger(sequence)) {
+      throw new BadRequestException('Relay chunk sequence must be a positive integer');
+    }
+
+    const session = await this.prisma.liveTransferSession.findUnique({ where: { id: sessionId } });
+    if (!session) {
+      throw new NotFoundException('Live-transfer session not found');
+    }
+
+    this.assertParticipant(session, userId, trustedDeviceId);
+    this.assertRelayActive(session);
+    const counterpart = this.resolveCounterpart(session, userId, trustedDeviceId);
+    const stored = await this.storageService.writeLiveTransferRelayChunk({
+      sessionId: session.id,
+      senderDeviceId: trustedDeviceId,
+      sequence,
+      body,
+    });
+
+    return this.prisma.liveTransferRelayChunk.upsert({
+      where: {
+        sessionId_senderDeviceId_sequence: {
+          sessionId: session.id,
+          senderDeviceId: trustedDeviceId,
+          sequence,
+        },
+      },
+      update: {
+        recipientDeviceId: counterpart.deviceId,
+        storageKey: stored.storageKey,
+        byteSize: stored.byteSize,
+        checksum: stored.checksum,
+        receivedAt: null,
+      },
+      create: {
+        sessionId: session.id,
+        senderDeviceId: trustedDeviceId,
+        recipientDeviceId: counterpart.deviceId,
+        sequence,
+        storageKey: stored.storageKey,
+        byteSize: stored.byteSize,
+        checksum: stored.checksum,
+      },
+    });
+  }
+
+  async listRelayChunks(userId: string, trustedDeviceId: string | null, sessionId: string) {
+    if (!trustedDeviceId) {
+      throw new ForbiddenException('Trusted device required');
+    }
+
+    const session = await this.prisma.liveTransferSession.findUnique({ where: { id: sessionId } });
+    if (!session) {
+      throw new NotFoundException('Live-transfer session not found');
+    }
+
+    this.assertParticipant(session, userId, trustedDeviceId);
+    this.assertRelayActive(session);
+
+    return this.prisma.liveTransferRelayChunk.findMany({
+      where: {
+        sessionId: session.id,
+        recipientDeviceId: trustedDeviceId,
+        receivedAt: null,
+      },
+      orderBy: { sequence: 'asc' },
+      select: {
+        id: true,
+        senderDeviceId: true,
+        sequence: true,
+        byteSize: true,
+        checksum: true,
+        createdAt: true,
+      },
+    });
+  }
+
+  async createRelayChunkReadStream(
+    userId: string,
+    trustedDeviceId: string | null,
+    sessionId: string,
+    chunkId: string,
+  ) {
+    if (!trustedDeviceId) {
+      throw new ForbiddenException('Trusted device required');
+    }
+
+    const session = await this.prisma.liveTransferSession.findUnique({ where: { id: sessionId } });
+    if (!session) {
+      throw new NotFoundException('Live-transfer session not found');
+    }
+
+    this.assertParticipant(session, userId, trustedDeviceId);
+    this.assertRelayActive(session);
+
+    const chunk = await this.prisma.liveTransferRelayChunk.findFirst({
+      where: {
+        id: chunkId,
+        sessionId: session.id,
+        recipientDeviceId: trustedDeviceId,
+      },
+    });
+
+    if (!chunk) {
+      throw new NotFoundException('Relay chunk not found');
+    }
+
+    return {
+      stream: this.storageService.createReadStream(chunk.storageKey),
+      contentLength: chunk.byteSize,
+      sequence: chunk.sequence,
+    };
+  }
+
+  async acknowledgeRelayChunk(
+    userId: string,
+    trustedDeviceId: string | null,
+    sessionId: string,
+    chunkId: string,
+  ) {
+    if (!trustedDeviceId) {
+      throw new ForbiddenException('Trusted device required');
+    }
+
+    const session = await this.prisma.liveTransferSession.findUnique({ where: { id: sessionId } });
+    if (!session) {
+      throw new NotFoundException('Live-transfer session not found');
+    }
+
+    this.assertParticipant(session, userId, trustedDeviceId);
+
+    const chunk = await this.prisma.liveTransferRelayChunk.findFirst({
+      where: {
+        id: chunkId,
+        sessionId: session.id,
+        recipientDeviceId: trustedDeviceId,
+      },
+    });
+
+    if (!chunk) {
+      throw new NotFoundException('Relay chunk not found');
+    }
+
+    return this.prisma.liveTransferRelayChunk.update({
+      where: { id: chunk.id },
+      data: { receivedAt: new Date() },
+    });
   }
 
   async listRetainedRecords(userId: string) {
@@ -278,13 +585,13 @@ export class LiveTransferService {
 
     return {
       ...session,
-      sessionCode: session.failureReason,
+      sessionCode: session.sessionCode,
     };
   }
 
   private async getSessionByCode(sessionCode: string) {
-    const session = await this.prisma.liveTransferSession.findFirst({
-      where: { failureReason: sessionCode },
+    const session = await this.prisma.liveTransferSession.findUnique({
+      where: { sessionCode },
     });
 
     if (!session) {
@@ -324,6 +631,97 @@ export class LiveTransferService {
     if (!isInitiator && !isJoiner) {
       throw new ForbiddenException('Live-transfer participant required');
     }
+  }
+
+  private assertTransportMutable(session: {
+    state: LiveTransferSessionState;
+    initiatorConfirmedAt: Date | null;
+    joinerConfirmedAt: Date | null;
+  }) {
+    if (
+      session.state !== LiveTransferSessionState.CONNECTING &&
+      session.state !== LiveTransferSessionState.ACTIVE
+    ) {
+      throw new BadRequestException('Live-transfer transport is not active yet');
+    }
+
+    if (!session.initiatorConfirmedAt || !session.joinerConfirmedAt) {
+      throw new BadRequestException('Live-transfer requires both-side confirmation');
+    }
+  }
+
+  private assertCanExchangeTransportData(session: {
+    state: LiveTransferSessionState;
+    initiatorConfirmedAt: Date | null;
+    joinerConfirmedAt: Date | null;
+    joinerUserId: string | null;
+    joinerDeviceId: string | null;
+  }) {
+    if (!session.joinerUserId || !session.joinerDeviceId) {
+      throw new BadRequestException('Live-transfer session has no joined participant');
+    }
+
+    if (!session.initiatorConfirmedAt || !session.joinerConfirmedAt) {
+      throw new BadRequestException('Live-transfer requires both-side confirmation');
+    }
+
+    if (
+      session.state !== LiveTransferSessionState.CONNECTING &&
+      session.state !== LiveTransferSessionState.ACTIVE
+    ) {
+      throw new BadRequestException('Live-transfer session is not ready for signaling');
+    }
+  }
+
+  private assertRelayActive(session: {
+    relayAllowed: boolean;
+    transportState: LiveTransferTransportState | null;
+    state: LiveTransferSessionState;
+    initiatorConfirmedAt: Date | null;
+    joinerConfirmedAt: Date | null;
+    joinerUserId: string | null;
+    joinerDeviceId: string | null;
+  }) {
+    this.assertCanExchangeTransportData(session);
+
+    if (!session.relayAllowed) {
+      throw new BadRequestException('Relay transport is not allowed for this session');
+    }
+
+    if (session.transportState !== LiveTransferTransportState.RELAY_ACTIVE) {
+      throw new BadRequestException('Relay transport is not active');
+    }
+  }
+
+  private resolveCounterpart(
+    session: {
+      initiatorUserId: string;
+      initiatorDeviceId: string;
+      joinerUserId: string | null;
+      joinerDeviceId: string | null;
+    },
+    userId: string,
+    trustedDeviceId: string,
+  ) {
+    if (!session.joinerUserId || !session.joinerDeviceId) {
+      throw new BadRequestException('Live-transfer session has no joined participant');
+    }
+
+    if (session.initiatorUserId === userId && session.initiatorDeviceId === trustedDeviceId) {
+      return {
+        userId: session.joinerUserId,
+        deviceId: session.joinerDeviceId,
+      };
+    }
+
+    if (session.joinerUserId === userId && session.joinerDeviceId === trustedDeviceId) {
+      return {
+        userId: session.initiatorUserId,
+        deviceId: session.initiatorDeviceId,
+      };
+    }
+
+    throw new ForbiddenException('Live-transfer participant required');
   }
 
   private async projectRetainedRecord(sessionId: string) {

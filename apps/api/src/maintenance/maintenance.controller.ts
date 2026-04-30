@@ -2,12 +2,13 @@ import { Body, Controller, Post, Res, UseGuards } from '@nestjs/common';
 import type { Response } from 'express';
 import { SessionActor } from '../common/decorators/session.decorator';
 import { SessionGuard } from '../common/guards/session.guard';
+import { TrustedDeviceGuard } from '../common/guards/trusted-device.guard';
 import type { AuthenticatedSession } from '../common/types/auth.types';
 import { RegrantAccessDto } from './dto/regrant-access.dto';
 import { MaintenanceService } from './maintenance.service';
 
 @Controller('api/maintenance')
-@UseGuards(SessionGuard)
+@UseGuards(SessionGuard, TrustedDeviceGuard)
 export class MaintenanceController {
   constructor(private readonly maintenanceService: MaintenanceService) {}
 
