@@ -267,6 +267,24 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
     const carolTrustedCookies = mergeCookies(carolCookies, bootstrapResponse.get('set-cookie'));
 
     await request(app.getHttpServer())
+      .get('/api/recovery/pending-display')
+      .set('Cookie', carolTrustedCookies)
+      .expect(200)
+      .expect((response) => {
+        expect(response.body.recoveryCodes).toEqual(bootstrapResponse.body.recoveryCodes);
+      });
+
+    await request(app.getHttpServer())
+      .post(`/api/recovery/acknowledge/${bootstrapResponse.body.trustedDeviceId}`)
+      .set('Cookie', carolTrustedCookies)
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .get('/api/recovery/pending-display')
+      .set('Cookie', carolTrustedCookies)
+      .expect(404);
+
+    await request(app.getHttpServer())
       .get('/api/bootstrap')
       .set('Cookie', carolTrustedCookies)
       .expect(200)
@@ -1457,6 +1475,15 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
       .post(`/api/extraction/${extraction.body.entryToken}/attempts/extract-attempt-1`)
       .send({ password: 'custom-password-1', captchaSatisfied: true })
       .expect(201);
+
+    await request(app.getHttpServer())
+      .get(`/api/extraction/attempts/${extractionAttempt.body.retrievalAttemptId}/download`)
+      .buffer()
+      .parse(parseBinaryResponse)
+      .expect(200)
+      .expect((response) => {
+        expect(response.body.toString()).toBe('bytes:extractable.bin');
+      });
 
     await request(app.getHttpServer())
       .post(`/api/extraction/attempts/${extractionAttempt.body.retrievalAttemptId}/complete`)

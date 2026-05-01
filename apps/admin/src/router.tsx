@@ -1,54 +1,24 @@
 import { createBrowserRouter, Navigate } from 'react-router-dom'
-import { AdminShell } from './shells/AdminShell.tsx'
-import { AdminRouteResolver } from './components/AdminRouteResolver.tsx'
-import { AdminLoginPage } from './views/AdminLoginPage.tsx'
-import { AdminOverviewPage } from './views/AdminOverviewPage.tsx'
-import { AdminUsersPage } from './views/AdminUsersPage.tsx'
-import { AdminInvitesPage } from './views/AdminInvitesPage.tsx'
-import { AdminApprovalsPage } from './views/AdminApprovalsPage.tsx'
-import { AdminPolicyPage } from './views/AdminPolicyPage.tsx'
-import { AdminSystemPage } from './views/AdminSystemPage.tsx'
+import { AdminGate, AdminLoginPage } from './features/auth/routes.tsx'
+import { AdminShell } from './features/console/shell.tsx'
+import { ApprovalsPage, InvitesPage, OverviewPage, PolicyPage, StoragePage, UsersPage } from './features/console/pages.tsx'
 
 export const router = createBrowserRouter([
+  { path: '/login', element: <AdminLoginPage /> },
+  { path: '/', element: <Navigate to="/admin" replace /> },
   {
-    path: '/login',
-    element: <AdminLoginPage />,
-  },
-  {
-    path: '/',
-    element: <Navigate to="/admin" replace />,
-  },
-  {
-    element: <AdminRouteResolver />,
+    element: <AdminGate />,
     children: [
       {
         path: '/admin',
         element: <AdminShell />,
         children: [
-          {
-            index: true,
-            element: <AdminOverviewPage />,
-          },
-          {
-            path: 'invites',
-            element: <AdminInvitesPage />,
-          },
-          {
-            path: 'approvals',
-            element: <AdminApprovalsPage />,
-          },
-          {
-            path: 'users',
-            element: <AdminUsersPage />,
-          },
-          {
-            path: 'policy',
-            element: <AdminPolicyPage />,
-          },
-          {
-            path: 'system',
-            element: <AdminSystemPage />,
-          },
+          { index: true, element: <OverviewPage /> },
+          { path: 'invites', element: <InvitesPage /> },
+          { path: 'approvals', element: <ApprovalsPage /> },
+          { path: 'users', element: <UsersPage /> },
+          { path: 'policy', element: <PolicyPage /> },
+          { path: 'storage', element: <StoragePage /> },
         ],
       },
     ],

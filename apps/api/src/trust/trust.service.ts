@@ -280,18 +280,22 @@ export class TrustService {
 
     const device = await this.prisma.trustedDevice.findUnique({ where: { id: trustedDeviceId } });
 
-    if (!device || device.userId !== userId || !device.recoveryRequestedAt) {
+    if (!device || device.userId !== userId) {
       throw new NotFoundException('Trusted device not found');
     }
 
-    await this.prisma.trustedDevice.update({
-      where: { id: trustedDeviceId },
-      data: {
-        trustState: DeviceTrustState.TRUSTED,
-        trustEstablishedAt: new Date(),
-        recoveryEstablishedAt: new Date(),
-      },
-    });
+    if (device.recoveryRequestedAt) {
+      await this.prisma.trustedDevice.update({
+        where: { id: trustedDeviceId },
+        data: {
+          trustState: DeviceTrustState.TRUSTED,
+          trustEstablishedAt: new Date(),
+          recoveryEstablishedAt: new Date(),
+        },
+      });
+    } else if (device.trustState !== DeviceTrustState.TRUSTED) {
+      throw new NotFoundException('Trusted device not found');
+    }
 
     return this.prisma.recoveryCredentialSet.update({
       where: { userId },

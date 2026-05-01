@@ -1,98 +1,43 @@
 import { createBrowserRouter, Navigate } from 'react-router-dom'
-import { EntryShell } from './shells/EntryShell.tsx'
-import { AccessShell } from './shells/AccessShell.tsx'
-import { WorkspaceShell } from './shells/WorkspaceShell.tsx'
-import { PublicLinkShell } from './shells/PublicLinkShell.tsx'
+import { EntryRoute, AccessRoute, WorkspaceGate, LoginPage, RegisterPage, WaitingPage, BlockedPage } from './features/access/routes.tsx'
 import {
-  AccessRouteResolver,
-  EntryRouteResolver,
-  WorkspaceRouteResolver,
-} from './components/RouteResolver.tsx'
-import { LoginPage } from './views/LoginPage.tsx'
-import { RegisterPage } from './views/RegisterPage.tsx'
-import { WaitingPage } from './views/WaitingPage.tsx'
-import { BlockedPage } from './views/BlockedPage.tsx'
-import { DeviceSetupPage } from './views/DeviceSetupPage.tsx'
-import { DevicePairPage } from './views/DevicePairPage.tsx'
-import { DevicePairWaitingPage } from './views/DevicePairWaitingPage.tsx'
-import { DevicePairApprovePage } from './views/DevicePairApprovePage.tsx'
-import { DeviceRecoveryPage } from './views/DeviceRecoveryPage.tsx'
-import { DeviceRecoveryRotatedCodesPage } from './views/DeviceRecoveryRotatedCodesPage.tsx'
-import { AppTimelinePage } from './views/AppTimelinePage.tsx'
-import { AppUploadPage } from './views/AppUploadPage.tsx'
-import { AppHistoryPage } from './views/AppHistoryPage.tsx'
-import { AppItemDetailPage } from './views/AppItemDetailPage.tsx'
-import { AppSettingsPage } from './views/AppSettingsPage.tsx'
-import { PublicLinkPage } from './views/PublicLinkPage.tsx'
-import { LiveStartPage } from './views/LiveStartPage.tsx'
-import { LiveSessionPage } from './views/LiveSessionPage.tsx'
-import { LiveJoinPage } from './views/LiveJoinPage.tsx'
-import { ExtractionEntryPage } from './views/ExtractionEntryPage.tsx'
-import { ShareToolsPage } from './views/ShareToolsPage.tsx'
+  DevicePairApprovePage,
+  DevicePairPage,
+  DevicePairWaitingPage,
+  DeviceRecoveryPage,
+  DeviceSetupPage,
+  RecoveryCodesPage,
+} from './features/trust/routes.tsx'
+import { WorkspaceShell } from './features/workspace/shell.tsx'
+import { TimelinePage } from './features/workspace/timeline.tsx'
+import { AdvancedUploadPage } from './features/workspace/upload.tsx'
+import { HistoryPage, ItemDetailPage } from './features/workspace/history.tsx'
+import { SharePage } from './features/share/share-page.tsx'
+import { PublicLinkPage } from './features/recipients/public-link.tsx'
+import { ExtractionPage } from './features/recipients/extraction.tsx'
+import { LiveJoinPage, LiveSessionPage, LiveStartPage } from './features/live/routes.tsx'
+import { SettingsPage } from './features/workspace/settings.tsx'
 
 export const router = createBrowserRouter([
+  { path: '/', element: <Navigate to="/app" replace /> },
   {
-    path: '/',
-    element: <Navigate to="/app" replace />,
-  },
-  {
-    element: <EntryShell />,
+    element: <EntryRoute />,
     children: [
-      {
-        element: <EntryRouteResolver />,
-        children: [
-          {
-            path: '/login',
-            element: <LoginPage />,
-          },
-          {
-            path: '/register',
-            element: <RegisterPage />,
-          },
-        ],
-      },
+      { path: '/login', element: <LoginPage /> },
+      { path: '/register', element: <RegisterPage /> },
     ],
   },
   {
-    element: <AccessShell />,
+    element: <AccessRoute />,
     children: [
-      {
-        element: <AccessRouteResolver />,
-        children: [
-          {
-            path: '/waiting',
-            element: <WaitingPage />,
-          },
-          {
-            path: '/blocked',
-            element: <BlockedPage />,
-          },
-          {
-            path: '/device/setup',
-            element: <DeviceSetupPage />,
-          },
-          {
-            path: '/device/pair',
-            element: <DevicePairPage />,
-          },
-          {
-            path: '/device/pair/waiting',
-            element: <DevicePairWaitingPage />,
-          },
-          {
-            path: '/device/pair/approve',
-            element: <DevicePairApprovePage />,
-          },
-          {
-            path: '/device/recovery',
-            element: <DeviceRecoveryPage />,
-          },
-          {
-            path: '/device/recovery/rotated-codes',
-            element: <DeviceRecoveryRotatedCodesPage />,
-          },
-        ],
-      },
+      { path: '/waiting', element: <WaitingPage /> },
+      { path: '/blocked', element: <BlockedPage /> },
+      { path: '/device/setup', element: <DeviceSetupPage /> },
+      { path: '/device/pair', element: <DevicePairPage /> },
+      { path: '/device/pair/waiting', element: <DevicePairWaitingPage /> },
+      { path: '/device/pair/approve', element: <DevicePairApprovePage /> },
+      { path: '/device/recovery', element: <DeviceRecoveryPage /> },
+      { path: '/device/recovery/rotated-codes', element: <RecoveryCodesPage /> },
     ],
   },
   {
@@ -100,64 +45,32 @@ export const router = createBrowserRouter([
     element: <WorkspaceShell />,
     children: [
       {
-        element: <WorkspaceRouteResolver />,
+        element: <WorkspaceGate />,
         children: [
-          {
-            index: true,
-            element: <AppTimelinePage />,
-          },
-          {
-            path: 'timeline',
-            element: <AppTimelinePage />,
-          },
-          {
-            path: 'upload',
-            element: <AppUploadPage />,
-          },
-          {
-            path: 'history',
-            element: <AppHistoryPage />,
-          },
-          {
-            path: 'items/:itemId',
-            element: <AppItemDetailPage />,
-          },
-          {
-            path: 'settings',
-            element: <AppSettingsPage />,
-          },
-          {
-            path: 'share-tools',
-            element: <ShareToolsPage />,
-          },
+          { index: true, element: <TimelinePage /> },
+          { path: 'upload', element: <AdvancedUploadPage /> },
+          { path: 'history', element: <HistoryPage /> },
+          { path: 'items/:itemId', element: <ItemDetailPage /> },
+          { path: 'share/:sourceItemId', element: <SharePage /> },
+          { path: 'settings', element: <SettingsPage /> },
         ],
       },
     ],
   },
   {
-    path: '/x/:entryToken',
-    element: <ExtractionEntryPage />,
-  },
-  {
-    path: '/live/start',
-    element: <LiveStartPage />,
-  },
-  {
-    path: '/live/:sessionId',
-    element: <LiveSessionPage />,
-  },
-  {
-    path: '/live/:sessionId/join',
-    element: <LiveJoinPage />,
-  },
-  {
-    path: '/p/:token',
-    element: <PublicLinkShell />,
+    path: '/live',
+    element: <WorkspaceShell />,
     children: [
       {
-        index: true,
-        element: <PublicLinkPage />,
+        element: <WorkspaceGate />,
+        children: [
+          { path: 'start', element: <LiveStartPage /> },
+          { path: 'join', element: <LiveJoinPage /> },
+          { path: ':sessionId', element: <LiveSessionPage /> },
+        ],
       },
     ],
   },
+  { path: '/p/:token', element: <PublicLinkPage /> },
+  { path: '/x/:entryToken', element: <ExtractionPage /> },
 ])

@@ -1,4 +1,5 @@
-import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Res, StreamableFile, UseGuards } from '@nestjs/common';
+import type { Response } from 'express';
 import { SessionActor } from '../common/decorators/session.decorator';
 import { SessionGuard } from '../common/guards/session.guard';
 import { TrustedDeviceGuard } from '../common/guards/trusted-device.guard';
@@ -41,5 +42,22 @@ export class ExtractionController {
     @Body() input: CompleteRetrievalDto,
   ) {
     return this.extractionService.completeExtractionRetrieval(retrievalAttemptId, input.success);
+  }
+
+  @Get('attempts/:retrievalAttemptId/download')
+  async downloadExtractionAttempt(
+    @Param('retrievalAttemptId') retrievalAttemptId: string,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    const download = await this.extractionService.createDownloadStreamForAttempt(retrievalAttemptId);
+
+    response.setHeader('Content-Type', 'application/octet-stream');
+    response.setHeader('Content-Length', String(download.contentLength));
+    response.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${download.fileName.replace(/"/g, '')}"`,
+    );
+
+    return new StreamableFile(download.stream);
   }
 }

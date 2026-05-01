@@ -7,7 +7,7 @@ export default defineConfig({
     allowedHosts: ['test3001.manat.su'],
     proxy: {
       '/api': {
-        target: 'http://localhost:3002',
+        target: 'http://localhost:3000',
         changeOrigin: true,
       },
     },

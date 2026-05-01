@@ -5,6 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import * as argon2 from 'argon2';
+import { Readable } from 'stream';
 import { Prisma } from '../../generated/prisma/index.js';
 import {
   ExtractionAccessState,
@@ -17,6 +18,7 @@ import {
 } from '../../generated/prisma/index.js';
 import { PolicyService } from '../policy/policy.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { StorageService } from '../storage/storage.service';
 import { CreateExtractionDto } from './dto/create-extraction.dto';
 import { SubmitExtractionPasswordDto } from './dto/submit-extraction-password.dto';
 
@@ -25,6 +27,7 @@ export class ExtractionService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly policyService: PolicyService,
+    private readonly storageService: StorageService,
   ) {}
 
   async createExtraction(ownerUserId: string, input: CreateExtractionDto) {
@@ -322,6 +325,66 @@ export class ExtractionService {
     };
   }
 
+  async createDownloadStreamForAttempt(retrievalAttemptId: string) {
+    const attempt = await this.prisma.retrievalAttempt.findUnique({
+      where: { id: retrievalAttemptId },
+      include: {
+        extractionAccess: true,
+        sourceItem: true,
+      },
+    });
+
+    if (
+      !attempt ||
+      attempt.retrievalFamily !== RetrievalFamily.EXTRACTION_ACCESS ||
+      !attempt.extractionAccess
+    ) {
+      throw new NotFoundException('Retrieval attempt not found');
+    }
+
+    if (
+      attempt.status !== RetrievalAttemptStatus.IN_PROGRESS &&
+      attempt.status !== RetrievalAttemptStatus.ISSUED
+    ) {
+      throw new BadRequestException('Retrieval attempt is not downloadable');
+    }
+
+    const refreshed = await this.refreshExtractionState(attempt.extractionAccess.id);
+    if (
+      refreshed.state !== ExtractionAccessState.ACTIVE &&
+      refreshed.state !== ExtractionAccessState.CHALLENGE_REQUIRED
+    ) {
+      throw new BadRequestException('Extraction access is not retrievable');
+    }
+
+    const sourceItem = attempt.sourceItem ?? refreshed.sourceItem;
+    if (!sourceItem || sourceItem.id !== refreshed.sourceItemId) {
+      throw new NotFoundException('Source item not found');
+    }
+
+    if (sourceItem.state !== SourceItemState.ACTIVE) {
+      throw new BadRequestException('Source item is not retrievable');
+    }
+
+    if (sourceItem.validUntil && sourceItem.validUntil < new Date()) {
+      await this.prisma.sourceItem.update({
+        where: { id: sourceItem.id },
+        data: { state: SourceItemState.EXPIRED },
+      });
+      throw new BadRequestException('Source item expired');
+    }
+
+    const parts = this.extractStorageParts(sourceItem.storageBinding);
+    const contentLength = parts.reduce((sum, part) => sum + part.byteSize, 0);
+    const stream = Readable.from(this.readParts(parts.map((part) => part.storageKey)));
+
+    return {
+      stream,
+      contentLength,
+      fileName: sourceItem.displayName ?? this.fallbackTitle(sourceItem.contentKind),
+    };
+  }
+
   private resolvePassword(inputPassword: string | undefined, requireSystemGeneratedPassword: boolean) {
     if (requireSystemGeneratedPassword || !inputPassword) {
       return this.generateSystemPassword();
@@ -398,5 +461,41 @@ export class ExtractionService {
     }
 
     return 'file item';
+  }
+
+  private extractStorageParts(storageBinding: unknown) {
+    if (!storageBinding || typeof storageBinding !== 'object' || !('parts' in storageBinding)) {
+      throw new BadRequestException('Source item has no stored file bytes');
+    }
+
+    const parts = (storageBinding as { parts?: unknown }).parts;
+    if (!Array.isArray(parts) || parts.length === 0) {
+      throw new BadRequestException('Source item has no stored file bytes');
+    }
+
+    return parts.map((part) => {
+      if (
+        !part ||
+        typeof part !== 'object' ||
+        typeof (part as { storageKey?: unknown }).storageKey !== 'string' ||
+        typeof (part as { byteSize?: unknown }).byteSize !== 'number'
+      ) {
+        throw new BadRequestException('Stored file binding is invalid');
+      }
+
+      return {
+        storageKey: (part as { storageKey: string }).storageKey,
+        byteSize: (part as { byteSize: number }).byteSize,
+      };
+    });
+  }
+
+  private async *readParts(storageKeys: string[]) {
+    for (const storageKey of storageKeys) {
+      const stream = this.storageService.createReadStream(storageKey);
+      for await (const chunk of stream) {
+        yield chunk;
+      }
+    }
   }
 }
