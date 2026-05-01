@@ -20,6 +20,11 @@ export function formatShortDate(input: string) {
   }).format(new Date(input))
 }
 
+export function formatTime24(input: string) {
+  const date = new Date(input)
+  return `${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`
+}
+
 export function humanEnum(input: string | null | undefined, fallback = 'Unknown') {
   if (!input) {
     return fallback

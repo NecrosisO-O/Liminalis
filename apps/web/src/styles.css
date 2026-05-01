@@ -17,6 +17,15 @@
   --danger: #a4323a;
   --warning: #986a12;
   --success: #247247;
+  --level-blue: #2f6fed;
+  --level-blue-soft: #e9f1ff;
+  --level-blue-text: #174ea6;
+  --level-yellow: #d79a13;
+  --level-yellow-soft: #fff4d8;
+  --level-yellow-text: #79520a;
+  --level-red: #d84b4b;
+  --level-red-soft: #ffe8e8;
+  --level-red-text: #972f2f;
   --shadow: 0 18px 40px rgba(29, 39, 29, 0.12);
 }
 
@@ -366,64 +375,103 @@ p {
   overflow: auto;
   display: grid;
   align-content: start;
-  gap: 18px;
-  padding-bottom: 18px;
+  gap: 22px;
+  padding: 4px 0 20px;
 }
 
 .timeline-group {
   display: grid;
-  gap: 10px;
+  gap: 14px;
 }
 
 .timeline-day {
   justify-self: center;
   color: var(--muted);
-  border: 1px solid var(--line);
-  background: var(--panel);
-  border-radius: 999px;
-  padding: 4px 10px;
-  font-size: 0.84rem;
+  font-size: 0.82rem;
+  font-weight: 750;
+  padding: 2px 0;
 }
 
 .timeline-item {
   display: grid;
-  grid-template-columns: minmax(0, 620px) auto;
-  gap: 10px;
+  grid-template-columns: 42px minmax(0, 620px);
+  gap: 9px;
   align-items: start;
 }
 
 .timeline-item.own {
-  justify-content: end;
+  justify-content: start;
 }
 
 .timeline-item.incoming {
   justify-content: start;
 }
 
+.timeline-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: #22312e;
+  color: #fff;
+  display: grid;
+  place-items: center;
+  font-size: 0.86rem;
+  font-weight: 850;
+  box-shadow: 0 4px 12px rgba(32, 35, 31, 0.13);
+}
+
+.timeline-content {
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.timeline-meta {
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.2;
+  min-height: 16px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .timeline-card {
   background: var(--panel);
-  border: 1px solid var(--line);
+  border: 0;
   border-radius: 8px;
-  padding: 13px;
+  padding: 12px 14px;
   display: grid;
-  gap: 10px;
+  gap: 8px;
   min-width: min(620px, calc(100vw - 380px));
+  box-shadow: 0 8px 22px rgba(32, 35, 31, 0.08);
 }
 
-.timeline-card header {
-  display: flex;
-  justify-content: space-between;
-  gap: 14px;
+.timeline-card.timeline-card-text {
+  background: var(--panel);
+  color: var(--text);
+  padding-right: 16px;
+  border-right: 5px solid var(--level-yellow);
 }
 
-.timeline-card header div {
-  display: grid;
-  gap: 2px;
+.timeline-card-file {
+  padding: 6px;
+  background: transparent;
+  color: var(--text);
+  box-shadow: none;
+  position: relative;
 }
 
-.timeline-card header span {
-  color: var(--muted);
-  font-size: 0.84rem;
+.timeline-card-text.level-confidential {
+  border-right-color: var(--level-blue);
+}
+
+.timeline-card-text.level-secret {
+  border-right-color: var(--level-yellow);
+}
+
+.timeline-card-text.level-top-secret {
+  border-right-color: var(--level-red);
 }
 
 .level-pill,
@@ -437,44 +485,70 @@ p {
 }
 
 .level-secret {
-  background: #e8f2ec;
-  color: #155a36;
+  background: var(--level-yellow-soft);
+  color: var(--level-yellow-text);
 }
 
 .level-confidential {
-  background: #ecf0f7;
-  color: #254f86;
+  background: var(--level-blue-soft);
+  color: var(--level-blue-text);
 }
 
 .level-top-secret {
-  background: #f7ebee;
-  color: #7b1e32;
+  background: var(--level-red-soft);
+  color: var(--level-red-text);
 }
 
 .timeline-text {
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.5;
+}
+
+.timeline-text.is-collapsed {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
 }
 
 .file-tile {
-  border: 1px solid var(--line);
-  background: var(--panel-soft);
+  border: 0;
+  background: var(--panel);
   border-radius: 7px;
-  padding: 10px;
+  padding: 9px 42px 9px 9px;
   display: grid;
-  grid-template-columns: 66px minmax(0, 1fr);
+  grid-template-columns: 50px minmax(0, 1fr);
   gap: 12px;
   text-align: left;
   cursor: pointer;
+  position: relative;
+  width: 100%;
+  min-height: 68px;
+  box-shadow: 0 8px 22px rgba(32, 35, 31, 0.08);
 }
 
 .file-kind {
-  background: #fff;
-  border: 1px solid var(--line);
-  border-radius: 6px;
+  background: var(--level-yellow);
+  color: #fff;
+  border: 0;
+  border-radius: 7px;
   display: grid;
   place-items: center;
   font-weight: 900;
-  min-height: 52px;
+  min-height: 50px;
+}
+
+.file-kind.level-confidential {
+  background: var(--level-blue);
+}
+
+.file-kind.level-secret {
+  background: var(--level-yellow);
+}
+
+.file-kind.level-top-secret {
+  background: var(--level-red);
 }
 
 .file-tile span:last-child {
@@ -489,8 +563,43 @@ p {
 }
 
 .timeline-actions {
-  display: grid;
+  display: flex;
+  justify-content: flex-end;
   gap: 8px;
+  align-items: center;
+  min-height: 18px;
+}
+
+.timeline-card-file .timeline-actions {
+  position: absolute;
+  right: 14px;
+  bottom: 12px;
+}
+
+.timeline-action-link {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 800;
+  line-height: 1;
+  padding: 0;
+}
+
+.timeline-action-link:hover {
+  color: var(--accent-strong);
+  text-decoration: none;
+}
+
+.text-toggle {
+  border: 0;
+  background: transparent;
+  color: var(--accent-strong);
+  font-size: 0.82rem;
+  font-weight: 800;
+  padding: 0;
+  justify-self: start;
+  cursor: pointer;
 }
 
 .composer {
@@ -505,6 +614,26 @@ p {
   align-items: end;
   position: sticky;
   bottom: 0;
+  z-index: 4;
+}
+
+.composer-level {
+  border: 0;
+  color: #fff;
+  border-radius: 50%;
+  box-shadow: 0 6px 18px rgba(32, 35, 31, 0.16);
+}
+
+.composer-level.level-confidential {
+  background: var(--level-blue);
+}
+
+.composer-level.level-secret {
+  background: var(--level-yellow);
+}
+
+.composer-level.level-top-secret {
+  background: var(--level-red);
 }
 
 .composer .toast {
@@ -803,10 +932,21 @@ progress {
   }
 
   .timeline-item {
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: 36px minmax(0, 1fr);
+    gap: 8px;
+  }
+
+  .timeline-avatar {
+    width: 32px;
+    height: 32px;
+  }
+
+  .timeline-meta {
+    line-height: 1.2;
   }
 
   .composer {
+    position: static;
     margin: 0 -18px;
     padding: 12px 18px;
     grid-template-columns: auto minmax(0, 1fr);

@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { useMemo, useRef, useState } from 'react'
 import { api, type ConfidentialityLevel, type TimelineItem } from '../../shared/api/client.ts'
 import { Button, EmptyState, IconButton, TextArea, Toast } from '../../shared/ui/components.tsx'
-import { confidentialityClass, formatDateTime, formatShortDate } from '../../shared/ui/format.ts'
+import { confidentialityClass, confidentialityLabel, formatShortDate, formatTime24 } from '../../shared/ui/format.ts'
 import {
   classifySelection,
   downloadShareObject,
@@ -17,10 +17,20 @@ import {
 } from '../../shared/files/transfer.ts'
 
 const confidentialityOptions: ConfidentialityLevel[] = ['SECRET', 'CONFIDENTIAL', 'TOP_SECRET']
+const collapsedTextLimit = 420
 
 function nextLevel(current: ConfidentialityLevel) {
   const index = confidentialityOptions.indexOf(current)
   return confidentialityOptions[(index + 1) % confidentialityOptions.length] ?? 'SECRET'
+}
+
+function avatarLabel(sourceLabel: string) {
+  const trimmed = sourceLabel.trim()
+  return (trimmed[0] ?? 'L').toUpperCase()
+}
+
+function timelineMeta(item: TimelineItem) {
+  return `${formatTime24(item.createdTime)} · ${item.sourceLabel}`
 }
 
 function groupTimeline(items: TimelineItem[]) {
@@ -48,6 +58,7 @@ export function TimelinePage() {
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const [level, setLevel] = useState<ConfidentialityLevel>('SECRET')
   const [text, setText] = useState('')
+  const [expandedTextIds, setExpandedTextIds] = useState<Set<string>>(() => new Set())
   const [toast, setToast] = useState<{ tone: 'success' | 'danger' | 'warning'; message: string } | null>(null)
 
   const timeline = useQuery({
@@ -124,44 +135,62 @@ export function TimelinePage() {
             {group.items.map((item) => {
               const isText = item.visibleTypeLabel === 'text'
               const ids = itemObjectIds(item)
+              const textBody = item.visibleSummary ?? item.displayTitle ?? 'Text item'
+              const isLongText = isText && textBody.length > collapsedTextLimit
+              const isExpanded = expandedTextIds.has(item.id)
 
               return (
                 <article key={item.id} className={item.sourceObjectType === 'SOURCE_ITEM' ? 'timeline-item own' : 'timeline-item incoming'}>
-                  <div className="timeline-card">
-                    <header>
-                      <div>
-                        <strong>{item.sourceLabel}</strong>
-                        <span>{formatDateTime(item.createdTime)}</span>
-                      </div>
-                      <span className={`level-pill ${confidentialityClass(item.confidentialityLevel)}`}>
-                        {item.confidentialityLevel.replace('_', ' ')}
-                      </span>
-                    </header>
-                    {isText ? (
-                      <p className="timeline-text">{item.visibleSummary ?? item.displayTitle ?? 'Text item'}</p>
-                    ) : (
-                      <button className="file-tile" type="button" onClick={() => download.mutate(item)} disabled={download.isPending}>
-                        <span className="file-kind">{item.groupedItemCount ? 'Group' : 'File'}</span>
-                        <span>
-                          <strong>{itemTitle(item)}</strong>
-                          <small>
-                            {item.visibleTypeLabel}
-                            {item.visibleSizeBytes ? ` · ${formatBytes(item.visibleSizeBytes)}` : ''}
-                            {item.groupedItemCount ? ` · ${item.groupedItemCount} items` : ''}
-                          </small>
-                        </span>
-                      </button>
-                    )}
-                  </div>
-                  <div className="timeline-actions">
-                    {ids.sourceItemId && !isText ? (
-                      <Link className="icon-link" to={`/app/share/${ids.sourceItemId}`} title="Share item" aria-label="Share item">
-                        ↗
-                      </Link>
-                    ) : null}
-                    <Link className="icon-link" to={`/app/items/${ids.sourceItemId ?? ids.shareObjectId ?? item.sourceObjectId}`} title="Details" aria-label="Details">
-                      i
-                    </Link>
+                  <div className="timeline-avatar" aria-hidden="true">{avatarLabel(item.sourceLabel)}</div>
+                  <div className="timeline-content">
+                    <div className="timeline-meta">{timelineMeta(item)}</div>
+                    <div className={`timeline-card ${isText ? `timeline-card-text ${confidentialityClass(item.confidentialityLevel)}` : 'timeline-card-file'}`}>
+                      {isText ? (
+                        <>
+                          <p className={`timeline-text ${isLongText && !isExpanded ? 'is-collapsed' : ''}`}>{textBody}</p>
+                          {isLongText ? (
+                            <button
+                              className="text-toggle"
+                              type="button"
+                              onClick={() => {
+                                setExpandedTextIds((current) => {
+                                  const next = new Set(current)
+                                  if (next.has(item.id)) {
+                                    next.delete(item.id)
+                                  } else {
+                                    next.add(item.id)
+                                  }
+                                  return next
+                                })
+                              }}
+                            >
+                              {isExpanded ? 'Collapse' : 'Expand'}
+                            </button>
+                          ) : null}
+                        </>
+                      ) : (
+                        <button className="file-tile" type="button" onClick={() => download.mutate(item)} disabled={download.isPending}>
+                          <span className={`file-kind ${confidentialityClass(item.confidentialityLevel)}`} aria-hidden="true">
+                            {item.groupedItemCount ? 'G' : 'F'}
+                          </span>
+                          <span>
+                            <strong>{itemTitle(item)}</strong>
+                            <small>
+                              {item.visibleTypeLabel}
+                              {item.visibleSizeBytes ? ` · ${formatBytes(item.visibleSizeBytes)}` : ''}
+                              {item.groupedItemCount ? ` · ${item.groupedItemCount} items` : ''}
+                            </small>
+                          </span>
+                        </button>
+                      )}
+                      {ids.sourceItemId && !isText ? (
+                        <div className="timeline-actions">
+                          <Link className="timeline-action-link share-action" to={`/app/share/${ids.sourceItemId}`} title="Share item" aria-label="Share item">
+                            Share
+                          </Link>
+                        </div>
+                      ) : null}
+                    </div>
                   </div>
                 </article>
               )
@@ -191,7 +220,11 @@ export function TimelinePage() {
             }
           }}
         />
-        <IconButton label={`Confidentiality: ${level}`} onClick={() => setLevel((current) => nextLevel(current))}>
+        <IconButton
+          label={`Confidentiality: ${confidentialityLabel(level)}`}
+          className={`composer-level ${confidentialityClass(level)}`}
+          onClick={() => setLevel((current) => nextLevel(current))}
+        >
           {level === 'TOP_SECRET' ? 'TS' : level[0]}
         </IconButton>
         <TextArea value={text} onChange={(event) => setText(event.target.value)} rows={1} placeholder="Send text to yourself" />
