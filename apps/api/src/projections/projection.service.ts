@@ -166,7 +166,11 @@ export class ProjectionService {
       include: {
         ownerUser: true,
         recipientUser: true,
-        sourceItem: true,
+        sourceItem: {
+          include: {
+            groupManifest: true,
+          },
+        },
       },
     });
 
@@ -176,6 +180,48 @@ export class ProjectionService {
 
     const visibility = this.buildShareVisibility(shareObject);
     const title = shareObject.sourceItem.displayName ?? this.fallbackTitle(shareObject.sourceItem.contentKind);
+
+    await this.prisma.activeTimelineItemProjection.upsert({
+      where: {
+        ownerUserId_sourceObjectType_sourceObjectId: {
+          ownerUserId: shareObject.recipientUserId,
+          sourceObjectType: ProjectionSourceType.SHARE_OBJECT,
+          sourceObjectId: shareObject.id,
+        },
+      },
+      update: {
+        shareObjectId: shareObject.id,
+        displayTitle: title,
+        visibleTypeLabel: visibility.visibleTypeLabel,
+        visibleSizeBytes: visibility.visibleSizeBytes,
+        groupedItemCount: visibility.groupedItemCount,
+        sourceLabel: visibility.sourceLabel,
+        activeStatusLabel: visibility.retainedStatus,
+        confidentialityLevel: shareObject.confidentialityLevel,
+        currentRetrievable: visibility.retrievable,
+        visibleSummary: null,
+        createdTime: shareObject.createdAt,
+        validUntil: shareObject.validUntil,
+        projectedAt: new Date(),
+      },
+      create: {
+        ownerUserId: shareObject.recipientUserId,
+        sourceObjectType: ProjectionSourceType.SHARE_OBJECT,
+        sourceObjectId: shareObject.id,
+        shareObjectId: shareObject.id,
+        displayTitle: title,
+        visibleTypeLabel: visibility.visibleTypeLabel,
+        visibleSizeBytes: visibility.visibleSizeBytes,
+        groupedItemCount: visibility.groupedItemCount,
+        sourceLabel: visibility.sourceLabel,
+        activeStatusLabel: visibility.retainedStatus,
+        confidentialityLevel: shareObject.confidentialityLevel,
+        currentRetrievable: visibility.retrievable,
+        visibleSummary: null,
+        createdTime: shareObject.createdAt,
+        validUntil: shareObject.validUntil,
+      },
+    });
 
     await this.prisma.historyEntryProjection.upsert({
       where: {
@@ -325,17 +371,35 @@ export class ProjectionService {
     shareObject: ShareObject & {
       ownerUser: { username: string };
       recipientUser: { username: string };
-      sourceItem: { contentKind: UploadContentKind; displayName: string | null };
+      sourceItem: {
+        contentKind: UploadContentKind;
+        displayName: string | null;
+        storageBytes?: number;
+        groupManifest: { manifestJson: unknown } | null;
+      };
     },
   ) {
-    const retrievable = shareObject.state === ShareObjectState.ACTIVE;
+    const isExpired = shareObject.validUntil !== null && shareObject.validUntil < new Date();
+    const retrievable = shareObject.state === ShareObjectState.ACTIVE && !isExpired;
     const retainedStatus =
-      shareObject.state === ShareObjectState.ACTIVE
+      shareObject.state === ShareObjectState.ACTIVE && isExpired
+        ? 'expired'
+        : shareObject.state === ShareObjectState.ACTIVE
         ? 'active'
         : shareObject.inactiveReason?.toLowerCase() ?? 'inactive';
+    const groupedItemCount = shareObject.sourceItem.groupManifest
+      ? Array.isArray((shareObject.sourceItem.groupManifest.manifestJson as { members?: unknown }).members)
+        ? ((shareObject.sourceItem.groupManifest.manifestJson as { members: unknown[] }).members.length ?? null)
+        : null
+      : null;
 
     return {
-      visibleTypeLabel: this.visibleTypeLabel(shareObject.sourceItem.contentKind, false),
+      visibleTypeLabel: this.visibleTypeLabel(shareObject.sourceItem.contentKind, shareObject.sourceItem.groupManifest !== null),
+      visibleSizeBytes:
+        shareObject.sourceItem.contentKind === UploadContentKind.SELF_SPACE_TEXT
+          ? null
+          : shareObject.sourceItem.storageBytes ?? null,
+      groupedItemCount,
       sourceLabel: shareObject.ownerUser.username,
       retrievable,
       retainedStatus,

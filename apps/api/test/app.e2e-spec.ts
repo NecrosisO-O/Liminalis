@@ -1313,6 +1313,21 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
     expect(share.body.allowRepeatDownload).toBe(false);
     expect(share.body.allowRecipientMultiDeviceAccess).toBe(true);
 
+    const activeShareTimeline = await request(app.getHttpServer())
+      .get('/api/timeline')
+      .set('Cookie', quinnCookies)
+      .expect(200);
+
+    const activeShare = activeShareTimeline.body.find(
+      (entry: { sourceObjectId: string }) => entry.sourceObjectId === share.body.shareObjectId,
+    );
+    expect(activeShare).toBeDefined();
+    expect(activeShare.sourceObjectType).toBe('SHARE_OBJECT');
+    expect(activeShare.shareObjectId).toBe(share.body.shareObjectId);
+    expect(activeShare.displayTitle).toBe('no-repeat share.bin');
+    expect(activeShare.sourceLabel).toBe('piper');
+    expect(activeShare.currentRetrievable).toBe(true);
+
     const incoming = await request(app.getHttpServer())
       .get('/api/shares/incoming')
       .set('Cookie', quinnCookies)
@@ -1339,6 +1354,17 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
       .post(`/api/shares/${share.body.shareObjectId}/attempts/recipient-attempt-2`)
       .set('Cookie', quinnCookies)
       .expect(400);
+
+    const consumedShareTimeline = await request(app.getHttpServer())
+      .get('/api/timeline')
+      .set('Cookie', quinnCookies)
+      .expect(200);
+
+    expect(
+      consumedShareTimeline.body.find(
+        (entry: { sourceObjectId: string }) => entry.sourceObjectId === share.body.shareObjectId,
+      ),
+    ).toBeUndefined();
 
     const history = await request(app.getHttpServer())
       .get('/api/history')
