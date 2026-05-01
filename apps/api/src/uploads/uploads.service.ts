@@ -34,7 +34,7 @@ export class UploadsService {
     private readonly storageService: StorageService,
   ) {}
 
-  async prepareUpload(userId: string, input: PrepareUploadDto) {
+  async prepareUpload(userId: string, trustedDeviceId: string | null, input: PrepareUploadDto) {
     await this.requireEligibleTrustedUploader(userId);
 
     const confidentialityLevel =
@@ -52,6 +52,7 @@ export class UploadsService {
     const uploadSession = await this.prisma.uploadSession.create({
       data: {
         uploaderUserId: userId,
+        uploaderTrustedDeviceId: trustedDeviceId,
         contentKind: input.contentKind,
         groupStructureKind: input.groupStructureKind,
         confidentialityLevel,
@@ -197,7 +198,7 @@ export class UploadsService {
     };
   }
 
-  async finalizeUpload(userId: string, uploadSessionId: string, input: FinalizeUploadDto) {
+  async finalizeUpload(userId: string, trustedDeviceId: string | null, uploadSessionId: string, input: FinalizeUploadDto) {
     const session = await this.requireOwnedActiveUploadSession(userId, uploadSessionId);
     const policySnapshot = session.policySnapshot as Record<string, unknown>;
 
@@ -241,6 +242,7 @@ export class UploadsService {
       const created = await tx.sourceItem.create({
         data: {
           ownerUserId: userId,
+          createdByTrustedDeviceId: session.uploaderTrustedDeviceId ?? trustedDeviceId,
           contentKind: session.contentKind,
           groupStructureKind: session.groupStructureKind,
           confidentialityLevel: session.confidentialityLevel,

@@ -1,17 +1,46 @@
 import { Injectable } from '@nestjs/common';
+import { ProjectionSourceType } from '../../generated/prisma/index.js';
 import { PrismaService } from '../prisma/prisma.service';
+
+export type TimelineItemOrigin =
+  | 'CURRENT_DEVICE'
+  | 'OTHER_DEVICE'
+  | 'INCOMING_SHARE';
 
 @Injectable()
 export class ProjectionsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async getActiveTimeline(userId: string) {
-    return this.prisma.activeTimelineItemProjection.findMany({
+  async getActiveTimeline(userId: string, trustedDeviceId: string | null) {
+    const items = await this.prisma.activeTimelineItemProjection.findMany({
       where: {
         ownerUserId: userId,
         currentRetrievable: true,
       },
+      include: {
+        sourceItem: {
+          select: {
+            createdByTrustedDeviceId: true,
+          },
+        },
+      },
       orderBy: { createdTime: 'desc' },
+    });
+
+    return items.map((item) => {
+      const { sourceItem, ...projection } = item;
+      const origin: TimelineItemOrigin =
+        item.sourceObjectType === ProjectionSourceType.SHARE_OBJECT
+          ? 'INCOMING_SHARE'
+          : sourceItem?.createdByTrustedDeviceId &&
+              sourceItem.createdByTrustedDeviceId === trustedDeviceId
+            ? 'CURRENT_DEVICE'
+            : 'OTHER_DEVICE';
+
+      return {
+        ...projection,
+        timelineOrigin: origin,
+      };
     });
   }
 

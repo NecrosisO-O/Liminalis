@@ -12,7 +12,7 @@ export class ProjectionsController {
 
   @Get('timeline')
   async getTimeline(@SessionActor() sessionActor: AuthenticatedSession) {
-    return this.projectionsService.getActiveTimeline(sessionActor.userId);
+    return this.projectionsService.getActiveTimeline(sessionActor.userId, sessionActor.trustedDeviceId);
   }
 
   @Get('history')

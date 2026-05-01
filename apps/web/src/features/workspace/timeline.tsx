@@ -30,7 +30,12 @@ function avatarLabel(sourceLabel: string) {
 }
 
 function timelineMeta(item: TimelineItem) {
-  return `${formatTime24(item.createdTime)} · ${item.sourceLabel}`
+  const time = formatTime24(item.createdTime)
+  return item.timelineOrigin === 'CURRENT_DEVICE' ? `${item.sourceLabel} · ${time}` : `${time} · ${item.sourceLabel}`
+}
+
+function timelineOriginClass(item: TimelineItem) {
+  return item.timelineOrigin.toLowerCase().replaceAll('_', '-')
 }
 
 function groupTimeline(items: TimelineItem[]) {
@@ -140,7 +145,10 @@ export function TimelinePage() {
               const isExpanded = expandedTextIds.has(item.id)
 
               return (
-                <article key={item.id} className={item.sourceObjectType === 'SOURCE_ITEM' ? 'timeline-item own' : 'timeline-item incoming'}>
+                <article
+                  key={item.id}
+                  className={`timeline-item ${item.timelineOrigin === 'CURRENT_DEVICE' ? 'outgoing' : 'incoming'} origin-${timelineOriginClass(item)}`}
+                >
                   <div className="timeline-avatar" aria-hidden="true">{avatarLabel(item.sourceLabel)}</div>
                   <div className="timeline-content">
                     <div className="timeline-meta">{timelineMeta(item)}</div>

@@ -44,6 +44,7 @@ export type TimelineItem = {
   id: string
   sourceObjectType: 'SOURCE_ITEM' | 'SHARE_OBJECT'
   sourceObjectId: string
+  timelineOrigin: 'CURRENT_DEVICE' | 'OTHER_DEVICE' | 'INCOMING_SHARE'
   sourceItemId?: string | null
   shareObjectId?: string | null
   displayTitle: string | null

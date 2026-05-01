@@ -19,7 +19,7 @@ export class UploadsController {
     @SessionActor() sessionActor: AuthenticatedSession,
     @Body() input: PrepareUploadDto,
   ) {
-    return this.uploadsService.prepareUpload(sessionActor.userId, input);
+    return this.uploadsService.prepareUpload(sessionActor.userId, sessionActor.trustedDeviceId, input);
   }
 
   @Post(':uploadSessionId/parts')
@@ -52,6 +52,6 @@ export class UploadsController {
     @Param('uploadSessionId') uploadSessionId: string,
     @Body() input: FinalizeUploadDto,
   ) {
-    return this.uploadsService.finalizeUpload(sessionActor.userId, uploadSessionId, input);
+    return this.uploadsService.finalizeUpload(sessionActor.userId, sessionActor.trustedDeviceId, uploadSessionId, input);
   }
 }

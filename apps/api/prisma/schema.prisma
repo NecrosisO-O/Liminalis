@@ -238,6 +238,8 @@ model TrustedDevice {
   joinedLiveTransfers    LiveTransferSession[] @relation("LiveTransferJoinerDevice")
   sentLiveTransferSignals LiveTransferSignalMessage[] @relation("LiveTransferSignalSenderDevice")
   receivedLiveTransferSignals LiveTransferSignalMessage[] @relation("LiveTransferSignalRecipientDevice")
+  uploadSessionsCreated UploadSession[] @relation("UploadSessionUploaderDevice")
+  sourceItemsCreated SourceItem[] @relation("SourceItemCreatedByDevice")
 }
 
 model PairingSession {
@@ -396,6 +398,8 @@ model UploadSession {
   id                     String              @id @default(cuid())
   uploaderUserId         String
   uploaderUser           User                @relation(fields: [uploaderUserId], references: [id])
+  uploaderTrustedDeviceId String?
+  uploaderTrustedDevice  TrustedDevice?      @relation("UploadSessionUploaderDevice", fields: [uploaderTrustedDeviceId], references: [id], onDelete: SetNull)
   contentKind            UploadContentKind
   groupStructureKind     GroupStructureKind?
   confidentialityLevel   ConfidentialityLevel
@@ -414,6 +418,7 @@ model UploadSession {
   parts                  UploadPart[]
 
   @@index([uploaderUserId, phase])
+  @@index([uploaderTrustedDeviceId])
 }
 
 model UploadPart {
@@ -434,6 +439,8 @@ model SourceItem {
   id                     String                @id @default(cuid())
   ownerUserId            String
   ownerUser              User                  @relation(fields: [ownerUserId], references: [id])
+  createdByTrustedDeviceId String?
+  createdByTrustedDevice TrustedDevice?        @relation("SourceItemCreatedByDevice", fields: [createdByTrustedDeviceId], references: [id], onDelete: SetNull)
   contentKind            UploadContentKind
   groupStructureKind     GroupStructureKind?
   confidentialityLevel   ConfidentialityLevel
@@ -460,6 +467,8 @@ model SourceItem {
   publicLinks            PublicLink[]
   createdAt              DateTime              @default(now())
   updatedAt              DateTime              @updatedAt
+
+  @@index([createdByTrustedDeviceId])
 }
 
 model ShareObject {

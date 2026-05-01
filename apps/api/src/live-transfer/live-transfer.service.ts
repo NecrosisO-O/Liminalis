@@ -317,7 +317,7 @@ export class LiveTransferService {
       };
     }
 
-    const uploadSession = await this.uploadsService.prepareUpload(userId, {
+    const uploadSession = await this.uploadsService.prepareUpload(userId, trustedDeviceId, {
       contentKind: session.contentKind,
       groupStructureKind: session.groupedTransfer ? 'MULTI_FILE' : undefined,
       confidentialityLevel: session.confidentialityLevel,
