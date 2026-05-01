@@ -394,7 +394,7 @@ p {
 
 .timeline-item {
   display: grid;
-  grid-template-columns: 36px minmax(0, auto);
+  grid-template-columns: 36px minmax(0, 430px);
   gap: 9px;
   align-items: start;
 }
@@ -404,7 +404,7 @@ p {
 }
 
 .timeline-item.outgoing {
-  grid-template-columns: minmax(0, auto) 36px;
+  grid-template-columns: minmax(0, 430px) 36px;
   justify-content: end;
 }
 
@@ -438,7 +438,7 @@ p {
 
 .timeline-content {
   min-width: 0;
-  width: min(100%, 454px);
+  width: 100%;
   display: grid;
   gap: 6px;
   justify-items: start;
@@ -472,7 +472,7 @@ p {
   color: var(--text);
   padding-right: 16px;
   border-right: 5px solid var(--level-yellow);
-  width: min(430px, 100%);
+  width: 100%;
 }
 
 .timeline-card-file {
@@ -982,16 +982,16 @@ progress {
   }
 
   .timeline-item {
-    grid-template-columns: 32px minmax(0, auto);
+    grid-template-columns: 32px minmax(0, 304px);
     gap: 8px;
   }
 
   .timeline-item.outgoing {
-    grid-template-columns: minmax(0, auto) 32px;
+    grid-template-columns: minmax(0, 304px) 32px;
   }
 
   .timeline-content {
-    width: min(100%, 304px);
+    width: 100%;
   }
 
   .timeline-card {
@@ -999,7 +999,7 @@ progress {
   }
 
   .timeline-card.timeline-card-text {
-    width: min(304px, 100%);
+    width: 100%;
   }
 
   .timeline-card-file {
