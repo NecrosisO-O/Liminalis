@@ -8,7 +8,13 @@ import { LiveTransferController } from './live-transfer.controller';
 import { LiveTransferService } from './live-transfer.service';
 
 @Module({
-  imports: [IdentityModule, PolicyModule, PrismaModule, StorageModule, UploadsModule],
+  imports: [
+    IdentityModule,
+    PolicyModule,
+    PrismaModule,
+    StorageModule,
+    UploadsModule,
+  ],
   controllers: [LiveTransferController],
   providers: [LiveTransferService],
   exports: [LiveTransferService],

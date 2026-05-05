@@ -1,4 +1,11 @@
-import { IsInt, IsOptional, IsString, Min, MinLength } from 'class-validator';
+import {
+  IsInt,
+  IsObject,
+  IsOptional,
+  IsString,
+  Min,
+  MinLength,
+} from 'class-validator';
 
 export class CreateExtractionDto {
   @IsString()
@@ -18,4 +25,8 @@ export class CreateExtractionDto {
   @IsInt()
   @Min(1)
   requestedRetrievalCount?: number;
+
+  @IsOptional()
+  @IsObject()
+  packageReference?: Record<string, unknown>;
 }

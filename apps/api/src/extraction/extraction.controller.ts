@@ -1,4 +1,13 @@
-import { Body, Controller, Get, Param, Post, Res, StreamableFile, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Post,
+  Res,
+  StreamableFile,
+  UseGuards,
+} from '@nestjs/common';
 import type { Response } from 'express';
 import { SessionActor } from '../common/decorators/session.decorator';
 import { SessionGuard } from '../common/guards/session.guard';
@@ -33,7 +42,11 @@ export class ExtractionController {
     @Param('attemptScopeKey') attemptScopeKey: string,
     @Body() input: SubmitExtractionPasswordDto,
   ) {
-    return this.extractionService.submitPassword(entryToken, attemptScopeKey, input);
+    return this.extractionService.submitPassword(
+      entryToken,
+      attemptScopeKey,
+      input,
+    );
   }
 
   @Post('attempts/:retrievalAttemptId/complete')
@@ -41,7 +54,10 @@ export class ExtractionController {
     @Param('retrievalAttemptId') retrievalAttemptId: string,
     @Body() input: CompleteRetrievalDto,
   ) {
-    return this.extractionService.completeExtractionRetrieval(retrievalAttemptId, input.success);
+    return this.extractionService.completeExtractionRetrieval(
+      retrievalAttemptId,
+      input.success,
+    );
   }
 
   @Get('attempts/:retrievalAttemptId/download')
@@ -49,7 +65,10 @@ export class ExtractionController {
     @Param('retrievalAttemptId') retrievalAttemptId: string,
     @Res({ passthrough: true }) response: Response,
   ) {
-    const download = await this.extractionService.createDownloadStreamForAttempt(retrievalAttemptId);
+    const download =
+      await this.extractionService.createDownloadStreamForAttempt(
+        retrievalAttemptId,
+      );
 
     response.setHeader('Content-Type', 'application/octet-stream');
     response.setHeader('Content-Length', String(download.contentLength));

@@ -149,7 +149,10 @@ export class LiveTransferController {
 
     response.setHeader('Content-Type', 'application/octet-stream');
     response.setHeader('Content-Length', String(download.contentLength));
-    response.setHeader('Content-Disposition', `attachment; filename="relay-${download.sequence}.bin"`);
+    response.setHeader(
+      'Content-Disposition',
+      `attachment; filename="relay-${download.sequence}.bin"`,
+    );
 
     return new StreamableFile(download.stream);
   }

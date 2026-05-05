@@ -1,4 +1,12 @@
-import { Body, Controller, Get, Param, Post, Res, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Post,
+  Res,
+  UseGuards,
+} from '@nestjs/common';
 import type { Response } from 'express';
 import { SessionActor } from '../common/decorators/session.decorator';
 import { SessionGuard } from '../common/guards/session.guard';
@@ -6,6 +14,7 @@ import type { AuthenticatedSession } from '../common/types/auth.types';
 import { ApprovePairingDto } from './dto/approve-pairing.dto';
 import { CreatePairingSessionDto } from './dto/create-pairing-session.dto';
 import { FirstDeviceBootstrapDto } from './dto/first-device-bootstrap.dto';
+import { FinalizePairingDto } from './dto/finalize-pairing.dto';
 import { RecoveryAttemptDto } from './dto/recovery-attempt.dto';
 import { RejectPairingDto } from './dto/reject-pairing.dto';
 import { TrustService } from './trust.service';
@@ -21,7 +30,10 @@ export class TrustController {
     @Body() input: FirstDeviceBootstrapDto,
     @Res({ passthrough: true }) response: Response,
   ) {
-    const result = await this.trustService.bootstrapFirstDevice(sessionActor.userId, input);
+    const result = await this.trustService.bootstrapFirstDevice(
+      sessionActor.userId,
+      input,
+    );
 
     response.cookie('liminalis_trusted_device', result.trustedDeviceId, {
       httpOnly: true,
@@ -39,7 +51,10 @@ export class TrustController {
     @Body() input: CreatePairingSessionDto,
     @Res({ passthrough: true }) response: Response,
   ) {
-    const result = await this.trustService.createPairingSession(sessionActor.userId, input);
+    const result = await this.trustService.createPairingSession(
+      sessionActor.userId,
+      input,
+    );
 
     response.cookie('liminalis_trusted_device', result.requesterDeviceId, {
       httpOnly: true,
@@ -83,6 +98,27 @@ export class TrustController {
   }
 
   @UseGuards(SessionGuard)
+  @Post('trust/pairing/finalize')
+  async finalizePairing(
+    @SessionActor() sessionActor: AuthenticatedSession,
+    @Body() input: FinalizePairingDto,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    const result = await this.trustService.finalizePairing(
+      sessionActor.userId,
+      input,
+    );
+
+    response.cookie('liminalis_trusted_device', result.requesterDeviceId, {
+      httpOnly: true,
+      sameSite: 'lax',
+      secure: false,
+    });
+
+    return result;
+  }
+
+  @UseGuards(SessionGuard)
   @Get('trust/pairing/by-short-code/:shortCode')
   async pairingByShortCode(@Param('shortCode') shortCode: string) {
     return this.trustService.resolvePairingByShortCode(shortCode);
@@ -105,7 +141,9 @@ export class TrustController {
 
   @UseGuards(SessionGuard)
   @Get('recovery/pending-display')
-  async pendingRecoveryDisplay(@SessionActor() sessionActor: AuthenticatedSession) {
+  async pendingRecoveryDisplay(
+    @SessionActor() sessionActor: AuthenticatedSession,
+  ) {
     return this.trustService.getPendingRecoveryDisplay(sessionActor.userId);
   }
 

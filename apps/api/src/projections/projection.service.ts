@@ -7,12 +7,19 @@ import {
   SourceItem,
   SourceItemState,
   UploadContentKind,
+  Prisma,
 } from '../../generated/prisma/index.js';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
 export class ProjectionService {
   constructor(private readonly prisma: PrismaService) {}
+
+  private jsonForWrite(value: unknown) {
+    return value === null || value === undefined
+      ? Prisma.JsonNull
+      : (value as Prisma.InputJsonValue);
+  }
 
   async projectSourceItem(sourceItemId: string) {
     const sourceItem = await this.prisma.sourceItem.findUnique({
@@ -30,7 +37,10 @@ export class ProjectionService {
       return;
     }
 
-    if (sourceItem.burnAfterReadEnabled && sourceItem.state === SourceItemState.PURGED) {
+    if (
+      sourceItem.burnAfterReadEnabled &&
+      sourceItem.state === SourceItemState.PURGED
+    ) {
       await this.prisma.activeTimelineItemProjection.deleteMany({
         where: { sourceItemId: sourceItem.id },
       });
@@ -44,7 +54,9 @@ export class ProjectionService {
     }
 
     const visibility = this.buildSourceVisibility(sourceItem);
-    const title = sourceItem.displayName ?? this.fallbackTitle(sourceItem.contentKind);
+    const title = sourceItem.cryptoVersion
+      ? this.fallbackTitle(sourceItem.contentKind)
+      : (sourceItem.displayName ?? this.fallbackTitle(sourceItem.contentKind));
 
     await this.prisma.activeTimelineItemProjection.upsert({
       where: {
@@ -64,6 +76,7 @@ export class ProjectionService {
         confidentialityLevel: sourceItem.confidentialityLevel,
         currentRetrievable: visibility.currentRetrievable,
         visibleSummary: visibility.visibleSummary,
+        encryptedMetadata: this.jsonForWrite(sourceItem.encryptedMetadata),
         createdTime: sourceItem.createdAt,
         validUntil: sourceItem.validUntil,
         projectedAt: new Date(),
@@ -82,6 +95,7 @@ export class ProjectionService {
         confidentialityLevel: sourceItem.confidentialityLevel,
         currentRetrievable: visibility.currentRetrievable,
         visibleSummary: visibility.visibleSummary,
+        encryptedMetadata: this.jsonForWrite(sourceItem.encryptedMetadata),
         createdTime: sourceItem.createdAt,
         validUntil: sourceItem.validUntil,
       },
@@ -104,6 +118,7 @@ export class ProjectionService {
         retrievable: visibility.currentRetrievable,
         concreteReason: visibility.concreteReason,
         visibleSummary: visibility.visibleSummary,
+        encryptedMetadata: this.jsonForWrite(sourceItem.encryptedMetadata),
         createdTime: sourceItem.createdAt,
         statusTime: visibility.statusTime,
         projectedAt: new Date(),
@@ -121,6 +136,7 @@ export class ProjectionService {
         retrievable: visibility.currentRetrievable,
         concreteReason: visibility.concreteReason,
         visibleSummary: visibility.visibleSummary,
+        encryptedMetadata: this.jsonForWrite(sourceItem.encryptedMetadata),
         createdTime: sourceItem.createdAt,
         statusTime: visibility.statusTime,
       },
@@ -179,7 +195,7 @@ export class ProjectionService {
     }
 
     const visibility = this.buildShareVisibility(shareObject);
-    const title = shareObject.sourceItem.displayName ?? this.fallbackTitle(shareObject.sourceItem.contentKind);
+    const title = this.fallbackTitle(shareObject.sourceItem.contentKind);
 
     await this.prisma.activeTimelineItemProjection.upsert({
       where: {
@@ -200,6 +216,9 @@ export class ProjectionService {
         confidentialityLevel: shareObject.confidentialityLevel,
         currentRetrievable: visibility.retrievable,
         visibleSummary: null,
+        encryptedMetadata: this.jsonForWrite(
+          shareObject.sourceItem.encryptedMetadata,
+        ),
         createdTime: shareObject.createdAt,
         validUntil: shareObject.validUntil,
         projectedAt: new Date(),
@@ -218,6 +237,9 @@ export class ProjectionService {
         confidentialityLevel: shareObject.confidentialityLevel,
         currentRetrievable: visibility.retrievable,
         visibleSummary: null,
+        encryptedMetadata: this.jsonForWrite(
+          shareObject.sourceItem.encryptedMetadata,
+        ),
         createdTime: shareObject.createdAt,
         validUntil: shareObject.validUntil,
       },
@@ -241,6 +263,9 @@ export class ProjectionService {
         retrievable: visibility.retrievable,
         concreteReason: visibility.concreteReason,
         visibleSummary: null,
+        encryptedMetadata: this.jsonForWrite(
+          shareObject.sourceItem.encryptedMetadata,
+        ),
         createdTime: shareObject.createdAt,
         statusTime: visibility.statusTime,
         projectedAt: new Date(),
@@ -258,6 +283,9 @@ export class ProjectionService {
         retrievable: visibility.retrievable,
         concreteReason: visibility.concreteReason,
         visibleSummary: null,
+        encryptedMetadata: this.jsonForWrite(
+          shareObject.sourceItem.encryptedMetadata,
+        ),
         createdTime: shareObject.createdAt,
         statusTime: visibility.statusTime,
       },
@@ -305,30 +333,42 @@ export class ProjectionService {
       uploadSession: { parts: Array<{ byteSize: number }> } | null;
     },
   ) {
-    const visibleTypeLabel = this.visibleTypeLabel(sourceItem.contentKind, sourceItem.groupManifest !== null);
+    const visibleTypeLabel = this.visibleTypeLabel(
+      sourceItem.contentKind,
+      sourceItem.groupManifest !== null,
+    );
     const visibleSummary = null;
     const visibleSizeBytes =
       sourceItem.contentKind === UploadContentKind.SELF_SPACE_TEXT
-        ? sourceItem.textCiphertextBody?.length ?? null
-        : sourceItem.uploadSession?.parts.reduce((sum, part) => sum + part.byteSize, 0) ?? null;
+        ? (sourceItem.textCiphertextBody?.length ?? null)
+        : (sourceItem.uploadSession?.parts.reduce(
+            (sum, part) => sum + part.byteSize,
+            0,
+          ) ?? null);
     const groupedItemCount = sourceItem.groupManifest
-      ? Array.isArray((sourceItem.groupManifest.manifestJson as { members?: unknown }).members)
-        ? ((sourceItem.groupManifest.manifestJson as { members: unknown[] }).members.length ?? null)
+      ? Array.isArray(
+          (sourceItem.groupManifest.manifestJson as { members?: unknown })
+            .members,
+        )
+        ? ((sourceItem.groupManifest.manifestJson as { members: unknown[] })
+            .members.length ?? null)
         : null
       : null;
 
-    const isExpired = sourceItem.validUntil !== null && sourceItem.validUntil < new Date();
-    const currentRetrievable = sourceItem.state === SourceItemState.ACTIVE && !isExpired;
+    const isExpired =
+      sourceItem.validUntil !== null && sourceItem.validUntil < new Date();
+    const currentRetrievable =
+      sourceItem.state === SourceItemState.ACTIVE && !isExpired;
     const retainedStatus =
       sourceItem.state === SourceItemState.ACTIVE && isExpired
         ? 'expired'
         : sourceItem.state === SourceItemState.ACTIVE
-        ? 'active'
-        : sourceItem.state === SourceItemState.EXPIRED
-          ? 'expired'
-          : sourceItem.state === SourceItemState.INVALIDATED
-            ? 'invalidated'
-            : 'purged';
+          ? 'active'
+          : sourceItem.state === SourceItemState.EXPIRED
+            ? 'expired'
+            : sourceItem.state === SourceItemState.INVALIDATED
+              ? 'invalidated'
+              : 'purged';
 
     return {
       visibleTypeLabel,
@@ -374,31 +414,47 @@ export class ProjectionService {
       sourceItem: {
         contentKind: UploadContentKind;
         displayName: string | null;
+        encryptedMetadata?: unknown;
         storageBytes?: number;
         groupManifest: { manifestJson: unknown } | null;
       };
     },
   ) {
-    const isExpired = shareObject.validUntil !== null && shareObject.validUntil < new Date();
-    const retrievable = shareObject.state === ShareObjectState.ACTIVE && !isExpired;
+    const isExpired =
+      shareObject.validUntil !== null && shareObject.validUntil < new Date();
+    const retrievable =
+      shareObject.state === ShareObjectState.ACTIVE && !isExpired;
     const retainedStatus =
       shareObject.state === ShareObjectState.ACTIVE && isExpired
         ? 'expired'
         : shareObject.state === ShareObjectState.ACTIVE
-        ? 'active'
-        : shareObject.inactiveReason?.toLowerCase() ?? 'inactive';
+          ? 'active'
+          : (shareObject.inactiveReason?.toLowerCase() ?? 'inactive');
     const groupedItemCount = shareObject.sourceItem.groupManifest
-      ? Array.isArray((shareObject.sourceItem.groupManifest.manifestJson as { members?: unknown }).members)
-        ? ((shareObject.sourceItem.groupManifest.manifestJson as { members: unknown[] }).members.length ?? null)
+      ? Array.isArray(
+          (
+            shareObject.sourceItem.groupManifest.manifestJson as {
+              members?: unknown;
+            }
+          ).members,
+        )
+        ? ((
+            shareObject.sourceItem.groupManifest.manifestJson as {
+              members: unknown[];
+            }
+          ).members.length ?? null)
         : null
       : null;
 
     return {
-      visibleTypeLabel: this.visibleTypeLabel(shareObject.sourceItem.contentKind, shareObject.sourceItem.groupManifest !== null),
+      visibleTypeLabel: this.visibleTypeLabel(
+        shareObject.sourceItem.contentKind,
+        shareObject.sourceItem.groupManifest !== null,
+      ),
       visibleSizeBytes:
         shareObject.sourceItem.contentKind === UploadContentKind.SELF_SPACE_TEXT
           ? null
-          : shareObject.sourceItem.storageBytes ?? null,
+          : (shareObject.sourceItem.storageBytes ?? null),
       groupedItemCount,
       sourceLabel: shareObject.ownerUser.username,
       retrievable,

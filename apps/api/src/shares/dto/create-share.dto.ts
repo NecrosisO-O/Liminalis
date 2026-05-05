@@ -1,4 +1,4 @@
-import { IsInt, IsOptional, IsString, Min } from 'class-validator';
+import { IsInt, IsObject, IsOptional, IsString, Min } from 'class-validator';
 
 export class CreateShareDto {
   @IsString()
@@ -11,4 +11,8 @@ export class CreateShareDto {
   @IsInt()
   @Min(1)
   requestedValidityMinutes?: number;
+
+  @IsOptional()
+  @IsObject()
+  packageReference?: Record<string, unknown>;
 }

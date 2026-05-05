@@ -1,4 +1,13 @@
-import { Body, Controller, Get, Param, Post, Res, StreamableFile, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Post,
+  Res,
+  StreamableFile,
+  UseGuards,
+} from '@nestjs/common';
 import type { Response } from 'express';
 import { RetrievalFamily } from '../../generated/prisma/index.js';
 import { SessionActor } from '../common/decorators/session.decorator';
@@ -37,9 +46,13 @@ export class RetrievalController {
     @Param('retrievalAttemptId') retrievalAttemptId: string,
     @Body() input: CompleteRetrievalDto,
   ) {
-    const retrievalAttempt = await this.retrievalService.getAttempt(retrievalAttemptId);
+    const retrievalAttempt =
+      await this.retrievalService.getAttempt(retrievalAttemptId);
 
-    if (retrievalAttempt.retrievalFamily === RetrievalFamily.SHARE_OBJECT_RECIPIENT) {
+    if (
+      retrievalAttempt.retrievalFamily ===
+      RetrievalFamily.SHARE_OBJECT_RECIPIENT
+    ) {
       return this.sharesService.completeRecipientRetrieval(
         sessionActor.userId,
         sessionActor.trustedDeviceId,

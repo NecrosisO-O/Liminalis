@@ -6,4 +6,7 @@ export class CreatePairingSessionDto {
 
   @IsString()
   devicePublicIdentity!: string;
+
+  @IsString()
+  deviceWrappingPublicKey!: string;
 }

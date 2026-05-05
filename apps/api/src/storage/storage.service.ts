@@ -4,7 +4,9 @@ import { LocalDiskStorageDriver } from './local-disk-storage.driver';
 
 @Injectable()
 export class StorageService {
-  constructor(private readonly localDiskStorageDriver: LocalDiskStorageDriver) {}
+  constructor(
+    private readonly localDiskStorageDriver: LocalDiskStorageDriver,
+  ) {}
 
   async writeUploadPart(input: {
     userId: string;
@@ -28,7 +30,8 @@ export class StorageService {
     sequence: number;
     body: Readable;
   }) {
-    const result = await this.localDiskStorageDriver.writeLiveTransferRelayChunk(input);
+    const result =
+      await this.localDiskStorageDriver.writeLiveTransferRelayChunk(input);
 
     if (result.byteSize <= 0) {
       await this.localDiskStorageDriver.remove(result.storageKey);
@@ -48,7 +51,9 @@ export class StorageService {
     }
 
     if (expectedByteSize !== undefined && stats.size !== expectedByteSize) {
-      throw new BadRequestException('Stored upload object size does not match metadata');
+      throw new BadRequestException(
+        'Stored upload object size does not match metadata',
+      );
     }
 
     return {

@@ -52,9 +52,15 @@ describe('Manual integration coverage', () => {
     await prisma.policyBundle.deleteMany();
     await prisma.instanceSetting.deleteMany();
     await prisma.pairingSession.deleteMany();
-    await prisma.trustedDevice.deleteMany({ where: { user: { username: { not: 'owner' } } } });
-    await prisma.recoveryCredentialSet.deleteMany({ where: { user: { username: { not: 'owner' } } } });
-    await prisma.userDomainWrappingKey.deleteMany({ where: { user: { username: { not: 'owner' } } } });
+    await prisma.trustedDevice.deleteMany({
+      where: { user: { username: { not: 'owner' } } },
+    });
+    await prisma.recoveryCredentialSet.deleteMany({
+      where: { user: { username: { not: 'owner' } } },
+    });
+    await prisma.userDomainWrappingKey.deleteMany({
+      where: { user: { username: { not: 'owner' } } },
+    });
     await prisma.inviteCode.deleteMany();
     await prisma.user.deleteMany({ where: { username: { not: 'owner' } } });
 
@@ -136,7 +142,11 @@ describe('Manual integration coverage', () => {
       .expect(201);
   }
 
-  async function createApprovedUser(username: string, password: string, adminCookies: string[]) {
+  async function createApprovedUser(
+    username: string,
+    password: string,
+    adminCookies: string[],
+  ) {
     const invite = await request(app.getHttpServer())
       .post('/api/admin/invites')
       .set('Cookie', adminCookies)
@@ -170,7 +180,12 @@ describe('Manual integration coverage', () => {
     const bootstrap = await request(app.getHttpServer())
       .post('/api/trust/bootstrap-first-device')
       .set('Cookie', sessionCookies)
-      .send({ deviceLabel, devicePublicIdentity, userDomainPublicKey })
+      .send({
+        deviceLabel,
+        devicePublicIdentity,
+        deviceWrappingPublicKey: `${devicePublicIdentity}-wrapping-key`,
+        userDomainPublicKey,
+      })
       .expect(201);
 
     return {
@@ -207,6 +222,7 @@ describe('Manual integration coverage', () => {
         recoveryCode: ivyTrust.bootstrap.body.recoveryCodes[0],
         deviceLabel: 'Ivy Recovery Browser',
         devicePublicIdentity: 'ivy-recovery-device',
+        deviceWrappingPublicKey: 'ivy-recovery-device-wrapping-key',
       })
       .expect(201);
 
@@ -214,7 +230,9 @@ describe('Manual integration coverage', () => {
       .get('/api/recovery/pending-display')
       .set('Cookie', ivySessionCookies)
       .expect(200);
-    expect(pendingDisplay.body.recoveryCodes).toEqual(recovery.body.recoveryCodes);
+    expect(pendingDisplay.body.recoveryCodes).toEqual(
+      recovery.body.recoveryCodes,
+    );
 
     await request(app.getHttpServer())
       .post(`/api/recovery/acknowledge/${recovery.body.pendingTrustedDeviceId}`)
@@ -224,22 +242,33 @@ describe('Manual integration coverage', () => {
     const prepare = await request(app.getHttpServer())
       .post('/api/uploads/prepare')
       .set('Cookie', ivyTrust.trustedCookies)
-      .send({ contentKind: 'SELF_SPACE_TEXT', confidentialityLevel: 'SECRET', requestedValidityMinutes: 30 })
+      .send({
+        contentKind: 'SELF_SPACE_TEXT',
+        confidentialityLevel: 'SECRET',
+        requestedValidityMinutes: 30,
+      })
       .expect(201);
 
     const finalize = await request(app.getHttpServer())
       .post(`/api/uploads/${prepare.body.uploadSessionId}/finalize`)
       .set('Cookie', ivyTrust.trustedCookies)
-      .send({ displayName: 'ivy note', textCiphertextBody: 'ciphertext ivy body' })
+      .send({
+        displayName: 'ivy note',
+        textCiphertextBody: 'ciphertext ivy body',
+      })
       .expect(201);
 
     const retrieval = await request(app.getHttpServer())
-      .post(`/api/retrieval/source-items/${finalize.body.sourceItemId}/attempts/ivy-self-1`)
+      .post(
+        `/api/retrieval/source-items/${finalize.body.sourceItemId}/attempts/ivy-self-1`,
+      )
       .set('Cookie', ivyTrust.trustedCookies)
       .expect(201);
 
     await request(app.getHttpServer())
-      .post(`/api/retrieval/attempts/${retrieval.body.retrievalAttemptId}/complete`)
+      .post(
+        `/api/retrieval/attempts/${retrieval.body.retrievalAttemptId}/complete`,
+      )
       .set('Cookie', ivyTrust.trustedCookies)
       .send({ success: true })
       .expect(201);
@@ -247,34 +276,60 @@ describe('Manual integration coverage', () => {
     const topSecretPrepare = await request(app.getHttpServer())
       .post('/api/uploads/prepare')
       .set('Cookie', ivyTrust.trustedCookies)
-      .send({ contentKind: 'SELF_SPACE_TEXT', confidentialityLevel: 'TOP_SECRET', requestedValidityMinutes: 30 })
+      .send({
+        contentKind: 'SELF_SPACE_TEXT',
+        confidentialityLevel: 'TOP_SECRET',
+        requestedValidityMinutes: 30,
+      })
       .expect(201);
 
     const topSecretFinalize = await request(app.getHttpServer())
       .post(`/api/uploads/${topSecretPrepare.body.uploadSessionId}/finalize`)
       .set('Cookie', ivyTrust.trustedCookies)
-      .send({ displayName: 'snapshot item', textCiphertextBody: 'ciphertext top secret body' })
+      .send({
+        displayName: 'snapshot item',
+        textCiphertextBody: 'ciphertext top secret body',
+      })
       .expect(201);
 
     const pairing = await request(app.getHttpServer())
       .post('/api/trust/pairing-sessions')
       .set('Cookie', ivyTrust.trustedCookies)
-      .send({ deviceLabel: 'Ivy Browser 2', devicePublicIdentity: 'ivy-device-2' })
+      .send({
+        deviceLabel: 'Ivy Browser 2',
+        devicePublicIdentity: 'ivy-device-2',
+        deviceWrappingPublicKey: 'ivy-device-2-wrapping-key',
+      })
       .expect(201);
 
     await request(app.getHttpServer())
       .post('/api/trust/pairing/approve')
       .set('Cookie', ivyTrust.trustedCookies)
+      .send({
+        pairingSessionId: pairing.body.id,
+        approvalPackage: {
+          encryptedUserDomainPrivateKey: 'ivy-device-2-package',
+        },
+      })
+      .expect(201);
+    await request(app.getHttpServer())
+      .post('/api/trust/pairing/finalize')
+      .set('Cookie', ivyTrust.sessionCookies)
       .send({ pairingSessionId: pairing.body.id })
       .expect(201);
 
     const secondDevice = await prisma.trustedDevice.findFirstOrThrow({
       where: { userId: ivy.id, publicIdentityPayload: 'ivy-device-2' },
     });
-    const secondDeviceCookies = [...ivyTrust.sessionCookies, `liminalis_trusted_device=${secondDevice.id}`];
+    const secondDeviceCookies = [
+      ...ivyTrust.sessionCookies,
+      `liminalis_trusted_device=${secondDevice.id}`,
+    ];
 
     await request(app.getHttpServer())
-      .post(`/api/retrieval/source-items/${topSecretFinalize.body.sourceItemId}/attempts/ivy-second-before-regrant`)
+      .post(
+        `/api/retrieval/source-items/${topSecretFinalize.body.sourceItemId}/attempts/ivy-second-before-regrant`,
+      )
       .set('Cookie', secondDeviceCookies)
       .expect(403);
   });
@@ -342,18 +397,30 @@ describe('Manual integration coverage', () => {
       .query({ q: 'group folder' })
       .set('Cookie', juneTrust.trustedCookies)
       .expect(200);
-    expect(search.body.some((item: { displayTitle?: string }) => item.displayTitle === 'group folder')).toBe(true);
+    expect(
+      search.body.some(
+        (item: { displayTitle?: string }) =>
+          item.displayTitle === 'group folder',
+      ),
+    ).toBe(true);
 
-    const fileFinalize = await createStoredFileSource(juneTrust.trustedCookies, {
-      displayName: 'shareable.bin',
-      confidentialityLevel: 'SECRET',
-      requestedValidityMinutes: 60,
-    });
+    const fileFinalize = await createStoredFileSource(
+      juneTrust.trustedCookies,
+      {
+        displayName: 'shareable.bin',
+        confidentialityLevel: 'SECRET',
+        requestedValidityMinutes: 60,
+      },
+    );
 
     const share = await request(app.getHttpServer())
       .post('/api/shares')
       .set('Cookie', juneTrust.trustedCookies)
-      .send({ sourceItemId: fileFinalize.body.sourceItemId, recipientUsername: 'kian', requestedValidityMinutes: 30 })
+      .send({
+        sourceItemId: fileFinalize.body.sourceItemId,
+        recipientUsername: 'kian',
+        requestedValidityMinutes: 30,
+      })
       .expect(201);
 
     const recipientAttempt = await request(app.getHttpServer())
@@ -362,7 +429,9 @@ describe('Manual integration coverage', () => {
       .expect(201);
 
     await request(app.getHttpServer())
-      .post(`/api/retrieval/attempts/${recipientAttempt.body.retrievalAttemptId}/complete`)
+      .post(
+        `/api/retrieval/attempts/${recipientAttempt.body.retrievalAttemptId}/complete`,
+      )
       .set('Cookie', kianTrust.trustedCookies)
       .send({ success: true })
       .expect(201);
@@ -370,11 +439,17 @@ describe('Manual integration coverage', () => {
     const extraction = await request(app.getHttpServer())
       .post('/api/extraction')
       .set('Cookie', juneTrust.trustedCookies)
-      .send({ sourceItemId: fileFinalize.body.sourceItemId, password: 'manual-pass-123', requestedRetrievalCount: 2 })
+      .send({
+        sourceItemId: fileFinalize.body.sourceItemId,
+        password: 'manual-pass-123',
+        requestedRetrievalCount: 2,
+      })
       .expect(201);
 
     await request(app.getHttpServer())
-      .post(`/api/extraction/${extraction.body.entryToken}/attempts/extraction-bad-1`)
+      .post(
+        `/api/extraction/${extraction.body.entryToken}/attempts/extraction-bad-1`,
+      )
       .send({ password: 'wrong-pass' })
       .expect(403);
 
@@ -385,19 +460,27 @@ describe('Manual integration coverage', () => {
     expect(extractionEntry.body.metadata).toBeNull();
 
     const extractionAttempt = await request(app.getHttpServer())
-      .post(`/api/extraction/${extraction.body.entryToken}/attempts/extraction-good-1`)
+      .post(
+        `/api/extraction/${extraction.body.entryToken}/attempts/extraction-good-1`,
+      )
       .send({ password: 'manual-pass-123', captchaSatisfied: true })
       .expect(201);
 
     await request(app.getHttpServer())
-      .post(`/api/extraction/attempts/${extractionAttempt.body.retrievalAttemptId}/complete`)
+      .post(
+        `/api/extraction/attempts/${extractionAttempt.body.retrievalAttemptId}/complete`,
+      )
       .send({ success: true })
       .expect(201);
 
     const publicLink = await request(app.getHttpServer())
       .post('/api/public-links')
       .set('Cookie', juneTrust.trustedCookies)
-      .send({ sourceItemId: fileFinalize.body.sourceItemId, requestedDownloadCount: 2, requestedValidityMinutes: 30 })
+      .send({
+        sourceItemId: fileFinalize.body.sourceItemId,
+        requestedDownloadCount: 2,
+        requestedValidityMinutes: 30,
+      })
       .expect(201);
 
     const ticket = await request(app.getHttpServer())
@@ -414,11 +497,15 @@ describe('Manual integration coverage', () => {
       .expect(200);
     expect(history.body.length).toBeGreaterThanOrEqual(1);
 
-    const extractionRows = await prisma.extractionAccess.findMany({ where: { sourceItemId: fileFinalize.body.sourceItemId } });
+    const extractionRows = await prisma.extractionAccess.findMany({
+      where: { sourceItemId: fileFinalize.body.sourceItemId },
+    });
     expect(extractionRows).toHaveLength(1);
     expect(extractionRows[0].remainingRetrievalCount).toBe(1);
 
-    const publicLinkRows = await prisma.publicLink.findMany({ where: { sourceItemId: fileFinalize.body.sourceItemId } });
+    const publicLinkRows = await prisma.publicLink.findMany({
+      where: { sourceItemId: fileFinalize.body.sourceItemId },
+    });
     expect(publicLinkRows).toHaveLength(1);
     expect(publicLinkRows[0].remainingDownloadCount).toBe(1);
   });
@@ -436,7 +523,11 @@ describe('Manual integration coverage', () => {
       .get('/api/admin/invites')
       .set('Cookie', adminCookies)
       .expect(200);
-    expect(inviteList.body.some((entry: { id: string }) => entry.id === invite.body.id)).toBe(true);
+    expect(
+      inviteList.body.some(
+        (entry: { id: string }) => entry.id === invite.body.id,
+      ),
+    ).toBe(true);
 
     await request(app.getHttpServer())
       .post('/api/admin/invites/invalidate')
@@ -450,12 +541,60 @@ describe('Manual integration coverage', () => {
       .send({
         levelName: 'SECRET',
         defaultConfidentialityLevel: 'CONFIDENTIAL',
-        lifecycle: { value: { defaultValidityMinutes: 300, maximumValidityMinutes: 600, allowNeverExpire: false, allowValidityExtensionLater: true, allowFutureTrustedDevices: true, allowOutwardResharing: true } },
-        shareAvailability: { value: { allowOutwardSharing: true, restrictToSelfOnly: false, allowRecipientResharing: false, allowMultipleOutwardShares: true, allowUserTargetedSharing: true, allowPasswordExtraction: true, allowPublicLinks: true } },
-        userTargetedSharing: { value: { defaultShareValidityMinutes: 240, maximumShareValidityMinutes: 480, allowRepeatDownload: true, allowRecipientMultiDeviceAccess: true } },
-        passwordExtraction: { value: { allowPasswordExtraction: true, requireSystemGeneratedPassword: false, maximumRetrievalCount: 4 } },
-        publicLinks: { value: { allowPublicLinks: true, maximumPublicLinkValidityMinutes: 120, maximumPublicLinkDownloadCount: 4 } },
-        liveTransfer: { value: { allowLiveTransfer: true, allowPeerToPeer: true, allowRelay: true, allowPeerToPeerToRelayFallback: true, allowLiveToStoredFallback: true, retainLiveTransferRecords: true, allowGroupedOrLargeLiveTransfer: true } },
+        lifecycle: {
+          value: {
+            defaultValidityMinutes: 300,
+            maximumValidityMinutes: 600,
+            allowNeverExpire: false,
+            allowValidityExtensionLater: true,
+            allowFutureTrustedDevices: true,
+            allowOutwardResharing: true,
+          },
+        },
+        shareAvailability: {
+          value: {
+            allowOutwardSharing: true,
+            restrictToSelfOnly: false,
+            allowRecipientResharing: false,
+            allowMultipleOutwardShares: true,
+            allowUserTargetedSharing: true,
+            allowPasswordExtraction: true,
+            allowPublicLinks: true,
+          },
+        },
+        userTargetedSharing: {
+          value: {
+            defaultShareValidityMinutes: 240,
+            maximumShareValidityMinutes: 480,
+            allowRepeatDownload: true,
+            allowRecipientMultiDeviceAccess: true,
+          },
+        },
+        passwordExtraction: {
+          value: {
+            allowPasswordExtraction: true,
+            requireSystemGeneratedPassword: false,
+            maximumRetrievalCount: 4,
+          },
+        },
+        publicLinks: {
+          value: {
+            allowPublicLinks: true,
+            maximumPublicLinkValidityMinutes: 120,
+            maximumPublicLinkDownloadCount: 4,
+          },
+        },
+        liveTransfer: {
+          value: {
+            allowLiveTransfer: true,
+            allowPeerToPeer: true,
+            allowRelay: true,
+            allowPeerToPeerToRelayFallback: true,
+            allowLiveToStoredFallback: true,
+            retainLiveTransferRecords: true,
+            allowGroupedOrLargeLiveTransfer: true,
+          },
+        },
       })
       .expect(201);
 
@@ -502,52 +641,68 @@ describe('Manual integration coverage', () => {
       .expect(201);
 
     await request(app.getHttpServer())
-      .post(`/api/live-transfer/sessions/${liveSession.body.liveTransferSessionId}/confirm`)
+      .post(
+        `/api/live-transfer/sessions/${liveSession.body.liveTransferSessionId}/confirm`,
+      )
       .set('Cookie', linaTrust.trustedCookies)
       .send({ confirmed: true })
       .expect(201);
 
     await request(app.getHttpServer())
-      .post(`/api/live-transfer/sessions/${liveSession.body.liveTransferSessionId}/confirm`)
+      .post(
+        `/api/live-transfer/sessions/${liveSession.body.liveTransferSessionId}/confirm`,
+      )
       .set('Cookie', miloTrust.trustedCookies)
       .send({ confirmed: true })
       .expect(201);
 
     await request(app.getHttpServer())
-      .post(`/api/live-transfer/sessions/${liveSession.body.liveTransferSessionId}/transport`)
+      .post(
+        `/api/live-transfer/sessions/${liveSession.body.liveTransferSessionId}/transport`,
+      )
       .set('Cookie', linaTrust.trustedCookies)
       .send({ transportState: 'RELAY_ATTEMPT' })
       .expect(201);
 
     await request(app.getHttpServer())
-      .post(`/api/live-transfer/sessions/${liveSession.body.liveTransferSessionId}/transport`)
+      .post(
+        `/api/live-transfer/sessions/${liveSession.body.liveTransferSessionId}/transport`,
+      )
       .set('Cookie', linaTrust.trustedCookies)
       .send({ transportState: 'RELAY_ACTIVE' })
       .expect(201);
 
     const relayChunk = await request(app.getHttpServer())
-      .post(`/api/live-transfer/sessions/${liveSession.body.liveTransferSessionId}/relay/chunks/1`)
+      .post(
+        `/api/live-transfer/sessions/${liveSession.body.liveTransferSessionId}/relay/chunks/1`,
+      )
       .set('Cookie', linaTrust.trustedCookies)
       .set('Content-Type', 'application/octet-stream')
       .send(Buffer.from('manual relay bytes'))
       .expect(201);
 
     const relayChunks = await request(app.getHttpServer())
-      .get(`/api/live-transfer/sessions/${liveSession.body.liveTransferSessionId}/relay/chunks`)
+      .get(
+        `/api/live-transfer/sessions/${liveSession.body.liveTransferSessionId}/relay/chunks`,
+      )
       .set('Cookie', miloTrust.trustedCookies)
       .expect(200);
     expect(relayChunks.body).toHaveLength(1);
     expect(relayChunks.body[0].id).toBe(relayChunk.body.id);
 
     await request(app.getHttpServer())
-      .get(`/api/live-transfer/sessions/${liveSession.body.liveTransferSessionId}/relay/chunks/${relayChunk.body.id}/blob`)
+      .get(
+        `/api/live-transfer/sessions/${liveSession.body.liveTransferSessionId}/relay/chunks/${relayChunk.body.id}/blob`,
+      )
       .set('Cookie', miloTrust.trustedCookies)
       .buffer(true)
       .parse((response, callback) => {
         const chunks: Buffer[] = [];
         response.on('data', (chunk: Buffer) => chunks.push(Buffer.from(chunk)));
         response.on('end', () => callback(null, Buffer.concat(chunks)));
-        response.on('error', (error: Error) => callback(error, Buffer.alloc(0)));
+        response.on('error', (error: Error) =>
+          callback(error, Buffer.alloc(0)),
+        );
       })
       .expect(200)
       .expect((response) => {
@@ -555,12 +710,16 @@ describe('Manual integration coverage', () => {
       });
 
     await request(app.getHttpServer())
-      .post(`/api/live-transfer/sessions/${liveSession.body.liveTransferSessionId}/relay/chunks/${relayChunk.body.id}/ack`)
+      .post(
+        `/api/live-transfer/sessions/${liveSession.body.liveTransferSessionId}/relay/chunks/${relayChunk.body.id}/ack`,
+      )
       .set('Cookie', miloTrust.trustedCookies)
       .expect(201);
 
     await request(app.getHttpServer())
-      .post(`/api/live-transfer/sessions/${liveSession.body.liveTransferSessionId}/complete`)
+      .post(
+        `/api/live-transfer/sessions/${liveSession.body.liveTransferSessionId}/complete`,
+      )
       .set('Cookie', miloTrust.trustedCookies)
       .expect(201);
 
@@ -568,12 +727,21 @@ describe('Manual integration coverage', () => {
       .get('/api/live-transfer/records')
       .set('Cookie', linaTrust.trustedCookies)
       .expect(200);
-    expect(liveRecords.body.some((row: { contentLabel?: string }) => row.contentLabel === 'manual live file')).toBe(true);
+    expect(
+      liveRecords.body.some(
+        (row: { contentLabel?: string }) =>
+          row.contentLabel === 'manual live file',
+      ),
+    ).toBe(true);
 
     const topSecretLive = await request(app.getHttpServer())
       .post('/api/live-transfer/sessions')
       .set('Cookie', linaTrust.trustedCookies)
-      .send({ contentLabel: 'top secret live file', contentKind: 'SINGLE_FILE', confidentialityLevel: 'TOP_SECRET' })
+      .send({
+        contentLabel: 'top secret live file',
+        contentKind: 'SINGLE_FILE',
+        confidentialityLevel: 'TOP_SECRET',
+      })
       .expect(201);
 
     await request(app.getHttpServer())
@@ -583,76 +751,120 @@ describe('Manual integration coverage', () => {
       .expect(201);
 
     await request(app.getHttpServer())
-      .post(`/api/live-transfer/sessions/${topSecretLive.body.liveTransferSessionId}/confirm`)
+      .post(
+        `/api/live-transfer/sessions/${topSecretLive.body.liveTransferSessionId}/confirm`,
+      )
       .set('Cookie', linaTrust.trustedCookies)
       .send({ confirmed: true })
       .expect(201);
 
     await request(app.getHttpServer())
-      .post(`/api/live-transfer/sessions/${topSecretLive.body.liveTransferSessionId}/confirm`)
+      .post(
+        `/api/live-transfer/sessions/${topSecretLive.body.liveTransferSessionId}/confirm`,
+      )
       .set('Cookie', miloTrust.trustedCookies)
       .send({ confirmed: true })
       .expect(201);
 
     await request(app.getHttpServer())
-      .post(`/api/live-transfer/sessions/${topSecretLive.body.liveTransferSessionId}/transport`)
+      .post(
+        `/api/live-transfer/sessions/${topSecretLive.body.liveTransferSessionId}/transport`,
+      )
       .set('Cookie', linaTrust.trustedCookies)
       .send({ transportState: 'RELAY_ATTEMPT' })
       .expect(400);
 
     await request(app.getHttpServer())
-      .post(`/api/live-transfer/sessions/${topSecretLive.body.liveTransferSessionId}/fail`)
+      .post(
+        `/api/live-transfer/sessions/${topSecretLive.body.liveTransferSessionId}/fail`,
+      )
       .set('Cookie', linaTrust.trustedCookies)
       .send({ reason: 'transport_exhausted' })
       .expect(201);
 
     await request(app.getHttpServer())
-      .post(`/api/live-transfer/sessions/${topSecretLive.body.liveTransferSessionId}/stored-fallback`)
+      .post(
+        `/api/live-transfer/sessions/${topSecretLive.body.liveTransferSessionId}/stored-fallback`,
+      )
       .set('Cookie', linaTrust.trustedCookies)
       .expect(400);
 
     const prepare = await request(app.getHttpServer())
       .post('/api/uploads/prepare')
       .set('Cookie', linaTrust.trustedCookies)
-      .send({ contentKind: 'SELF_SPACE_TEXT', confidentialityLevel: 'TOP_SECRET', requestedValidityMinutes: 30 })
+      .send({
+        contentKind: 'SELF_SPACE_TEXT',
+        confidentialityLevel: 'TOP_SECRET',
+        requestedValidityMinutes: 30,
+      })
       .expect(201);
 
     const finalize = await request(app.getHttpServer())
       .post(`/api/uploads/${prepare.body.uploadSessionId}/finalize`)
       .set('Cookie', linaTrust.trustedCookies)
-      .send({ displayName: 'maintenance item', textCiphertextBody: 'ciphertext maintenance item' })
+      .send({
+        displayName: 'maintenance item',
+        textCiphertextBody: 'ciphertext maintenance item',
+      })
       .expect(201);
 
     const pairing = await request(app.getHttpServer())
       .post('/api/trust/pairing-sessions')
       .set('Cookie', linaTrust.trustedCookies)
-      .send({ deviceLabel: 'Lina Browser 2', devicePublicIdentity: 'lina-device-2' })
+      .send({
+        deviceLabel: 'Lina Browser 2',
+        devicePublicIdentity: 'lina-device-2',
+        deviceWrappingPublicKey: 'lina-device-2-wrapping-key',
+      })
       .expect(201);
 
     await request(app.getHttpServer())
       .post('/api/trust/pairing/approve')
       .set('Cookie', linaTrust.trustedCookies)
+      .send({
+        pairingSessionId: pairing.body.id,
+        approvalPackage: {
+          encryptedUserDomainPrivateKey: 'lina-device-2-package',
+        },
+      })
+      .expect(201);
+    await request(app.getHttpServer())
+      .post('/api/trust/pairing/finalize')
+      .set('Cookie', linaTrust.sessionCookies)
       .send({ pairingSessionId: pairing.body.id })
       .expect(201);
 
     const secondDevice = await prisma.trustedDevice.findFirstOrThrow({
-      where: { user: { username: 'lina' }, publicIdentityPayload: 'lina-device-2' },
+      where: {
+        user: { username: 'lina' },
+        publicIdentityPayload: 'lina-device-2',
+      },
     });
-    const secondDeviceCookies = [...linaTrust.sessionCookies, `liminalis_trusted_device=${secondDevice.id}`];
+    const secondDeviceCookies = [
+      ...linaTrust.sessionCookies,
+      `liminalis_trusted_device=${secondDevice.id}`,
+    ];
 
     await request(app.getHttpServer())
-      .post(`/api/retrieval/source-items/${finalize.body.sourceItemId}/attempts/lina-second-before-regrant`)
+      .post(
+        `/api/retrieval/source-items/${finalize.body.sourceItemId}/attempts/lina-second-before-regrant`,
+      )
       .set('Cookie', secondDeviceCookies)
       .expect(403);
 
     await request(app.getHttpServer())
       .post('/api/maintenance/regrant')
       .set('Cookie', linaTrust.trustedCookies)
-      .send({ protectedObjectType: 'SOURCE_ITEM', protectedObjectId: finalize.body.sourceItemId })
+      .send({
+        protectedObjectType: 'SOURCE_ITEM',
+        protectedObjectId: finalize.body.sourceItemId,
+      })
       .expect(201);
 
     await request(app.getHttpServer())
-      .post(`/api/retrieval/source-items/${finalize.body.sourceItemId}/attempts/lina-second-after-regrant`)
+      .post(
+        `/api/retrieval/source-items/${finalize.body.sourceItemId}/attempts/lina-second-after-regrant`,
+      )
       .set('Cookie', secondDeviceCookies)
       .expect(201);
 
@@ -662,7 +874,9 @@ describe('Manual integration coverage', () => {
       .expect(201);
 
     await request(app.getHttpServer())
-      .post(`/api/retrieval/source-items/${finalize.body.sourceItemId}/attempts/lina-removed-device`)
+      .post(
+        `/api/retrieval/source-items/${finalize.body.sourceItemId}/attempts/lina-removed-device`,
+      )
       .set('Cookie', linaTrust.sessionCookies)
       .expect(403);
 
@@ -670,7 +884,9 @@ describe('Manual integration coverage', () => {
       .get('/api/admin/operations/summary')
       .set('Cookie', adminCookies)
       .expect(200);
-    expect(typeof operations.body.storage.uploadedCiphertextBytes).toBe('number');
+    expect(typeof operations.body.storage.uploadedCiphertextBytes).toBe(
+      'number',
+    );
     expect(operations.body).not.toHaveProperty('textCiphertextBody');
   });
 });

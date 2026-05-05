@@ -6,7 +6,6 @@ import {
   IsOptional,
   IsString,
   Min,
-  ValidateIf,
 } from 'class-validator';
 import {
   ConfidentialityLevel,
@@ -42,4 +41,8 @@ export class PrepareUploadDto {
   @IsOptional()
   @IsObject()
   manifest?: Record<string, unknown>;
+
+  @IsOptional()
+  @IsString()
+  cryptoVersion?: string;
 }

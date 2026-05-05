@@ -1,4 +1,13 @@
-import { Body, Controller, Get, Param, Post, Res, StreamableFile, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Post,
+  Res,
+  StreamableFile,
+  UseGuards,
+} from '@nestjs/common';
 import type { Response } from 'express';
 import { SessionActor } from '../common/decorators/session.decorator';
 import { SessionGuard } from '../common/guards/session.guard';
@@ -25,20 +34,46 @@ export class PublicLinksController {
     @Param('linkToken') linkToken: string,
     @Res({ passthrough: true }) response: Response,
   ) {
-    const download = await this.publicLinksService.createPublicDownload(linkToken);
+    const download =
+      await this.publicLinksService.createPublicDownload(linkToken);
 
     response.setHeader('Content-Type', 'application/octet-stream');
     response.setHeader('Content-Length', String(download.contentLength));
+    response.setHeader(
+      'X-Liminalis-Package',
+      Buffer.from(
+        JSON.stringify(download.packageReference ?? null),
+        'utf8',
+      ).toString('base64url'),
+    );
+    response.setHeader(
+      'X-Liminalis-Encrypted-Metadata',
+      Buffer.from(
+        JSON.stringify(download.encryptedMetadata ?? null),
+        'utf8',
+      ).toString('base64url'),
+    );
+    response.setHeader(
+      'X-Liminalis-Content-Crypto',
+      Buffer.from(
+        JSON.stringify(download.contentCryptoMetadata ?? null),
+        'utf8',
+      ).toString('base64url'),
+    );
     response.setHeader(
       'Content-Disposition',
       `attachment; filename="${download.fileName.replace(/"/g, '')}"`,
     );
     response.on('finish', () => {
-      void this.publicLinksService.finishPublicDownload(download.reservationTicketToken);
+      void this.publicLinksService.finishPublicDownload(
+        download.reservationTicketToken,
+      );
     });
     response.on('close', () => {
       if (!response.writableEnded) {
-        void this.publicLinksService.releasePublicDownload(download.reservationTicketToken);
+        void this.publicLinksService.releasePublicDownload(
+          download.reservationTicketToken,
+        );
       }
     });
 

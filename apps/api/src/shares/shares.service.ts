@@ -48,7 +48,9 @@ export class SharesService {
     }
 
     if (sourceItem.contentKind === UploadContentKind.SELF_SPACE_TEXT) {
-      throw new BadRequestException('Text items cannot be shared outward in v1');
+      throw new BadRequestException(
+        'Text items cannot be shared outward in v1',
+      );
     }
 
     if (sourceItem.validUntil && sourceItem.validUntil < new Date()) {
@@ -68,12 +70,20 @@ export class SharesService {
       },
     });
 
-    if (!recipient || recipient.admissionState !== 'APPROVED' || recipient.enablementState !== 'ENABLED') {
-      throw new BadRequestException('Recipient is not eligible for identity-bound protected sharing');
+    if (
+      !recipient ||
+      recipient.admissionState !== 'APPROVED' ||
+      recipient.enablementState !== 'ENABLED'
+    ) {
+      throw new BadRequestException(
+        'Recipient is not eligible for identity-bound protected sharing',
+      );
     }
 
     if (recipient.wrappingKeys.length === 0) {
-      throw new BadRequestException('Recipient has not published trusted-device wrapping material');
+      throw new BadRequestException(
+        'Recipient has not published trusted-device wrapping material',
+      );
     }
 
     const decision = await this.policyService.evaluateShareCreation({
@@ -97,7 +107,8 @@ export class SharesService {
             sourceItem.validUntil,
           ),
           allowRepeatDownload: decision.allowRepeatDownload,
-          allowRecipientMultiDeviceAccess: decision.allowRecipientMultiDeviceAccess,
+          allowRecipientMultiDeviceAccess:
+            decision.allowRecipientMultiDeviceAccess,
           burnAfterReadEnabled: sourceItem.burnAfterReadEnabled,
         },
       });
@@ -110,12 +121,12 @@ export class SharesService {
           kind: PackageFamilyKind.RECIPIENT_ORDINARY,
           familyVersion: 1,
           issueTrigger: 'share_created',
-          referenceBlob: {
-            packageFamily: 'recipient_ordinary',
+          referenceBlob: (input.packageReference ?? {
+            packageFamily: 'legacy_recipient_ordinary',
             shareObjectId: created.id,
             sourceItemId: sourceItem.id,
             recipientUserId: recipient.id,
-          },
+          }) as Prisma.InputJsonValue,
         },
       });
 
@@ -127,11 +138,11 @@ export class SharesService {
           kind: PackageFamilyKind.RECIPIENT_RECOVERY,
           familyVersion: 1,
           issueTrigger: 'share_created',
-          referenceBlob: {
-            packageFamily: 'recipient_recovery',
+          referenceBlob: (input.packageReference ?? {
+            packageFamily: 'legacy_recipient_recovery',
             shareObjectId: created.id,
             recipientUserId: recipient.id,
-          },
+          }) as Prisma.InputJsonValue,
         },
       });
 
@@ -153,7 +164,8 @@ export class SharesService {
           recoveryPackageFamilyId: recoveryPackageFamily.id,
           confidentialityLevel: sourceItem.confidentialityLevel,
           allowFutureTrustedDevices: false,
-          allowRecipientMultiDeviceAccess: decision.allowRecipientMultiDeviceAccess,
+          allowRecipientMultiDeviceAccess:
+            decision.allowRecipientMultiDeviceAccess,
           issueTrigger: 'share_created',
         },
       });
@@ -169,6 +181,7 @@ export class SharesService {
       allowRepeatDownload: share.allowRepeatDownload,
       allowRecipientMultiDeviceAccess: share.allowRecipientMultiDeviceAccess,
       validUntil: share.validUntil,
+      packageReference: input.packageReference ?? null,
     };
   }
 
@@ -209,7 +222,10 @@ export class SharesService {
       throw new BadRequestException('Source item is not retrievable');
     }
 
-    if (share.sourceItem.validUntil && share.sourceItem.validUntil < new Date()) {
+    if (
+      share.sourceItem.validUntil &&
+      share.sourceItem.validUntil < new Date()
+    ) {
       await this.invalidateShareFromSource(share.id);
       throw new BadRequestException('Source item expired');
     }
@@ -231,17 +247,22 @@ export class SharesService {
       throw new BadRequestException('AccessGrantSet not found');
     }
 
-    const packageSelection = await this.selectRecipientPackageFamily(userId, trustedDeviceId, grantSet);
+    const packageSelection = await this.selectRecipientPackageFamily(
+      userId,
+      trustedDeviceId,
+      grantSet,
+    );
 
     const attempt = await this.prisma.retrievalAttempt.upsert({
       where: {
-        retrievalFamily_targetObjectId_requestingUserId_requestingDeviceId_attemptScopeKey: {
-          retrievalFamily: RetrievalFamily.SHARE_OBJECT_RECIPIENT,
-          targetObjectId: shareObjectId,
-          requestingUserId: userId,
-          requestingDeviceId: trustedDeviceId,
-          attemptScopeKey,
-        },
+        retrievalFamily_targetObjectId_requestingUserId_requestingDeviceId_attemptScopeKey:
+          {
+            retrievalFamily: RetrievalFamily.SHARE_OBJECT_RECIPIENT,
+            targetObjectId: shareObjectId,
+            requestingUserId: userId,
+            requestingDeviceId: trustedDeviceId,
+            attemptScopeKey,
+          },
       },
       update: {
         status: RetrievalAttemptStatus.IN_PROGRESS,
@@ -271,8 +292,8 @@ export class SharesService {
           eligibleSubjectUserId: userId,
           eligibleSubjectDeviceId: trustedDeviceId,
           packageFamilyVersion: packageSelection.packageFamily.familyVersion,
-          wrappedPayloadReference:
-            packageSelection.packageFamily.referenceBlob as Prisma.InputJsonValue,
+          wrappedPayloadReference: packageSelection.packageFamily
+            .referenceBlob as Prisma.InputJsonValue,
           expiresAt: new Date(Date.now() + 10 * 60_000),
           retrievalAttempt: {
             connect: { id: attempt.id },
@@ -287,7 +308,10 @@ export class SharesService {
       packageFamilyKind: packageReference.packageFamilyKind,
       wrappedPayloadReference: packageReference.wrappedPayloadReference,
       sourceItemId: share.sourceItemId,
+      storageBinding: share.sourceItem.storageBinding,
       textCiphertextBody: share.sourceItem.textCiphertextBody,
+      encryptedMetadata: share.sourceItem.encryptedMetadata,
+      contentCryptoMetadata: share.sourceItem.contentCryptoMetadata,
       contentKind: share.sourceItem.contentKind,
       expiresAt: packageReference.expiresAt,
     };
@@ -350,7 +374,10 @@ export class SharesService {
         include: { shareObject: true },
       });
 
-      if (updatedAttempt.shareObject && !updatedAttempt.shareObject.allowRepeatDownload) {
+      if (
+        updatedAttempt.shareObject &&
+        !updatedAttempt.shareObject.allowRepeatDownload
+      ) {
         await tx.shareObject.update({
           where: { id: updatedAttempt.shareObject.id },
           data: {
@@ -368,14 +395,19 @@ export class SharesService {
     }
 
     const refreshedShare = completed.shareObjectId
-      ? await this.prisma.shareObject.findUnique({ where: { id: completed.shareObjectId } })
+      ? await this.prisma.shareObject.findUnique({
+          where: { id: completed.shareObjectId },
+        })
       : null;
 
     return {
       retrievalAttemptId: completed.id,
       status: completed.status,
       shareState: refreshedShare?.state ?? completed.shareObject?.state ?? null,
-      inactiveReason: refreshedShare?.inactiveReason ?? completed.shareObject?.inactiveReason ?? null,
+      inactiveReason:
+        refreshedShare?.inactiveReason ??
+        completed.shareObject?.inactiveReason ??
+        null,
     };
   }
 
@@ -386,7 +418,46 @@ export class SharesService {
     });
   }
 
-  private clampValidUntil(candidate: Date | null, sourceValidUntil: Date | null) {
+  async getRecipientPublicKey(username: string) {
+    const recipient = await this.prisma.user.findUnique({
+      where: { username },
+      include: {
+        wrappingKeys: {
+          where: { isCurrent: true },
+          orderBy: { version: 'desc' },
+        },
+      },
+    });
+
+    if (
+      !recipient ||
+      recipient.admissionState !== 'APPROVED' ||
+      recipient.enablementState !== 'ENABLED'
+    ) {
+      throw new BadRequestException(
+        'Recipient is not eligible for identity-bound protected sharing',
+      );
+    }
+
+    const key = recipient.wrappingKeys[0];
+    if (!key) {
+      throw new BadRequestException(
+        'Recipient has not published trusted-device wrapping material',
+      );
+    }
+
+    return {
+      recipientUserId: recipient.id,
+      username: recipient.username,
+      userDomainPublicKey: key.publicKey,
+      keyVersion: key.version,
+    };
+  }
+
+  private clampValidUntil(
+    candidate: Date | null,
+    sourceValidUntil: Date | null,
+  ) {
     if (!candidate) {
       return sourceValidUntil;
     }
@@ -429,7 +500,8 @@ export class SharesService {
     },
   ) {
     const ordinaryEligible =
-      grantSet.grantSubjectMode !== AccessGrantSubjectMode.RECIPIENT_DEVICE_SNAPSHOT ||
+      grantSet.grantSubjectMode !==
+        AccessGrantSubjectMode.RECIPIENT_DEVICE_SNAPSHOT ||
       grantSet.snapshotDeviceIds.includes(trustedDeviceId);
 
     if (ordinaryEligible) {
@@ -459,6 +531,8 @@ export class SharesService {
       };
     }
 
-    throw new ForbiddenException('Trusted device is not eligible for this share');
+    throw new ForbiddenException(
+      'Trusted device is not eligible for this share',
+    );
   }
 }

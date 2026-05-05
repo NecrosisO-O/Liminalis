@@ -28,15 +28,19 @@ export class AdminPolicyController {
     @SessionActor() sessionActor: AuthenticatedSession,
     @Body() input: PublishPolicyBundleDto,
   ) {
-    return this.policyService.publishBundle(sessionActor.userId, input.levelName, {
-      lifecycle: input.lifecycle.value,
-      shareAvailability: input.shareAvailability.value,
-      userTargetedSharing: input.userTargetedSharing.value,
-      passwordExtraction: input.passwordExtraction.value,
-      publicLinks: input.publicLinks.value,
-      liveTransfer: input.liveTransfer.value,
-      defaultConfidentialityLevel: input.defaultConfidentialityLevel,
-    });
+    return this.policyService.publishBundle(
+      sessionActor.userId,
+      input.levelName,
+      {
+        lifecycle: input.lifecycle.value,
+        shareAvailability: input.shareAvailability.value,
+        userTargetedSharing: input.userTargetedSharing.value,
+        passwordExtraction: input.passwordExtraction.value,
+        publicLinks: input.publicLinks.value,
+        liveTransfer: input.liveTransfer.value,
+        defaultConfidentialityLevel: input.defaultConfidentialityLevel,
+      },
+    );
   }
 
   @Post('restore-defaults')

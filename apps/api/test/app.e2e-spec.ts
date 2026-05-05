@@ -52,9 +52,15 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
     await prisma.policyBundle.deleteMany();
     await prisma.instanceSetting.deleteMany();
     await prisma.pairingSession.deleteMany();
-    await prisma.trustedDevice.deleteMany({ where: { user: { username: { not: 'owner' } } } });
-    await prisma.recoveryCredentialSet.deleteMany({ where: { user: { username: { not: 'owner' } } } });
-    await prisma.userDomainWrappingKey.deleteMany({ where: { user: { username: { not: 'owner' } } } });
+    await prisma.trustedDevice.deleteMany({
+      where: { user: { username: { not: 'owner' } } },
+    });
+    await prisma.recoveryCredentialSet.deleteMany({
+      where: { user: { username: { not: 'owner' } } },
+    });
+    await prisma.userDomainWrappingKey.deleteMany({
+      where: { user: { username: { not: 'owner' } } },
+    });
     await prisma.inviteCode.deleteMany();
     await prisma.user.deleteMany({ where: { username: { not: 'owner' } } });
 
@@ -205,7 +211,9 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
       .send({ expiresInMinutes: 30 })
       .expect(403);
 
-    const bob = await prisma.user.findUniqueOrThrow({ where: { username: 'bob' } });
+    const bob = await prisma.user.findUniqueOrThrow({
+      where: { username: 'bob' },
+    });
 
     await request(app.getHttpServer())
       .post('/api/admin/users/approve')
@@ -232,7 +240,9 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
       })
       .expect(201);
 
-    const carol = await prisma.user.findUniqueOrThrow({ where: { username: 'carol' } });
+    const carol = await prisma.user.findUniqueOrThrow({
+      where: { username: 'carol' },
+    });
 
     await request(app.getHttpServer())
       .post('/api/admin/users/approve')
@@ -258,24 +268,32 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
       .send({
         deviceLabel: 'Carol Browser',
         devicePublicIdentity: 'device-public-identity',
+        deviceWrappingPublicKey: 'device-public-identity-wrapping-key',
         userDomainPublicKey: 'user-domain-public-key',
       })
       .expect(201);
 
     expect(bootstrapResponse.body.trustedDeviceId).toBeTruthy();
     expect(bootstrapResponse.body.recoveryCodes).toHaveLength(3);
-    const carolTrustedCookies = mergeCookies(carolCookies, bootstrapResponse.get('set-cookie'));
+    const carolTrustedCookies = mergeCookies(
+      carolCookies,
+      bootstrapResponse.get('set-cookie'),
+    );
 
     await request(app.getHttpServer())
       .get('/api/recovery/pending-display')
       .set('Cookie', carolTrustedCookies)
       .expect(200)
       .expect((response) => {
-        expect(response.body.recoveryCodes).toEqual(bootstrapResponse.body.recoveryCodes);
+        expect(response.body.recoveryCodes).toEqual(
+          bootstrapResponse.body.recoveryCodes,
+        );
       });
 
     await request(app.getHttpServer())
-      .post(`/api/recovery/acknowledge/${bootstrapResponse.body.trustedDeviceId}`)
+      .post(
+        `/api/recovery/acknowledge/${bootstrapResponse.body.trustedDeviceId}`,
+      )
       .set('Cookie', carolTrustedCookies)
       .expect(201);
 
@@ -315,7 +333,9 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
       })
       .expect(201);
 
-    const dave = await prisma.user.findUniqueOrThrow({ where: { username: 'dave' } });
+    const dave = await prisma.user.findUniqueOrThrow({
+      where: { username: 'dave' },
+    });
 
     await request(app.getHttpServer())
       .post('/api/admin/users/approve')
@@ -331,10 +351,14 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
       .send({
         deviceLabel: 'Dave Browser 1',
         devicePublicIdentity: 'dave-device-1',
+        deviceWrappingPublicKey: 'dave-device-1-wrapping-key',
         userDomainPublicKey: 'dave-domain-key',
       })
       .expect(201);
-    const daveTrustedCookies = mergeCookies(daveCookies, daveFirstDevice.get('set-cookie'));
+    const daveTrustedCookies = mergeCookies(
+      daveCookies,
+      daveFirstDevice.get('set-cookie'),
+    );
 
     const pairingSession = await request(app.getHttpServer())
       .post('/api/trust/pairing-sessions')
@@ -342,24 +366,41 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
       .send({
         deviceLabel: 'Dave Browser 2',
         devicePublicIdentity: 'dave-device-2',
+        deviceWrappingPublicKey: 'dave-device-2-wrapping-key',
       })
       .expect(201);
 
-    const pendingDevice = await prisma.trustedDevice.findUniqueOrThrow({
-      where: { id: pairingSession.body.requesterDeviceId ?? pairingSession.body.id },
-    }).catch(async () => {
-      const session = await prisma.pairingSession.findUniqueOrThrow({
-        where: { id: pairingSession.body.id },
-      });
+    const pendingDevice = await prisma.trustedDevice
+      .findUniqueOrThrow({
+        where: {
+          id: pairingSession.body.requesterDeviceId ?? pairingSession.body.id,
+        },
+      })
+      .catch(async () => {
+        const session = await prisma.pairingSession.findUniqueOrThrow({
+          where: { id: pairingSession.body.id },
+        });
 
-      return prisma.trustedDevice.findUniqueOrThrow({ where: { id: session.requesterDeviceId } });
-    });
+        return prisma.trustedDevice.findUniqueOrThrow({
+          where: { id: session.requesterDeviceId },
+        });
+      });
 
     expect(pendingDevice.trustState).toBe('UNTRUSTED');
 
     await request(app.getHttpServer())
       .post('/api/trust/pairing/approve')
       .set('Cookie', daveTrustedCookies)
+      .send({
+        pairingSessionId: pairingSession.body.id,
+        approvalPackage: {
+          encryptedUserDomainPrivateKey: 'dave-device-2-package',
+        },
+      })
+      .expect(201);
+    await request(app.getHttpServer())
+      .post('/api/trust/pairing/finalize')
+      .set('Cookie', daveCookies)
       .send({ pairingSessionId: pairingSession.body.id })
       .expect(201);
 
@@ -403,8 +444,12 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
       })
       .expect(201);
 
-    const erin = await prisma.user.findUniqueOrThrow({ where: { username: 'erin' } });
-    const frank = await prisma.user.findUniqueOrThrow({ where: { username: 'frank' } });
+    const erin = await prisma.user.findUniqueOrThrow({
+      where: { username: 'erin' },
+    });
+    const frank = await prisma.user.findUniqueOrThrow({
+      where: { username: 'frank' },
+    });
 
     await request(app.getHttpServer())
       .post('/api/admin/users/approve')
@@ -427,10 +472,14 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
       .send({
         deviceLabel: 'Erin Browser 1',
         devicePublicIdentity: 'erin-device-1',
+        deviceWrappingPublicKey: 'erin-device-1-wrapping-key',
         userDomainPublicKey: 'erin-domain-key',
       })
       .expect(201);
-    const erinTrustedCookies = mergeCookies(erinCookies, firstDevice.get('set-cookie'));
+    const erinTrustedCookies = mergeCookies(
+      erinCookies,
+      firstDevice.get('set-cookie'),
+    );
 
     const frankFirstDevice = await request(app.getHttpServer())
       .post('/api/trust/bootstrap-first-device')
@@ -438,10 +487,14 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
       .send({
         deviceLabel: 'Frank Browser 1',
         devicePublicIdentity: 'frank-device-1',
+        deviceWrappingPublicKey: 'frank-device-1-wrapping-key',
         userDomainPublicKey: 'frank-domain-key',
       })
       .expect(201);
-    const frankTrustedCookies = mergeCookies(frankCookies, frankFirstDevice.get('set-cookie'));
+    const frankTrustedCookies = mergeCookies(
+      frankCookies,
+      frankFirstDevice.get('set-cookie'),
+    );
 
     const pairingSession = await request(app.getHttpServer())
       .post('/api/trust/pairing-sessions')
@@ -449,13 +502,19 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
       .send({
         deviceLabel: 'Erin Browser 2',
         devicePublicIdentity: 'erin-device-2',
+        deviceWrappingPublicKey: 'erin-device-2-wrapping-key',
       })
       .expect(201);
 
     await request(app.getHttpServer())
       .post('/api/trust/pairing/approve')
       .set('Cookie', frankTrustedCookies)
-      .send({ pairingSessionId: pairingSession.body.id })
+      .send({
+        pairingSessionId: pairingSession.body.id,
+        approvalPackage: {
+          encryptedUserDomainPrivateKey: 'erin-device-2-package',
+        },
+      })
       .expect(400);
 
     const recoveryAttempt = await request(app.getHttpServer())
@@ -465,6 +524,7 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
         recoveryCode: firstDevice.body.recoveryCodes[0],
         deviceLabel: 'Erin Recovery Browser',
         devicePublicIdentity: 'erin-recovery-device',
+        deviceWrappingPublicKey: 'erin-recovery-device-wrapping-key',
       })
       .expect(201);
 
@@ -474,10 +534,14 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
       .expect(200);
 
     expect(pendingDisplay.body.recoveryCodes).toHaveLength(3);
-    expect(pendingDisplay.body.recoveryCodes).toEqual(recoveryAttempt.body.recoveryCodes);
+    expect(pendingDisplay.body.recoveryCodes).toEqual(
+      recoveryAttempt.body.recoveryCodes,
+    );
 
     await request(app.getHttpServer())
-      .post(`/api/recovery/acknowledge/${recoveryAttempt.body.pendingTrustedDeviceId}`)
+      .post(
+        `/api/recovery/acknowledge/${recoveryAttempt.body.pendingTrustedDeviceId}`,
+      )
       .set('Cookie', erinTrustedCookies)
       .expect(201);
 
@@ -505,7 +569,9 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
       })
       .expect(201);
 
-    const gina = await prisma.user.findUniqueOrThrow({ where: { username: 'gina' } });
+    const gina = await prisma.user.findUniqueOrThrow({
+      where: { username: 'gina' },
+    });
 
     await request(app.getHttpServer())
       .post('/api/admin/users/approve')
@@ -521,10 +587,14 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
       .send({
         deviceLabel: 'Gina Browser 1',
         devicePublicIdentity: 'gina-device-1',
+        deviceWrappingPublicKey: 'gina-device-1-wrapping-key',
         userDomainPublicKey: 'gina-domain-key',
       })
       .expect(201);
-    const ginaTrustedCookies = mergeCookies(ginaCookies, bootstrapResponse.get('set-cookie'));
+    const ginaTrustedCookies = mergeCookies(
+      ginaCookies,
+      bootstrapResponse.get('set-cookie'),
+    );
 
     await request(app.getHttpServer())
       .post('/api/admin/users/disable')
@@ -548,6 +618,7 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
       .send({
         deviceLabel: 'Gina Browser 2',
         devicePublicIdentity: 'gina-device-2',
+        deviceWrappingPublicKey: 'gina-device-2-wrapping-key',
       })
       .expect(403);
 
@@ -558,6 +629,7 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
         recoveryCode: bootstrapResponse.body.recoveryCodes[0],
         deviceLabel: 'Gina Recovery Browser',
         devicePublicIdentity: 'gina-recovery-device',
+        deviceWrappingPublicKey: 'gina-recovery-device-wrapping-key',
       })
       .expect(403);
   });
@@ -580,7 +652,9 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
       })
       .expect(201);
 
-    const harry = await prisma.user.findUniqueOrThrow({ where: { username: 'harry' } });
+    const harry = await prisma.user.findUniqueOrThrow({
+      where: { username: 'harry' },
+    });
 
     await request(app.getHttpServer())
       .post('/api/admin/users/approve')
@@ -596,10 +670,14 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
       .send({
         deviceLabel: 'Harry Browser 1',
         devicePublicIdentity: 'harry-device-1',
+        deviceWrappingPublicKey: 'harry-device-1-wrapping-key',
         userDomainPublicKey: 'harry-domain-key',
       })
       .expect(201);
-    const harryTrustedCookies = mergeCookies(harryCookies, harryTrustResponse.get('set-cookie'));
+    const harryTrustedCookies = mergeCookies(
+      harryCookies,
+      harryTrustResponse.get('set-cookie'),
+    );
 
     const prepare = await request(app.getHttpServer())
       .post('/api/uploads/prepare')
@@ -632,7 +710,9 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
     expect(sourceItem.body.contentKind).toBe('SELF_SPACE_TEXT');
     expect(sourceItem.body.textCiphertextBody).toBe('ciphertext-text-body');
     expect(sourceItem.body.accessGrantSets).toHaveLength(1);
-    expect(sourceItem.body.accessGrantSets[0].grantSubjectMode).toBe('OWNER_DOMAIN');
+    expect(sourceItem.body.accessGrantSets[0].grantSubjectMode).toBe(
+      'OWNER_DOMAIN',
+    );
   });
 
   it('requires at least one uploaded part before finalizing a single-file source item', async () => {
@@ -653,7 +733,9 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
       })
       .expect(201);
 
-    const ivy = await prisma.user.findUniqueOrThrow({ where: { username: 'ivy' } });
+    const ivy = await prisma.user.findUniqueOrThrow({
+      where: { username: 'ivy' },
+    });
 
     await request(app.getHttpServer())
       .post('/api/admin/users/approve')
@@ -669,10 +751,14 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
       .send({
         deviceLabel: 'Ivy Browser 1',
         devicePublicIdentity: 'ivy-device-1',
+        deviceWrappingPublicKey: 'ivy-device-1-wrapping-key',
         userDomainPublicKey: 'ivy-domain-key',
       })
       .expect(201);
-    const ivyTrustedCookies = mergeCookies(ivyCookies, ivyTrustResponse.get('set-cookie'));
+    const ivyTrustedCookies = mergeCookies(
+      ivyCookies,
+      ivyTrustResponse.get('set-cookie'),
+    );
 
     const prepare = await request(app.getHttpServer())
       .post('/api/uploads/prepare')
@@ -710,7 +796,9 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
       })
       .expect(201);
 
-    const jane = await prisma.user.findUniqueOrThrow({ where: { username: 'jane' } });
+    const jane = await prisma.user.findUniqueOrThrow({
+      where: { username: 'jane' },
+    });
 
     await request(app.getHttpServer())
       .post('/api/admin/users/approve')
@@ -726,10 +814,14 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
       .send({
         deviceLabel: 'Jane Browser 1',
         devicePublicIdentity: 'jane-device-1',
+        deviceWrappingPublicKey: 'jane-device-1-wrapping-key',
         userDomainPublicKey: 'jane-domain-key',
       })
       .expect(201);
-    const janeTrustedCookies = mergeCookies(janeCookies, janeTrustResponse.get('set-cookie'));
+    const janeTrustedCookies = mergeCookies(
+      janeCookies,
+      janeTrustResponse.get('set-cookie'),
+    );
 
     const prepare = await request(app.getHttpServer())
       .post('/api/uploads/prepare')
@@ -779,16 +871,22 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
     expect(sourceItem.body.groupManifest).toBeTruthy();
     expect(sourceItem.body.storageBytes).toBe(1024);
     expect(sourceItem.body.accessGrantSets).toHaveLength(1);
-    expect(sourceItem.body.accessGrantSets[0].grantSubjectMode).toBe('OWNER_DEVICE_SNAPSHOT');
+    expect(sourceItem.body.accessGrantSets[0].grantSubjectMode).toBe(
+      'OWNER_DEVICE_SNAPSHOT',
+    );
     expect(sourceItem.body.packageFamilies).toHaveLength(2);
 
     const retrieval = await request(app.getHttpServer())
-      .post(`/api/retrieval/source-items/${finalize.body.sourceItemId}/attempts/jane-file-download`)
+      .post(
+        `/api/retrieval/source-items/${finalize.body.sourceItemId}/attempts/jane-file-download`,
+      )
       .set('Cookie', janeTrustedCookies)
       .expect(201);
 
     const download = await request(app.getHttpServer())
-      .get(`/api/retrieval/attempts/${retrieval.body.retrievalAttemptId}/download`)
+      .get(
+        `/api/retrieval/attempts/${retrieval.body.retrievalAttemptId}/download`,
+      )
       .set('Cookie', janeTrustedCookies)
       .buffer(true)
       .parse(parseBinaryResponse)
@@ -815,7 +913,9 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
       })
       .expect(201);
 
-    const kate = await prisma.user.findUniqueOrThrow({ where: { username: 'kate' } });
+    const kate = await prisma.user.findUniqueOrThrow({
+      where: { username: 'kate' },
+    });
 
     await request(app.getHttpServer())
       .post('/api/admin/users/approve')
@@ -841,11 +941,15 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
       .send({
         deviceLabel: 'Kate Browser 1',
         devicePublicIdentity: 'kate-device-1',
+        deviceWrappingPublicKey: 'kate-device-1-wrapping-key',
         userDomainPublicKey: 'kate-domain-key',
       })
       .expect(201);
 
-    const kateCookies = mergeCookies(kateSessionCookies, kateTrustResponse.get('set-cookie'));
+    const kateCookies = mergeCookies(
+      kateSessionCookies,
+      kateTrustResponse.get('set-cookie'),
+    );
 
     const prepare = await request(app.getHttpServer())
       .post('/api/uploads/prepare')
@@ -867,16 +971,22 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
       .expect(201);
 
     const issueAttempt = await request(app.getHttpServer())
-      .post(`/api/retrieval/source-items/${finalize.body.sourceItemId}/attempts/attempt-1`)
+      .post(
+        `/api/retrieval/source-items/${finalize.body.sourceItemId}/attempts/attempt-1`,
+      )
       .set('Cookie', kateCookies)
       .expect(201);
 
     expect(issueAttempt.body.packageReferenceId).toBeTruthy();
     expect(issueAttempt.body.packageFamilyKind).toBe('OWNER_ORDINARY');
-    expect(issueAttempt.body.textCiphertextBody).toBe('ciphertext-retrievable-note');
+    expect(issueAttempt.body.textCiphertextBody).toBe(
+      'ciphertext-retrievable-note',
+    );
 
     await request(app.getHttpServer())
-      .post(`/api/retrieval/attempts/${issueAttempt.body.retrievalAttemptId}/complete`)
+      .post(
+        `/api/retrieval/attempts/${issueAttempt.body.retrievalAttemptId}/complete`,
+      )
       .set('Cookie', kateCookies)
       .send({ success: true })
       .expect(201)
@@ -904,7 +1014,9 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
       })
       .expect(201);
 
-    const lena = await prisma.user.findUniqueOrThrow({ where: { username: 'lena' } });
+    const lena = await prisma.user.findUniqueOrThrow({
+      where: { username: 'lena' },
+    });
 
     await request(app.getHttpServer())
       .post('/api/admin/users/approve')
@@ -920,11 +1032,15 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
       .send({
         deviceLabel: 'Lena Browser 1',
         devicePublicIdentity: 'lena-device-1',
+        deviceWrappingPublicKey: 'lena-device-1-wrapping-key',
         userDomainPublicKey: 'lena-domain-key',
       })
       .expect(201);
 
-    const lenaCookies = mergeCookies(lenaSessionCookies, lenaTrustResponse.get('set-cookie'));
+    const lenaCookies = mergeCookies(
+      lenaSessionCookies,
+      lenaTrustResponse.get('set-cookie'),
+    );
 
     const prepare = await request(app.getHttpServer())
       .post('/api/uploads/prepare')
@@ -947,12 +1063,16 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
       .expect(201);
 
     const issueAttempt = await request(app.getHttpServer())
-      .post(`/api/retrieval/source-items/${finalize.body.sourceItemId}/attempts/attempt-burn`)
+      .post(
+        `/api/retrieval/source-items/${finalize.body.sourceItemId}/attempts/attempt-burn`,
+      )
       .set('Cookie', lenaCookies)
       .expect(201);
 
     await request(app.getHttpServer())
-      .post(`/api/retrieval/attempts/${issueAttempt.body.retrievalAttemptId}/complete`)
+      .post(
+        `/api/retrieval/attempts/${issueAttempt.body.retrievalAttemptId}/complete`,
+      )
       .set('Cookie', lenaCookies)
       .send({ success: true })
       .expect(201)
@@ -962,7 +1082,9 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
       });
 
     await request(app.getHttpServer())
-      .post(`/api/retrieval/source-items/${finalize.body.sourceItemId}/attempts/attempt-after-burn`)
+      .post(
+        `/api/retrieval/source-items/${finalize.body.sourceItemId}/attempts/attempt-after-burn`,
+      )
       .set('Cookie', lenaCookies)
       .expect(400);
   });
@@ -985,7 +1107,9 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
       })
       .expect(201);
 
-    const mira = await prisma.user.findUniqueOrThrow({ where: { username: 'mira' } });
+    const mira = await prisma.user.findUniqueOrThrow({
+      where: { username: 'mira' },
+    });
 
     await request(app.getHttpServer())
       .post('/api/admin/users/approve')
@@ -1000,11 +1124,15 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
       .send({
         deviceLabel: 'Mira Browser 1',
         devicePublicIdentity: 'mira-device-1',
+        deviceWrappingPublicKey: 'mira-device-1-wrapping-key',
         userDomainPublicKey: 'mira-domain-key',
       })
       .expect(201);
 
-    const miraCookies = mergeCookies(miraSessionCookies, miraTrustResponse.get('set-cookie'));
+    const miraCookies = mergeCookies(
+      miraSessionCookies,
+      miraTrustResponse.get('set-cookie'),
+    );
 
     const activePrepare = await request(app.getHttpServer())
       .post('/api/uploads/prepare')
@@ -1046,12 +1174,16 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
       .expect(201);
 
     const burnAttempt = await request(app.getHttpServer())
-      .post(`/api/retrieval/source-items/${burnFinalize.body.sourceItemId}/attempts/attempt-mira-burn`)
+      .post(
+        `/api/retrieval/source-items/${burnFinalize.body.sourceItemId}/attempts/attempt-mira-burn`,
+      )
       .set('Cookie', miraCookies)
       .expect(201);
 
     await request(app.getHttpServer())
-      .post(`/api/retrieval/attempts/${burnAttempt.body.retrievalAttemptId}/complete`)
+      .post(
+        `/api/retrieval/attempts/${burnAttempt.body.retrievalAttemptId}/complete`,
+      )
       .set('Cookie', miraCookies)
       .send({ success: true })
       .expect(201);
@@ -1062,7 +1194,9 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
       .expect(200);
 
     expect(timeline.body).toHaveLength(1);
-    expect(timeline.body[0].sourceObjectId).toBe(activeFinalize.body.sourceItemId);
+    expect(timeline.body[0].sourceObjectId).toBe(
+      activeFinalize.body.sourceItemId,
+    );
     expect(timeline.body[0].displayTitle).toBe('active note');
     expect(timeline.body[0].currentRetrievable).toBe(true);
 
@@ -1072,10 +1206,12 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
       .expect(200);
 
     const activeHistory = history.body.find(
-      (entry: { sourceObjectId: string }) => entry.sourceObjectId === activeFinalize.body.sourceItemId,
+      (entry: { sourceObjectId: string }) =>
+        entry.sourceObjectId === activeFinalize.body.sourceItemId,
     );
     const burnedHistory = history.body.find(
-      (entry: { sourceObjectId: string }) => entry.sourceObjectId === burnFinalize.body.sourceItemId,
+      (entry: { sourceObjectId: string }) =>
+        entry.sourceObjectId === burnFinalize.body.sourceItemId,
     );
 
     expect(activeHistory.retainedStatus).toBe('active');
@@ -1133,8 +1269,12 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
       })
       .expect(201);
 
-    const nina = await prisma.user.findUniqueOrThrow({ where: { username: 'nina' } });
-    const otto = await prisma.user.findUniqueOrThrow({ where: { username: 'otto' } });
+    const nina = await prisma.user.findUniqueOrThrow({
+      where: { username: 'nina' },
+    });
+    const otto = await prisma.user.findUniqueOrThrow({
+      where: { username: 'otto' },
+    });
 
     await request(app.getHttpServer())
       .post('/api/admin/users/approve')
@@ -1155,11 +1295,15 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
       .send({
         deviceLabel: 'Nina Browser 1',
         devicePublicIdentity: 'nina-device-1',
+        deviceWrappingPublicKey: 'nina-device-1-wrapping-key',
         userDomainPublicKey: 'nina-domain-key',
       })
       .expect(201);
 
-    const ninaCookies = mergeCookies(ninaSessionCookies, ninaTrustResponse.get('set-cookie'));
+    const ninaCookies = mergeCookies(
+      ninaSessionCookies,
+      ninaTrustResponse.get('set-cookie'),
+    );
 
     const prepare = await request(app.getHttpServer())
       .post('/api/uploads/prepare')
@@ -1224,8 +1368,12 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
       })
       .expect(201);
 
-    const piper = await prisma.user.findUniqueOrThrow({ where: { username: 'piper' } });
-    const quinn = await prisma.user.findUniqueOrThrow({ where: { username: 'quinn' } });
+    const piper = await prisma.user.findUniqueOrThrow({
+      where: { username: 'piper' },
+    });
+    const quinn = await prisma.user.findUniqueOrThrow({
+      where: { username: 'quinn' },
+    });
 
     await request(app.getHttpServer())
       .post('/api/admin/users/approve')
@@ -1246,10 +1394,14 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
       .send({
         deviceLabel: 'Piper Browser 1',
         devicePublicIdentity: 'piper-device-1',
+        deviceWrappingPublicKey: 'piper-device-1-wrapping-key',
         userDomainPublicKey: 'piper-domain-key',
       })
       .expect(201);
-    const piperCookies = mergeCookies(piperSessionCookies, piperTrustResponse.get('set-cookie'));
+    const piperCookies = mergeCookies(
+      piperSessionCookies,
+      piperTrustResponse.get('set-cookie'),
+    );
 
     const quinnSessionCookies = await login('quinn', 'quinn-password');
     const quinnTrustResponse = await request(app.getHttpServer())
@@ -1258,10 +1410,14 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
       .send({
         deviceLabel: 'Quinn Browser 1',
         devicePublicIdentity: 'quinn-device-1',
+        deviceWrappingPublicKey: 'quinn-device-1-wrapping-key',
         userDomainPublicKey: 'quinn-domain-key',
       })
       .expect(201);
-    const quinnCookies = mergeCookies(quinnSessionCookies, quinnTrustResponse.get('set-cookie'));
+    const quinnCookies = mergeCookies(
+      quinnSessionCookies,
+      quinnTrustResponse.get('set-cookie'),
+    );
 
     const finalize = await createStoredFileSource(piperCookies, {
       displayName: 'no-repeat share.bin',
@@ -1319,12 +1475,13 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
       .expect(200);
 
     const activeShare = activeShareTimeline.body.find(
-      (entry: { sourceObjectId: string }) => entry.sourceObjectId === share.body.shareObjectId,
+      (entry: { sourceObjectId: string }) =>
+        entry.sourceObjectId === share.body.shareObjectId,
     );
     expect(activeShare).toBeDefined();
     expect(activeShare.sourceObjectType).toBe('SHARE_OBJECT');
     expect(activeShare.shareObjectId).toBe(share.body.shareObjectId);
-    expect(activeShare.displayTitle).toBe('no-repeat share.bin');
+    expect(activeShare.displayTitle).toBe('file item');
     expect(activeShare.sourceLabel).toBe('piper');
     expect(activeShare.currentRetrievable).toBe(true);
 
@@ -1336,12 +1493,16 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
     expect(incoming.body).toHaveLength(1);
 
     const issueAttempt = await request(app.getHttpServer())
-      .post(`/api/shares/${share.body.shareObjectId}/attempts/recipient-attempt-1`)
+      .post(
+        `/api/shares/${share.body.shareObjectId}/attempts/recipient-attempt-1`,
+      )
       .set('Cookie', quinnCookies)
       .expect(201);
 
     await request(app.getHttpServer())
-      .post(`/api/shares/attempts/${issueAttempt.body.retrievalAttemptId}/complete`)
+      .post(
+        `/api/shares/attempts/${issueAttempt.body.retrievalAttemptId}/complete`,
+      )
       .set('Cookie', quinnCookies)
       .send({ success: true })
       .expect(201)
@@ -1351,7 +1512,9 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
       });
 
     await request(app.getHttpServer())
-      .post(`/api/shares/${share.body.shareObjectId}/attempts/recipient-attempt-2`)
+      .post(
+        `/api/shares/${share.body.shareObjectId}/attempts/recipient-attempt-2`,
+      )
       .set('Cookie', quinnCookies)
       .expect(400);
 
@@ -1362,7 +1525,8 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
 
     expect(
       consumedShareTimeline.body.find(
-        (entry: { sourceObjectId: string }) => entry.sourceObjectId === share.body.shareObjectId,
+        (entry: { sourceObjectId: string }) =>
+          entry.sourceObjectId === share.body.shareObjectId,
       ),
     ).toBeUndefined();
 
@@ -1372,7 +1536,8 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
       .expect(200);
 
     const consumed = history.body.find(
-      (entry: { sourceObjectId: string }) => entry.sourceObjectId === share.body.shareObjectId,
+      (entry: { sourceObjectId: string }) =>
+        entry.sourceObjectId === share.body.shareObjectId,
     );
     expect(consumed.retainedStatus).toBe('consumed');
     expect(consumed.retrievable).toBe(false);
@@ -1411,8 +1576,12 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
       })
       .expect(201);
 
-    const rhea = await prisma.user.findUniqueOrThrow({ where: { username: 'rhea' } });
-    const soren = await prisma.user.findUniqueOrThrow({ where: { username: 'soren' } });
+    const rhea = await prisma.user.findUniqueOrThrow({
+      where: { username: 'rhea' },
+    });
+    const soren = await prisma.user.findUniqueOrThrow({
+      where: { username: 'soren' },
+    });
 
     await request(app.getHttpServer())
       .post('/api/admin/users/approve')
@@ -1433,10 +1602,14 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
       .send({
         deviceLabel: 'Rhea Browser 1',
         devicePublicIdentity: 'rhea-device-1',
+        deviceWrappingPublicKey: 'rhea-device-1-wrapping-key',
         userDomainPublicKey: 'rhea-domain-key',
       })
       .expect(201);
-    const rheaCookies = mergeCookies(rheaSessionCookies, rheaTrustResponse.get('set-cookie'));
+    const rheaCookies = mergeCookies(
+      rheaSessionCookies,
+      rheaTrustResponse.get('set-cookie'),
+    );
 
     const sorenSessionCookies = await login('soren', 'soren-password');
     const sorenTrustResponse = await request(app.getHttpServer())
@@ -1445,10 +1618,14 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
       .send({
         deviceLabel: 'Soren Browser 1',
         devicePublicIdentity: 'soren-device-1',
+        deviceWrappingPublicKey: 'soren-device-1-wrapping-key',
         userDomainPublicKey: 'soren-domain-key',
       })
       .expect(201);
-    const sorenCookies = mergeCookies(sorenSessionCookies, sorenTrustResponse.get('set-cookie'));
+    const sorenCookies = mergeCookies(
+      sorenSessionCookies,
+      sorenTrustResponse.get('set-cookie'),
+    );
 
     const finalize = await createStoredFileSource(rheaCookies, {
       displayName: 'extractable.bin',
@@ -1467,7 +1644,9 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
       .expect(201);
 
     await request(app.getHttpServer())
-      .post(`/api/shares/${share.body.shareObjectId}/attempts/recipient-attempt-1`)
+      .post(
+        `/api/shares/${share.body.shareObjectId}/attempts/recipient-attempt-1`,
+      )
       .set('Cookie', sorenCookies)
       .expect(201);
 
@@ -1485,7 +1664,9 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
     expect(extraction.body.remainingRetrievalCount).toBe(2);
 
     await request(app.getHttpServer())
-      .post(`/api/extraction/${extraction.body.entryToken}/attempts/extract-attempt-1`)
+      .post(
+        `/api/extraction/${extraction.body.entryToken}/attempts/extract-attempt-1`,
+      )
       .send({ password: 'wrong-password' })
       .expect(403);
 
@@ -1498,12 +1679,16 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
     expect(challenge.body.metadata).toBeNull();
 
     const extractionAttempt = await request(app.getHttpServer())
-      .post(`/api/extraction/${extraction.body.entryToken}/attempts/extract-attempt-1`)
+      .post(
+        `/api/extraction/${extraction.body.entryToken}/attempts/extract-attempt-1`,
+      )
       .send({ password: 'custom-password-1', captchaSatisfied: true })
       .expect(201);
 
     await request(app.getHttpServer())
-      .get(`/api/extraction/attempts/${extractionAttempt.body.retrievalAttemptId}/download`)
+      .get(
+        `/api/extraction/attempts/${extractionAttempt.body.retrievalAttemptId}/download`,
+      )
       .buffer()
       .parse(parseBinaryResponse)
       .expect(200)
@@ -1512,7 +1697,9 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
       });
 
     await request(app.getHttpServer())
-      .post(`/api/extraction/attempts/${extractionAttempt.body.retrievalAttemptId}/complete`)
+      .post(
+        `/api/extraction/attempts/${extractionAttempt.body.retrievalAttemptId}/complete`,
+      )
       .send({ success: true })
       .expect(201)
       .expect((response) => {
@@ -1560,8 +1747,12 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
       })
       .expect(201);
 
-    const talia = await prisma.user.findUniqueOrThrow({ where: { username: 'talia' } });
-    const ulric = await prisma.user.findUniqueOrThrow({ where: { username: 'ulric' } });
+    const talia = await prisma.user.findUniqueOrThrow({
+      where: { username: 'talia' },
+    });
+    const ulric = await prisma.user.findUniqueOrThrow({
+      where: { username: 'ulric' },
+    });
 
     await request(app.getHttpServer())
       .post('/api/admin/users/approve')
@@ -1582,10 +1773,14 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
       .send({
         deviceLabel: 'Talia Browser 1',
         devicePublicIdentity: 'talia-device-1',
+        deviceWrappingPublicKey: 'talia-device-1-wrapping-key',
         userDomainPublicKey: 'talia-domain-key',
       })
       .expect(201);
-    const taliaCookies = mergeCookies(taliaSessionCookies, taliaTrustResponse.get('set-cookie'));
+    const taliaCookies = mergeCookies(
+      taliaSessionCookies,
+      taliaTrustResponse.get('set-cookie'),
+    );
 
     const ulricSessionCookies = await login('ulric', 'ulric-password');
     const ulricTrustResponse = await request(app.getHttpServer())
@@ -1594,10 +1789,14 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
       .send({
         deviceLabel: 'Ulric Browser 1',
         devicePublicIdentity: 'ulric-device-1',
+        deviceWrappingPublicKey: 'ulric-device-1-wrapping-key',
         userDomainPublicKey: 'ulric-domain-key',
       })
       .expect(201);
-    const ulricCookies = mergeCookies(ulricSessionCookies, ulricTrustResponse.get('set-cookie'));
+    const ulricCookies = mergeCookies(
+      ulricSessionCookies,
+      ulricTrustResponse.get('set-cookie'),
+    );
 
     const finalize = await createStoredFileSource(taliaCookies, {
       displayName: 'confidential.bin',
@@ -1625,8 +1824,12 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
       })
       .expect(201);
 
-    expect(confidentialExtraction.body.password).not.toBe('ignored-custom-password');
-    expect(confidentialExtraction.body.password.length).toBeGreaterThanOrEqual(24);
+    expect(confidentialExtraction.body.password).not.toBe(
+      'ignored-custom-password',
+    );
+    expect(confidentialExtraction.body.password.length).toBeGreaterThanOrEqual(
+      24,
+    );
 
     await prisma.policyBundle.updateMany({
       where: { levelName: 'CONFIDENTIAL', isCurrent: true },
@@ -1669,7 +1872,9 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
       .expect(400);
 
     await request(app.getHttpServer())
-      .post(`/api/shares/${share.body.shareObjectId}/attempts/recipient-attempt-policy-check`)
+      .post(
+        `/api/shares/${share.body.shareObjectId}/attempts/recipient-attempt-policy-check`,
+      )
       .set('Cookie', ulricCookies)
       .expect(201);
   });
@@ -1707,8 +1912,12 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
       })
       .expect(201);
 
-    const vera = await prisma.user.findUniqueOrThrow({ where: { username: 'vera' } });
-    const wynn = await prisma.user.findUniqueOrThrow({ where: { username: 'wynn' } });
+    const vera = await prisma.user.findUniqueOrThrow({
+      where: { username: 'vera' },
+    });
+    const wynn = await prisma.user.findUniqueOrThrow({
+      where: { username: 'wynn' },
+    });
 
     await request(app.getHttpServer())
       .post('/api/admin/users/approve')
@@ -1729,10 +1938,14 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
       .send({
         deviceLabel: 'Vera Browser 1',
         devicePublicIdentity: 'vera-device-1',
+        deviceWrappingPublicKey: 'vera-device-1-wrapping-key',
         userDomainPublicKey: 'vera-domain-key',
       })
       .expect(201);
-    const veraCookies = mergeCookies(veraSessionCookies, veraTrustResponse.get('set-cookie'));
+    const veraCookies = mergeCookies(
+      veraSessionCookies,
+      veraTrustResponse.get('set-cookie'),
+    );
 
     const wynnSessionCookies = await login('wynn', 'wynn-password');
     const wynnTrustResponse = await request(app.getHttpServer())
@@ -1741,10 +1954,14 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
       .send({
         deviceLabel: 'Wynn Browser 1',
         devicePublicIdentity: 'wynn-device-1',
+        deviceWrappingPublicKey: 'wynn-device-1-wrapping-key',
         userDomainPublicKey: 'wynn-domain-key',
       })
       .expect(201);
-    const wynnCookies = mergeCookies(wynnSessionCookies, wynnTrustResponse.get('set-cookie'));
+    const wynnCookies = mergeCookies(
+      wynnSessionCookies,
+      wynnTrustResponse.get('set-cookie'),
+    );
 
     const finalize = await createStoredFileSource(veraCookies, {
       displayName: 'public.bin',
@@ -1764,7 +1981,9 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
       .expect(201);
 
     await request(app.getHttpServer())
-      .post(`/api/shares/${share.body.shareObjectId}/attempts/recipient-attempt-public-check`)
+      .post(
+        `/api/shares/${share.body.shareObjectId}/attempts/recipient-attempt-public-check`,
+      )
       .set('Cookie', wynnCookies)
       .expect(201);
 
@@ -1857,7 +2076,9 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
       .set('Cookie', adminCookies)
       .expect(200);
 
-    const listed = inviteList.body.find((entry: { id: string }) => entry.id === invite.body.id);
+    const listed = inviteList.body.find(
+      (entry: { id: string }) => entry.id === invite.body.id,
+    );
     expect(listed.code).toBe(invite.body.code);
     expect(listed.invalidatedAt).toBeNull();
 
@@ -1872,7 +2093,9 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
       .set('Cookie', adminCookies)
       .expect(200);
 
-    const invalidated = invalidatedList.body.find((entry: { id: string }) => entry.id === invite.body.id);
+    const invalidated = invalidatedList.body.find(
+      (entry: { id: string }) => entry.id === invite.body.id,
+    );
     expect(invalidated.invalidatedAt).toBeTruthy();
   });
 
@@ -2137,7 +2360,9 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
       })
       .expect(201);
 
-    const xena = await prisma.user.findUniqueOrThrow({ where: { username: 'xena' } });
+    const xena = await prisma.user.findUniqueOrThrow({
+      where: { username: 'xena' },
+    });
 
     await request(app.getHttpServer())
       .post('/api/admin/users/approve')
@@ -2152,10 +2377,14 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
       .send({
         deviceLabel: 'Xena Browser 1',
         devicePublicIdentity: 'xena-device-1',
+        deviceWrappingPublicKey: 'xena-device-1-wrapping-key',
         userDomainPublicKey: 'xena-domain-key',
       })
       .expect(201);
-    const xenaCookies = mergeCookies(xenaSessionCookies, xenaTrustResponse.get('set-cookie'));
+    const xenaCookies = mergeCookies(
+      xenaSessionCookies,
+      xenaTrustResponse.get('set-cookie'),
+    );
 
     const prepare = await request(app.getHttpServer())
       .post('/api/uploads/prepare')
@@ -2174,8 +2403,12 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
       .expect(200);
 
     expect(operationsSummary.body.users.totalUsers).toBeGreaterThanOrEqual(2);
-    expect(operationsSummary.body.invites.activeInvites).toBeGreaterThanOrEqual(0);
-    expect(operationsSummary.body.storage.uploadedCiphertextBytes).toBeGreaterThanOrEqual(0);
+    expect(operationsSummary.body.invites.activeInvites).toBeGreaterThanOrEqual(
+      0,
+    );
+    expect(
+      operationsSummary.body.storage.uploadedCiphertextBytes,
+    ).toBeGreaterThanOrEqual(0);
     expect(operationsSummary.body).not.toHaveProperty('textCiphertextBody');
     expect(operationsSummary.body).not.toHaveProperty('sourceItemsList');
   });
@@ -2213,8 +2446,12 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
       })
       .expect(201);
 
-    const yara = await prisma.user.findUniqueOrThrow({ where: { username: 'yara' } });
-    const zane = await prisma.user.findUniqueOrThrow({ where: { username: 'zane' } });
+    const yara = await prisma.user.findUniqueOrThrow({
+      where: { username: 'yara' },
+    });
+    const zane = await prisma.user.findUniqueOrThrow({
+      where: { username: 'zane' },
+    });
 
     await request(app.getHttpServer())
       .post('/api/admin/users/approve')
@@ -2235,10 +2472,14 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
       .send({
         deviceLabel: 'Yara Browser 1',
         devicePublicIdentity: 'yara-device-1',
+        deviceWrappingPublicKey: 'yara-device-1-wrapping-key',
         userDomainPublicKey: 'yara-domain-key',
       })
       .expect(201);
-    const yaraCookies = mergeCookies(yaraSessionCookies, yaraTrustResponse.get('set-cookie'));
+    const yaraCookies = mergeCookies(
+      yaraSessionCookies,
+      yaraTrustResponse.get('set-cookie'),
+    );
 
     const zaneSessionCookies = await login('zane', 'zane-password');
     const zaneTrustResponse = await request(app.getHttpServer())
@@ -2247,10 +2488,14 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
       .send({
         deviceLabel: 'Zane Browser 1',
         devicePublicIdentity: 'zane-device-1',
+        deviceWrappingPublicKey: 'zane-device-1-wrapping-key',
         userDomainPublicKey: 'zane-domain-key',
       })
       .expect(201);
-    const zaneCookies = mergeCookies(zaneSessionCookies, zaneTrustResponse.get('set-cookie'));
+    const zaneCookies = mergeCookies(
+      zaneSessionCookies,
+      zaneTrustResponse.get('set-cookie'),
+    );
 
     const liveSession = await request(app.getHttpServer())
       .post('/api/live-transfer/sessions')
@@ -2275,7 +2520,9 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
     expect(joined.body.state).toBe('AWAITING_CONFIRMATION');
 
     await request(app.getHttpServer())
-      .post(`/api/live-transfer/sessions/${liveSession.body.liveTransferSessionId}/confirm`)
+      .post(
+        `/api/live-transfer/sessions/${liveSession.body.liveTransferSessionId}/confirm`,
+      )
       .set('Cookie', yaraCookies)
       .send({ confirmed: true })
       .expect(201)
@@ -2285,13 +2532,17 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
       });
 
     await request(app.getHttpServer())
-      .post(`/api/live-transfer/sessions/${liveSession.body.liveTransferSessionId}/transport`)
+      .post(
+        `/api/live-transfer/sessions/${liveSession.body.liveTransferSessionId}/transport`,
+      )
       .set('Cookie', yaraCookies)
       .send({ transportState: 'P2P_ACTIVE' })
       .expect(400);
 
     await request(app.getHttpServer())
-      .post(`/api/live-transfer/sessions/${liveSession.body.liveTransferSessionId}/confirm`)
+      .post(
+        `/api/live-transfer/sessions/${liveSession.body.liveTransferSessionId}/confirm`,
+      )
       .set('Cookie', zaneCookies)
       .send({ confirmed: true })
       .expect(201)
@@ -2301,20 +2552,26 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
       });
 
     await request(app.getHttpServer())
-      .post(`/api/live-transfer/sessions/${liveSession.body.liveTransferSessionId}/signals`)
+      .post(
+        `/api/live-transfer/sessions/${liveSession.body.liveTransferSessionId}/signals`,
+      )
       .set('Cookie', yaraCookies)
       .send({ kind: 'offer', payload: { sdp: 'fake-offer' } })
       .expect(201);
 
     const pendingSignals = await request(app.getHttpServer())
-      .get(`/api/live-transfer/sessions/${liveSession.body.liveTransferSessionId}/signals`)
+      .get(
+        `/api/live-transfer/sessions/${liveSession.body.liveTransferSessionId}/signals`,
+      )
       .set('Cookie', zaneCookies)
       .expect(200);
     expect(pendingSignals.body).toHaveLength(1);
     expect(pendingSignals.body[0].kind).toBe('offer');
 
     await request(app.getHttpServer())
-      .get(`/api/live-transfer/sessions/${liveSession.body.liveTransferSessionId}/signals`)
+      .get(
+        `/api/live-transfer/sessions/${liveSession.body.liveTransferSessionId}/signals`,
+      )
       .set('Cookie', zaneCookies)
       .expect(200)
       .expect((response) => {
@@ -2322,7 +2579,9 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
       });
 
     await request(app.getHttpServer())
-      .post(`/api/live-transfer/sessions/${liveSession.body.liveTransferSessionId}/transport`)
+      .post(
+        `/api/live-transfer/sessions/${liveSession.body.liveTransferSessionId}/transport`,
+      )
       .set('Cookie', yaraCookies)
       .send({ transportState: 'P2P_ACTIVE' })
       .expect(201)
@@ -2331,7 +2590,9 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
       });
 
     await request(app.getHttpServer())
-      .post(`/api/live-transfer/sessions/${liveSession.body.liveTransferSessionId}/complete`)
+      .post(
+        `/api/live-transfer/sessions/${liveSession.body.liveTransferSessionId}/complete`,
+      )
       .set('Cookie', zaneCookies)
       .expect(201)
       .expect((response) => {
@@ -2381,8 +2642,12 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
       })
       .expect(201);
 
-    const amber = await prisma.user.findUniqueOrThrow({ where: { username: 'amber' } });
-    const bram = await prisma.user.findUniqueOrThrow({ where: { username: 'bram' } });
+    const amber = await prisma.user.findUniqueOrThrow({
+      where: { username: 'amber' },
+    });
+    const bram = await prisma.user.findUniqueOrThrow({
+      where: { username: 'bram' },
+    });
 
     await request(app.getHttpServer())
       .post('/api/admin/users/approve')
@@ -2403,10 +2668,14 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
       .send({
         deviceLabel: 'Amber Browser 1',
         devicePublicIdentity: 'amber-device-1',
+        deviceWrappingPublicKey: 'amber-device-1-wrapping-key',
         userDomainPublicKey: 'amber-domain-key',
       })
       .expect(201);
-    const amberCookies = mergeCookies(amberSessionCookies, amberTrustResponse.get('set-cookie'));
+    const amberCookies = mergeCookies(
+      amberSessionCookies,
+      amberTrustResponse.get('set-cookie'),
+    );
 
     const bramSessionCookies = await login('bram', 'bram-password');
     const bramTrustResponse = await request(app.getHttpServer())
@@ -2415,10 +2684,14 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
       .send({
         deviceLabel: 'Bram Browser 1',
         devicePublicIdentity: 'bram-device-1',
+        deviceWrappingPublicKey: 'bram-device-1-wrapping-key',
         userDomainPublicKey: 'bram-domain-key',
       })
       .expect(201);
-    const bramCookies = mergeCookies(bramSessionCookies, bramTrustResponse.get('set-cookie'));
+    const bramCookies = mergeCookies(
+      bramSessionCookies,
+      bramTrustResponse.get('set-cookie'),
+    );
 
     const topSecretSession = await request(app.getHttpServer())
       .post('/api/live-transfer/sessions')
@@ -2437,19 +2710,25 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
       .expect(201);
 
     await request(app.getHttpServer())
-      .post(`/api/live-transfer/sessions/${topSecretSession.body.liveTransferSessionId}/confirm`)
+      .post(
+        `/api/live-transfer/sessions/${topSecretSession.body.liveTransferSessionId}/confirm`,
+      )
       .set('Cookie', amberCookies)
       .send({ confirmed: true })
       .expect(201);
 
     await request(app.getHttpServer())
-      .post(`/api/live-transfer/sessions/${topSecretSession.body.liveTransferSessionId}/confirm`)
+      .post(
+        `/api/live-transfer/sessions/${topSecretSession.body.liveTransferSessionId}/confirm`,
+      )
       .set('Cookie', bramCookies)
       .send({ confirmed: true })
       .expect(201);
 
     await request(app.getHttpServer())
-      .post(`/api/live-transfer/sessions/${topSecretSession.body.liveTransferSessionId}/transport`)
+      .post(
+        `/api/live-transfer/sessions/${topSecretSession.body.liveTransferSessionId}/transport`,
+      )
       .set('Cookie', amberCookies)
       .send({ transportState: 'RELAY_ATTEMPT' })
       .expect(400);
@@ -2471,24 +2750,32 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
       .expect(201);
 
     await request(app.getHttpServer())
-      .post(`/api/live-transfer/sessions/${confidentialSession.body.liveTransferSessionId}/confirm`)
+      .post(
+        `/api/live-transfer/sessions/${confidentialSession.body.liveTransferSessionId}/confirm`,
+      )
       .set('Cookie', amberCookies)
       .send({ confirmed: true })
       .expect(201);
 
     await request(app.getHttpServer())
-      .post(`/api/live-transfer/sessions/${confidentialSession.body.liveTransferSessionId}/confirm`)
+      .post(
+        `/api/live-transfer/sessions/${confidentialSession.body.liveTransferSessionId}/confirm`,
+      )
       .set('Cookie', bramCookies)
       .send({ confirmed: true })
       .expect(201);
 
     await request(app.getHttpServer())
-      .post(`/api/live-transfer/sessions/${confidentialSession.body.liveTransferSessionId}/stored-fallback`)
+      .post(
+        `/api/live-transfer/sessions/${confidentialSession.body.liveTransferSessionId}/stored-fallback`,
+      )
       .set('Cookie', amberCookies)
       .expect(400);
 
     await request(app.getHttpServer())
-      .post(`/api/live-transfer/sessions/${confidentialSession.body.liveTransferSessionId}/fail`)
+      .post(
+        `/api/live-transfer/sessions/${confidentialSession.body.liveTransferSessionId}/fail`,
+      )
       .set('Cookie', amberCookies)
       .send({ reason: 'transport_exhausted' })
       .expect(201)
@@ -2497,7 +2784,9 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
       });
 
     await request(app.getHttpServer())
-      .post(`/api/live-transfer/sessions/${confidentialSession.body.liveTransferSessionId}/stored-fallback`)
+      .post(
+        `/api/live-transfer/sessions/${confidentialSession.body.liveTransferSessionId}/stored-fallback`,
+      )
       .set('Cookie', amberCookies)
       .expect(400);
 
@@ -2518,25 +2807,33 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
       .expect(201);
 
     await request(app.getHttpServer())
-      .post(`/api/live-transfer/sessions/${secretSession.body.liveTransferSessionId}/confirm`)
+      .post(
+        `/api/live-transfer/sessions/${secretSession.body.liveTransferSessionId}/confirm`,
+      )
       .set('Cookie', amberCookies)
       .send({ confirmed: true })
       .expect(201);
 
     await request(app.getHttpServer())
-      .post(`/api/live-transfer/sessions/${secretSession.body.liveTransferSessionId}/confirm`)
+      .post(
+        `/api/live-transfer/sessions/${secretSession.body.liveTransferSessionId}/confirm`,
+      )
       .set('Cookie', bramCookies)
       .send({ confirmed: true })
       .expect(201);
 
     await request(app.getHttpServer())
-      .post(`/api/live-transfer/sessions/${secretSession.body.liveTransferSessionId}/fail`)
+      .post(
+        `/api/live-transfer/sessions/${secretSession.body.liveTransferSessionId}/fail`,
+      )
       .set('Cookie', amberCookies)
       .send({ reason: 'transport_exhausted' })
       .expect(201);
 
     await request(app.getHttpServer())
-      .post(`/api/live-transfer/sessions/${secretSession.body.liveTransferSessionId}/stored-fallback`)
+      .post(
+        `/api/live-transfer/sessions/${secretSession.body.liveTransferSessionId}/stored-fallback`,
+      )
       .set('Cookie', amberCookies)
       .expect(201)
       .expect((response) => {
@@ -2564,7 +2861,9 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
       })
       .expect(201);
 
-    const cora = await prisma.user.findUniqueOrThrow({ where: { username: 'cora' } });
+    const cora = await prisma.user.findUniqueOrThrow({
+      where: { username: 'cora' },
+    });
 
     await request(app.getHttpServer())
       .post('/api/admin/users/approve')
@@ -2579,10 +2878,14 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
       .send({
         deviceLabel: 'Cora Browser 1',
         devicePublicIdentity: 'cora-device-1',
+        deviceWrappingPublicKey: 'cora-device-1-wrapping-key',
         userDomainPublicKey: 'cora-domain-key',
       })
       .expect(201);
-    const coraCookies = mergeCookies(coraSessionCookies, coraTrustResponse.get('set-cookie'));
+    const coraCookies = mergeCookies(
+      coraSessionCookies,
+      coraTrustResponse.get('set-cookie'),
+    );
 
     const prepare = await request(app.getHttpServer())
       .post('/api/uploads/prepare')
@@ -2609,7 +2912,9 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
       .expect(201);
 
     await request(app.getHttpServer())
-      .post(`/api/retrieval/source-items/${finalize.body.sourceItemId}/attempts/remove-attempt-1`)
+      .post(
+        `/api/retrieval/source-items/${finalize.body.sourceItemId}/attempts/remove-attempt-1`,
+      )
       .set('Cookie', coraSessionCookies)
       .expect(403);
 
@@ -2637,7 +2942,9 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
       })
       .expect(201);
 
-    const dorian = await prisma.user.findUniqueOrThrow({ where: { username: 'dorian' } });
+    const dorian = await prisma.user.findUniqueOrThrow({
+      where: { username: 'dorian' },
+    });
 
     await request(app.getHttpServer())
       .post('/api/admin/users/approve')
@@ -2652,10 +2959,14 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
       .send({
         deviceLabel: 'Dorian Browser 1',
         devicePublicIdentity: 'dorian-device-1',
+        deviceWrappingPublicKey: 'dorian-device-1-wrapping-key',
         userDomainPublicKey: 'dorian-domain-key',
       })
       .expect(201);
-    const dorianCookies = mergeCookies(dorianSessionCookies, dorianTrustResponse.get('set-cookie'));
+    const dorianCookies = mergeCookies(
+      dorianSessionCookies,
+      dorianTrustResponse.get('set-cookie'),
+    );
 
     const recoveryAttempt = await request(app.getHttpServer())
       .post('/api/recovery/attempt')
@@ -2664,6 +2975,7 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
         recoveryCode: dorianTrustResponse.body.recoveryCodes[0],
         deviceLabel: 'Dorian Recovery Browser',
         devicePublicIdentity: 'dorian-recovery-device',
+        deviceWrappingPublicKey: 'dorian-recovery-device-wrapping-key',
       })
       .expect(201);
 
@@ -2679,9 +2991,10 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
       .set('Cookie', dorianSessionCookies)
       .expect(400);
 
-    const clearedRecoverySet = await prisma.recoveryCredentialSet.findUniqueOrThrow({
-      where: { userId: dorian.id },
-    });
+    const clearedRecoverySet =
+      await prisma.recoveryCredentialSet.findUniqueOrThrow({
+        where: { userId: dorian.id },
+      });
     expect(clearedRecoverySet.pendingDisplayBlob).toBeNull();
     expect(clearedRecoverySet.pendingDisplayUntil).toBeNull();
 
@@ -2710,12 +3023,23 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
       .send({
         deviceLabel: 'Dorian Browser 2',
         devicePublicIdentity: 'dorian-device-2',
+        deviceWrappingPublicKey: 'dorian-device-2-wrapping-key',
       })
       .expect(201);
 
     await request(app.getHttpServer())
       .post('/api/trust/pairing/approve')
       .set('Cookie', dorianCookies)
+      .send({
+        pairingSessionId: pairingSession.body.id,
+        approvalPackage: {
+          encryptedUserDomainPrivateKey: 'dorian-device-2-package',
+        },
+      })
+      .expect(201);
+    await request(app.getHttpServer())
+      .post('/api/trust/pairing/finalize')
+      .set('Cookie', dorianSessionCookies)
       .send({ pairingSessionId: pairingSession.body.id })
       .expect(201);
 
@@ -2726,10 +3050,15 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
       },
     });
 
-    const secondDeviceCookies = [...dorianSessionCookies, `liminalis_trusted_device=${secondDevice.id}`];
+    const secondDeviceCookies = [
+      ...dorianSessionCookies,
+      `liminalis_trusted_device=${secondDevice.id}`,
+    ];
 
     await request(app.getHttpServer())
-      .post(`/api/retrieval/source-items/${finalize.body.sourceItemId}/attempts/snapshot-attempt-1`)
+      .post(
+        `/api/retrieval/source-items/${finalize.body.sourceItemId}/attempts/snapshot-attempt-1`,
+      )
       .set('Cookie', secondDeviceCookies)
       .expect(403);
 
@@ -2740,22 +3069,32 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
         recoveryCode: recoveryAttempt.body.recoveryCodes[0],
         deviceLabel: 'Dorian Recovery Browser 2',
         devicePublicIdentity: 'dorian-recovery-device-2',
+        deviceWrappingPublicKey: 'dorian-recovery-device-2-wrapping-key',
       })
       .expect(201);
 
     const recoveryAcknowledge = await request(app.getHttpServer())
-      .post(`/api/recovery/acknowledge/${secondRecoveryAttempt.body.pendingTrustedDeviceId}`)
+      .post(
+        `/api/recovery/acknowledge/${secondRecoveryAttempt.body.pendingTrustedDeviceId}`,
+      )
       .set('Cookie', dorianSessionCookies)
       .expect(201);
-    const recoveryCookies = mergeCookies(dorianSessionCookies, recoveryAcknowledge.get('set-cookie'));
+    const recoveryCookies = mergeCookies(
+      dorianSessionCookies,
+      recoveryAcknowledge.get('set-cookie'),
+    );
 
     await request(app.getHttpServer())
-      .post(`/api/retrieval/source-items/${finalize.body.sourceItemId}/attempts/snapshot-attempt-2`)
+      .post(
+        `/api/retrieval/source-items/${finalize.body.sourceItemId}/attempts/snapshot-attempt-2`,
+      )
       .set('Cookie', recoveryCookies)
       .expect(201)
       .expect((response) => {
         expect(response.body.packageFamilyKind).toBe('OWNER_RECOVERY');
-        expect(response.body.textCiphertextBody).toBe('ciphertext snapshot body');
+        expect(response.body.textCiphertextBody).toBe(
+          'ciphertext snapshot body',
+        );
       });
 
     expect(recoveryAttempt.body.pendingTrustedDeviceId).toBeTruthy();

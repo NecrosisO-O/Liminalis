@@ -9,4 +9,7 @@ export class FirstDeviceBootstrapDto {
 
   @IsString()
   devicePublicIdentity!: string;
+
+  @IsString()
+  deviceWrappingPublicKey!: string;
 }

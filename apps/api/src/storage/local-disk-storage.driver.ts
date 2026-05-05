@@ -109,7 +109,10 @@ export class LocalDiskStorageDriver {
     }
 
     const resolved = resolve(this.storageRoot, storageKey);
-    if (!resolved.startsWith(`${this.storageRoot}/`) && resolved !== this.storageRoot) {
+    if (
+      !resolved.startsWith(`${this.storageRoot}/`) &&
+      resolved !== this.storageRoot
+    ) {
       throw new Error('Invalid storage key');
     }
 

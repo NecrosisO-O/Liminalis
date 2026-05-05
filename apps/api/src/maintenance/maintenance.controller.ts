@@ -31,6 +31,9 @@ export class MaintenanceController {
     @SessionActor() sessionActor: AuthenticatedSession,
     @Body() input: RegrantAccessDto,
   ) {
-    return this.maintenanceService.regrantSnapshotAccess(sessionActor.userId, input);
+    return this.maintenanceService.regrantSnapshotAccess(
+      sessionActor.userId,
+      input,
+    );
   }
 }

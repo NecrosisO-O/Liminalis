@@ -36,7 +36,9 @@ export class SessionsService {
 
     const now = new Date();
     if (session.expiresAt < now || session.idleExpiresAt < now) {
-      await this.prisma.session.delete({ where: { id: session.id } }).catch(() => null);
+      await this.prisma.session
+        .delete({ where: { id: session.id } })
+        .catch(() => null);
       return null;
     }
 
@@ -51,7 +53,10 @@ export class SessionsService {
     return session;
   }
 
-  async resolveTrustedDeviceId(userId: string, trustedDeviceId: string | null | undefined) {
+  async resolveTrustedDeviceId(
+    userId: string,
+    trustedDeviceId: string | null | undefined,
+  ) {
     if (!trustedDeviceId) {
       return null;
     }

@@ -12,7 +12,10 @@ export class ProjectionsController {
 
   @Get('timeline')
   async getTimeline(@SessionActor() sessionActor: AuthenticatedSession) {
-    return this.projectionsService.getActiveTimeline(sessionActor.userId, sessionActor.trustedDeviceId);
+    return this.projectionsService.getActiveTimeline(
+      sessionActor.userId,
+      sessionActor.trustedDeviceId,
+    );
   }
 
   @Get('history')
@@ -26,6 +29,9 @@ export class ProjectionsController {
     @Query('q') q: string | undefined,
     @Query('query') query: string | undefined,
   ) {
-    return this.projectionsService.search(sessionActor.userId, q ?? query ?? '');
+    return this.projectionsService.search(
+      sessionActor.userId,
+      q ?? query ?? '',
+    );
   }
 }

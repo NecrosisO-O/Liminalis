@@ -1,4 +1,8 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { Prisma } from '../../generated/prisma/index.js';
 import {
   ConfidentialityLevel,
@@ -69,7 +73,9 @@ export class SourceItemsService {
     const sourceItem = await this.requireOwnedSourceItem(userId, sourceItemId);
 
     if (sourceItem.state !== SourceItemState.ACTIVE) {
-      throw new BadRequestException('Inactive source items cannot change confidentiality');
+      throw new BadRequestException(
+        'Inactive source items cannot change confidentiality',
+      );
     }
 
     const decision = await this.policyService.evaluateSourceCreation({
@@ -85,7 +91,7 @@ export class SourceItemsService {
         data: {
           confidentialityLevel,
           policyBundleId: decision.policyBundle.id,
-          policySnapshot: decision.snapshotFieldsToPersist as Prisma.InputJsonValue,
+          policySnapshot: decision.snapshotFieldsToPersist,
         },
       });
 
@@ -109,7 +115,9 @@ export class SourceItemsService {
     const sourceItem = await this.requireOwnedSourceItem(userId, sourceItemId);
 
     if (sourceItem.state !== SourceItemState.ACTIVE) {
-      throw new BadRequestException('Inactive source items cannot change validity');
+      throw new BadRequestException(
+        'Inactive source items cannot change validity',
+      );
     }
 
     const validUntil =
@@ -140,7 +148,10 @@ export class SourceItemsService {
     await this.projectSourceAndShares(sourceItemId, shareIds);
   }
 
-  private async refreshOwnedSourceItemAvailability(userId: string, sourceItemId: string) {
+  private async refreshOwnedSourceItemAvailability(
+    userId: string,
+    sourceItemId: string,
+  ) {
     const sourceItem = await this.prisma.sourceItem.findFirst({
       where: { id: sourceItemId, ownerUserId: userId },
       select: { id: true, state: true, validUntil: true },
@@ -188,31 +199,27 @@ export class SourceItemsService {
 
       await tx.extractionAccess.updateMany({
         where: {
-          OR: [
-            { sourceItemId },
-            { shareObjectId: { in: shareIds } },
-          ],
+          OR: [{ sourceItemId }, { shareObjectId: { in: shareIds } }],
         },
         data: { state: ExtractionAccessState.INVALIDATED },
       });
 
       await tx.publicLink.updateMany({
         where: {
-          OR: [
-            { sourceItemId },
-            { shareObjectId: { in: shareIds } },
-          ],
+          OR: [{ sourceItemId }, { shareObjectId: { in: shareIds } }],
         },
         data: { state: PublicLinkState.INVALIDATED },
       });
 
       await tx.retrievalAttempt.updateMany({
         where: {
-          OR: [
-            { sourceItemId },
-            { shareObjectId: { in: shareIds } },
-          ],
-          status: { in: [RetrievalAttemptStatus.ISSUED, RetrievalAttemptStatus.IN_PROGRESS] },
+          OR: [{ sourceItemId }, { shareObjectId: { in: shareIds } }],
+          status: {
+            in: [
+              RetrievalAttemptStatus.ISSUED,
+              RetrievalAttemptStatus.IN_PROGRESS,
+            ],
+          },
         },
         data: { status: RetrievalAttemptStatus.ABANDONED },
       });
@@ -230,7 +237,12 @@ export class SourceItemsService {
       await tx.retrievalAttempt.updateMany({
         where: {
           sourceItemId,
-          status: { in: [RetrievalAttemptStatus.ISSUED, RetrievalAttemptStatus.IN_PROGRESS] },
+          status: {
+            in: [
+              RetrievalAttemptStatus.ISSUED,
+              RetrievalAttemptStatus.IN_PROGRESS,
+            ],
+          },
         },
         data: { status: RetrievalAttemptStatus.ABANDONED },
       });
@@ -239,8 +251,15 @@ export class SourceItemsService {
     return shareIds;
   }
 
-  private async projectSourceAndShares(sourceItemId: string, shareIds: string[]) {
+  private async projectSourceAndShares(
+    sourceItemId: string,
+    shareIds: string[],
+  ) {
     await this.projectionService.projectSourceItem(sourceItemId);
-    await Promise.all(shareIds.map((shareId) => this.projectionService.projectShareObject(shareId)));
+    await Promise.all(
+      shareIds.map((shareId) =>
+        this.projectionService.projectShareObject(shareId),
+      ),
+    );
   }
 }

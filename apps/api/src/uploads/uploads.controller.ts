@@ -1,4 +1,12 @@
-import { Body, Controller, Param, ParseIntPipe, Post, Req, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Param,
+  ParseIntPipe,
+  Post,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 import type { Request } from 'express';
 import { SessionActor } from '../common/decorators/session.decorator';
 import { SessionGuard } from '../common/guards/session.guard';
@@ -19,7 +27,11 @@ export class UploadsController {
     @SessionActor() sessionActor: AuthenticatedSession,
     @Body() input: PrepareUploadDto,
   ) {
-    return this.uploadsService.prepareUpload(sessionActor.userId, sessionActor.trustedDeviceId, input);
+    return this.uploadsService.prepareUpload(
+      sessionActor.userId,
+      sessionActor.trustedDeviceId,
+      input,
+    );
   }
 
   @Post(':uploadSessionId/parts')
@@ -28,7 +40,11 @@ export class UploadsController {
     @Param('uploadSessionId') uploadSessionId: string,
     @Body() input: RegisterUploadPartDto,
   ) {
-    return this.uploadsService.registerUploadPart(sessionActor.userId, uploadSessionId, input);
+    return this.uploadsService.registerUploadPart(
+      sessionActor.userId,
+      uploadSessionId,
+      input,
+    );
   }
 
   @Post(':uploadSessionId/parts/:partNumber/blob')
@@ -52,6 +68,11 @@ export class UploadsController {
     @Param('uploadSessionId') uploadSessionId: string,
     @Body() input: FinalizeUploadDto,
   ) {
-    return this.uploadsService.finalizeUpload(sessionActor.userId, sessionActor.trustedDeviceId, uploadSessionId, input);
+    return this.uploadsService.finalizeUpload(
+      sessionActor.userId,
+      sessionActor.trustedDeviceId,
+      uploadSessionId,
+      input,
+    );
   }
 }

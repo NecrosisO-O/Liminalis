@@ -1,5 +1,8 @@
 import { Injectable } from '@nestjs/common';
-import { AdmissionState, EnablementState } from '../../generated/prisma/index.js';
+import {
+  AdmissionState,
+  EnablementState,
+} from '../../generated/prisma/index.js';
 import { IdentityService } from './identity.service';
 
 @Injectable()
@@ -25,7 +28,9 @@ export class BootstrapService {
       } as const;
     }
 
-    const trustedDevices = user.devices.filter((device) => device.trustState === 'TRUSTED');
+    const trustedDevices = user.devices.filter(
+      (device) => device.trustState === 'TRUSTED',
+    );
     const requiresFirstDeviceBootstrap = trustedDevices.length === 0;
     const currentBrowserTrusted = trustedDeviceId !== null;
 

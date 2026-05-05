@@ -1,5 +1,8 @@
 import { IsBoolean, IsEnum, IsOptional, IsString } from 'class-validator';
-import { ConfidentialityLevel, UploadContentKind } from '../../../generated/prisma/index.js';
+import {
+  ConfidentialityLevel,
+  UploadContentKind,
+} from '../../../generated/prisma/index.js';
 
 export class CreateLiveTransferDto {
   @IsString()

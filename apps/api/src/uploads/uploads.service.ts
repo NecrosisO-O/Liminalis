@@ -34,11 +34,16 @@ export class UploadsService {
     private readonly storageService: StorageService,
   ) {}
 
-  async prepareUpload(userId: string, trustedDeviceId: string | null, input: PrepareUploadDto) {
+  async prepareUpload(
+    userId: string,
+    trustedDeviceId: string | null,
+    input: PrepareUploadDto,
+  ) {
     await this.requireEligibleTrustedUploader(userId);
 
     const confidentialityLevel =
-      input.confidentialityLevel ?? (await this.policyService.getDefaultConfidentialityLevel());
+      input.confidentialityLevel ??
+      (await this.policyService.getDefaultConfidentialityLevel());
 
     this.validateContentShape(input);
 
@@ -57,7 +62,7 @@ export class UploadsService {
         groupStructureKind: input.groupStructureKind,
         confidentialityLevel,
         policyBundleId: decision.policyBundle.id,
-        policySnapshot: decision.snapshotFieldsToPersist as Prisma.InputJsonValue,
+        policySnapshot: decision.snapshotFieldsToPersist,
         requestedValidityMinutes: input.requestedValidityMinutes ?? null,
         resolvedValidityMinutes: decision.resolvedValidityMinutes,
         burnAfterReadEnabled: input.burnAfterReadEnabled ?? false,
@@ -76,19 +81,36 @@ export class UploadsService {
     };
   }
 
-  async registerUploadPart(userId: string, uploadSessionId: string, input: RegisterUploadPartDto) {
-    const session = await this.requireOwnedActiveUploadSession(userId, uploadSessionId);
+  async registerUploadPart(
+    userId: string,
+    uploadSessionId: string,
+    input: RegisterUploadPartDto,
+  ) {
+    const session = await this.requireOwnedActiveUploadSession(
+      userId,
+      uploadSessionId,
+    );
 
     if (session.contentKind === UploadContentKind.SELF_SPACE_TEXT) {
       throw new BadRequestException('Text uploads do not accept file parts');
     }
 
     if (!input.storageKey.startsWith(`uploads/${userId}/${uploadSessionId}/`)) {
-      throw new BadRequestException('Upload part storage key does not belong to this session');
+      throw new BadRequestException(
+        'Upload part storage key does not belong to this session',
+      );
     }
 
-    await this.storageService.requireExistingObject(input.storageKey, input.byteSize);
-    await this.requireStorageQuotaForPart(userId, uploadSessionId, input.partNumber, input.byteSize);
+    await this.storageService.requireExistingObject(
+      input.storageKey,
+      input.byteSize,
+    );
+    await this.requireStorageQuotaForPart(
+      userId,
+      uploadSessionId,
+      input.partNumber,
+      input.byteSize,
+    );
 
     await this.prisma.uploadPart.upsert({
       where: {
@@ -129,7 +151,10 @@ export class UploadsService {
       throw new BadRequestException('Part number must be a positive integer');
     }
 
-    const session = await this.requireOwnedActiveUploadSession(userId, uploadSessionId);
+    const session = await this.requireOwnedActiveUploadSession(
+      userId,
+      uploadSessionId,
+    );
 
     if (session.contentKind === UploadContentKind.SELF_SPACE_TEXT) {
       throw new BadRequestException('Text uploads do not accept file parts');
@@ -153,7 +178,12 @@ export class UploadsService {
     });
 
     try {
-      await this.requireStorageQuotaForPart(userId, uploadSessionId, partNumber, stored.byteSize);
+      await this.requireStorageQuotaForPart(
+        userId,
+        uploadSessionId,
+        partNumber,
+        stored.byteSize,
+      );
     } catch (error) {
       await this.storageService.remove(stored.storageKey);
       throw error;
@@ -198,27 +228,49 @@ export class UploadsService {
     };
   }
 
-  async finalizeUpload(userId: string, trustedDeviceId: string | null, uploadSessionId: string, input: FinalizeUploadDto) {
-    const session = await this.requireOwnedActiveUploadSession(userId, uploadSessionId);
+  async finalizeUpload(
+    userId: string,
+    trustedDeviceId: string | null,
+    uploadSessionId: string,
+    input: FinalizeUploadDto,
+  ) {
+    const session = await this.requireOwnedActiveUploadSession(
+      userId,
+      uploadSessionId,
+    );
     const policySnapshot = session.policySnapshot as Record<string, unknown>;
 
     if (session.contentKind === UploadContentKind.SELF_SPACE_TEXT) {
       if (!input.textCiphertextBody) {
-        throw new BadRequestException('Text source items require ciphertext body at finalization');
+        throw new BadRequestException(
+          'Text source items require ciphertext body at finalization',
+        );
       }
     } else {
-      const partCount = await this.prisma.uploadPart.count({ where: { uploadSessionId } });
+      const partCount = await this.prisma.uploadPart.count({
+        where: { uploadSessionId },
+      });
       if (partCount === 0) {
-        throw new BadRequestException('At least one upload part is required before finalization');
+        throw new BadRequestException(
+          'At least one upload part is required before finalization',
+        );
       }
     }
 
-    if (session.contentKind === UploadContentKind.GROUPED_CONTENT && !input.manifest) {
-      throw new BadRequestException('Grouped content requires a manifest at finalization');
+    if (
+      session.contentKind === UploadContentKind.GROUPED_CONTENT &&
+      !input.manifest &&
+      !input.encryptedMetadata
+    ) {
+      throw new BadRequestException(
+        'Grouped content requires encrypted metadata at finalization',
+      );
     }
 
     const sourceItem = await this.prisma.$transaction(async (tx) => {
-      const partCount = await tx.uploadPart.count({ where: { uploadSessionId } });
+      const partCount = await tx.uploadPart.count({
+        where: { uploadSessionId },
+      });
       const parts = await tx.uploadPart.findMany({
         where: { uploadSessionId },
         orderBy: { partNumber: 'asc' },
@@ -230,6 +282,12 @@ export class UploadsService {
         },
       });
       const storageBytes = parts.reduce((sum, part) => sum + part.byteSize, 0);
+      const cryptoMetadata = input.contentCryptoMetadata
+        ? (input.contentCryptoMetadata as Prisma.InputJsonValue)
+        : Prisma.JsonNull;
+      const encryptedMetadata = input.encryptedMetadata
+        ? (input.encryptedMetadata as Prisma.InputJsonValue)
+        : Prisma.JsonNull;
       const storageBinding =
         session.contentKind === UploadContentKind.SELF_SPACE_TEXT
           ? Prisma.JsonNull
@@ -237,36 +295,51 @@ export class UploadsService {
               uploadSessionId,
               partCount,
               parts,
+              crypto: input.contentCryptoMetadata ?? null,
             } as Prisma.InputJsonValue);
+      const genericDisplayName = this.genericDisplayName(session.contentKind);
 
       const created = await tx.sourceItem.create({
         data: {
           ownerUserId: userId,
-          createdByTrustedDeviceId: session.uploaderTrustedDeviceId ?? trustedDeviceId,
+          createdByTrustedDeviceId:
+            session.uploaderTrustedDeviceId ?? trustedDeviceId,
           contentKind: session.contentKind,
           groupStructureKind: session.groupStructureKind,
           confidentialityLevel: session.confidentialityLevel,
           state: SourceItemState.ACTIVE,
           policyBundleId: session.policyBundleId,
           policySnapshot: session.policySnapshot as Prisma.InputJsonValue,
-          displayName: input.displayName ?? null,
+          displayName: input.cryptoVersion
+            ? genericDisplayName
+            : (input.displayName ?? null),
           textCiphertextBody: input.textCiphertextBody ?? null,
+          cryptoVersion: input.cryptoVersion ?? null,
+          encryptedMetadata,
+          contentCryptoMetadata: cryptoMetadata,
           storageBinding,
           storageBytes,
           validUntil:
-            session.resolvedValidityMinutes && session.resolvedValidityMinutes > 0
+            session.resolvedValidityMinutes &&
+            session.resolvedValidityMinutes > 0
               ? new Date(Date.now() + session.resolvedValidityMinutes * 60_000)
               : null,
           burnAfterReadEnabled: session.burnAfterReadEnabled,
         },
       });
 
-      if (session.contentKind === UploadContentKind.GROUPED_CONTENT && input.manifest) {
+      if (
+        session.contentKind === UploadContentKind.GROUPED_CONTENT &&
+        (input.manifest || input.encryptedMetadata)
+      ) {
         await tx.groupManifest.create({
           data: {
             sourceItemId: created.id,
             structureKind: session.groupStructureKind ?? 'MULTI_FILE',
-            manifestJson: input.manifest as Prisma.InputJsonValue,
+            manifestJson: (input.manifest ?? {
+              encryptedManifest: true,
+              metadataEnvelope: input.encryptedMetadata ?? null,
+            }) as Prisma.InputJsonValue,
           },
         });
       }
@@ -279,11 +352,13 @@ export class UploadsService {
           kind: PackageFamilyKind.OWNER_ORDINARY,
           familyVersion: 1,
           issueTrigger: 'source_created',
-          referenceBlob: {
-            packageFamily: 'owner_ordinary',
+          referenceBlob: (input.ownerKeyEnvelope ?? {
+            packageFamily: 'legacy_owner_ordinary',
             sourceItemId: created.id,
             contentKind: created.contentKind,
-          },
+            encryptedMetadata: input.encryptedMetadata ?? null,
+            contentCryptoMetadata: input.contentCryptoMetadata ?? null,
+          }) as Prisma.InputJsonValue,
         },
       });
 
@@ -295,10 +370,12 @@ export class UploadsService {
           kind: PackageFamilyKind.OWNER_RECOVERY,
           familyVersion: 1,
           issueTrigger: 'source_created',
-          referenceBlob: {
-            packageFamily: 'owner_recovery',
+          referenceBlob: (input.ownerKeyEnvelope ?? {
+            packageFamily: 'legacy_owner_recovery',
             sourceItemId: created.id,
-          },
+            encryptedMetadata: input.encryptedMetadata ?? null,
+            contentCryptoMetadata: input.contentCryptoMetadata ?? null,
+          }) as Prisma.InputJsonValue,
         },
       });
 
@@ -308,22 +385,26 @@ export class UploadsService {
           protectedObjectType: ProtectedObjectType.SOURCE_ITEM,
           sourceItemId: created.id,
           status: AccessGrantStatus.CURRENT,
-          grantSubjectMode: Boolean(policySnapshot.allowFutureTrustedDevices)
+          grantSubjectMode: policySnapshot.allowFutureTrustedDevices
             ? AccessGrantSubjectMode.OWNER_DOMAIN
             : AccessGrantSubjectMode.OWNER_DEVICE_SNAPSHOT,
           subjectUserId: userId,
-          snapshotDeviceIds: Boolean(policySnapshot.allowFutureTrustedDevices)
+          snapshotDeviceIds: policySnapshot.allowFutureTrustedDevices
             ? []
-            : (await tx.trustedDevice.findMany({
-                where: { userId, trustState: 'TRUSTED' },
-                orderBy: { createdAt: 'asc' },
-                select: { id: true },
-              })).map((device) => device.id),
+            : (
+                await tx.trustedDevice.findMany({
+                  where: { userId, trustState: 'TRUSTED' },
+                  orderBy: { createdAt: 'asc' },
+                  select: { id: true },
+                })
+              ).map((device) => device.id),
           ordinaryPackageFamilyId: ordinaryPackageFamily.id,
           recoveryEnabled: true,
           recoveryPackageFamilyId: recoveryPackageFamily.id,
           confidentialityLevel: session.confidentialityLevel,
-          allowFutureTrustedDevices: Boolean(policySnapshot.allowFutureTrustedDevices),
+          allowFutureTrustedDevices: Boolean(
+            policySnapshot.allowFutureTrustedDevices,
+          ),
           allowRecipientMultiDeviceAccess: false,
           issueTrigger: 'source_created',
         },
@@ -351,16 +432,41 @@ export class UploadsService {
   }
 
   private validateContentShape(input: PrepareUploadDto) {
-    if (input.contentKind === UploadContentKind.GROUPED_CONTENT && !input.groupStructureKind) {
-      throw new BadRequestException('Grouped content requires a group structure kind');
+    if (
+      input.contentKind === UploadContentKind.GROUPED_CONTENT &&
+      !input.groupStructureKind
+    ) {
+      throw new BadRequestException(
+        'Grouped content requires a group structure kind',
+      );
     }
 
-    if (input.contentKind !== UploadContentKind.GROUPED_CONTENT && input.groupStructureKind) {
-      throw new BadRequestException('Group structure kind is only valid for grouped content');
+    if (
+      input.contentKind !== UploadContentKind.GROUPED_CONTENT &&
+      input.groupStructureKind
+    ) {
+      throw new BadRequestException(
+        'Group structure kind is only valid for grouped content',
+      );
     }
   }
 
-  private async requireOwnedActiveUploadSession(userId: string, uploadSessionId: string) {
+  private genericDisplayName(contentKind: UploadContentKind) {
+    if (contentKind === UploadContentKind.SELF_SPACE_TEXT) {
+      return 'Encrypted text';
+    }
+
+    if (contentKind === UploadContentKind.GROUPED_CONTENT) {
+      return 'Grouped encrypted content';
+    }
+
+    return 'Encrypted file';
+  }
+
+  private async requireOwnedActiveUploadSession(
+    userId: string,
+    uploadSessionId: string,
+  ) {
     const session = await this.prisma.uploadSession.findUnique({
       where: { id: uploadSessionId },
     });
@@ -405,7 +511,9 @@ export class UploadsService {
     });
 
     if (!trustedDevice) {
-      throw new ForbiddenException('Trusted device required for source creation');
+      throw new ForbiddenException(
+        'Trusted device required for source creation',
+      );
     }
 
     return user;
@@ -444,7 +552,10 @@ export class UploadsService {
       }),
     ]);
 
-    const quotaBytes = user?.storageQuotaBytes ?? settings?.defaultStorageQuotaBytes ?? 1_073_741_824;
+    const quotaBytes =
+      user?.storageQuotaBytes ??
+      settings?.defaultStorageQuotaBytes ??
+      1_073_741_824;
     const currentBytes = usage._sum.byteSize ?? 0;
     const replacedBytes = existingPart?.byteSize ?? 0;
     const projectedBytes = currentBytes - replacedBytes + incomingByteSize;

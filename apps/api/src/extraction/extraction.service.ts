@@ -44,7 +44,9 @@ export class ExtractionService {
     }
 
     if (sourceItem.state !== SourceItemState.ACTIVE) {
-      throw new BadRequestException('Source item is not eligible for extraction');
+      throw new BadRequestException(
+        'Source item is not eligible for extraction',
+      );
     }
 
     if (sourceItem.validUntil && sourceItem.validUntil < new Date()) {
@@ -56,7 +58,9 @@ export class ExtractionService {
     }
 
     if (sourceItem.contentKind === UploadContentKind.SELF_SPACE_TEXT) {
-      throw new BadRequestException('Text items cannot be extracted outward in v1');
+      throw new BadRequestException(
+        'Text items cannot be extracted outward in v1',
+      );
     }
 
     const decision = await this.policyService.evaluateExtractionCreation({
@@ -65,7 +69,10 @@ export class ExtractionService {
       requestedRetrievalCount: input.requestedRetrievalCount ?? null,
     });
 
-    const password = this.resolvePassword(input.password, decision.requireSystemGeneratedPassword);
+    const password = this.resolvePassword(
+      input.password,
+      decision.requireSystemGeneratedPassword,
+    );
     const passwordHash = await argon2.hash(password);
     const candidateValidUntil = decision.resolvedValidityMinutes
       ? new Date(Date.now() + decision.resolvedValidityMinutes * 60_000)
@@ -76,14 +83,18 @@ export class ExtractionService {
         data: {
           sourceItemId: sourceItem.id,
           policyBundleId: decision.policyBundle.id,
-          policySnapshot: decision.snapshotFieldsToPersist as Prisma.InputJsonValue,
+          policySnapshot: decision.snapshotFieldsToPersist,
           state: ExtractionAccessState.ACTIVE,
           entryToken: crypto.randomUUID(),
           passwordHash,
-          requireSystemGeneratedPassword: decision.requireSystemGeneratedPassword,
+          requireSystemGeneratedPassword:
+            decision.requireSystemGeneratedPassword,
           configuredRetrievalCount: decision.resolvedRetrievalCount,
           remainingRetrievalCount: decision.resolvedRetrievalCount,
-          validUntil: this.clampValidUntil(candidateValidUntil, sourceItem.validUntil),
+          validUntil: this.clampValidUntil(
+            candidateValidUntil,
+            sourceItem.validUntil,
+          ),
         },
       });
 
@@ -96,11 +107,11 @@ export class ExtractionService {
           kind: PackageFamilyKind.PASSWORD_EXTRACTION,
           familyVersion: 1,
           issueTrigger: 'extraction_created',
-          referenceBlob: {
-            packageFamily: 'password_extraction',
+          referenceBlob: (input.packageReference ?? {
+            packageFamily: 'legacy_password_extraction',
             sourceItemId: sourceItem.id,
             extractionAccessId: created.id,
-          },
+          }) as Prisma.InputJsonValue,
         },
       });
 
@@ -114,6 +125,7 @@ export class ExtractionService {
       remainingRetrievalCount: extraction.remainingRetrievalCount,
       validUntil: extraction.validUntil,
       requireSystemGeneratedPassword: extraction.requireSystemGeneratedPassword,
+      packageReference: input.packageReference ?? null,
     };
   }
 
@@ -132,7 +144,8 @@ export class ExtractionService {
     return {
       extractionAccessId: refreshed.id,
       state: refreshed.state,
-      requiresCaptcha: refreshed.state === ExtractionAccessState.CHALLENGE_REQUIRED,
+      requiresCaptcha:
+        refreshed.state === ExtractionAccessState.CHALLENGE_REQUIRED,
       remainingRetrievalCount: refreshed.remainingRetrievalCount,
       validUntil: refreshed.validUntil,
       metadata: null,
@@ -155,7 +168,10 @@ export class ExtractionService {
 
     const refreshed = await this.refreshExtractionState(extraction.id);
 
-    if (refreshed.state === ExtractionAccessState.CHALLENGE_REQUIRED && !input.captchaSatisfied) {
+    if (
+      refreshed.state === ExtractionAccessState.CHALLENGE_REQUIRED &&
+      !input.captchaSatisfied
+    ) {
       throw new BadRequestException('Captcha required');
     }
 
@@ -166,7 +182,9 @@ export class ExtractionService {
       throw new BadRequestException('Extraction access is not retrievable');
     }
 
-    const passwordOk = await argon2.verify(refreshed.passwordHash, input.password).catch(() => false);
+    const passwordOk = await argon2
+      .verify(refreshed.passwordHash, input.password)
+      .catch(() => false);
     if (!passwordOk) {
       const failedAttempts = refreshed.failedPasswordAttempts + 1;
 
@@ -219,7 +237,8 @@ export class ExtractionService {
           protectedObjectType: ProtectedObjectType.SOURCE_ITEM,
           protectedObjectId: refreshed.sourceItemId,
           packageFamilyVersion: packageFamily.familyVersion,
-          wrappedPayloadReference: packageFamily.referenceBlob as Prisma.InputJsonValue,
+          wrappedPayloadReference:
+            packageFamily.referenceBlob as Prisma.InputJsonValue,
           expiresAt: new Date(Date.now() + 10 * 60_000),
           retrievalAttempt: {
             connect: { id: attempt.id },
@@ -244,10 +263,14 @@ export class ExtractionService {
       wrappedPayloadReference: packageReference.wrappedPayloadReference,
       sourceItemId: refreshed.sourceItemId,
       storageBinding: refreshed.sourceItem.storageBinding,
+      encryptedMetadata: refreshed.sourceItem.encryptedMetadata,
+      contentCryptoMetadata: refreshed.sourceItem.contentCryptoMetadata,
+      textCiphertextBody: refreshed.sourceItem.textCiphertextBody,
       contentKind: refreshed.sourceItem.contentKind,
       metadata: {
         displayTitle:
-          refreshed.sourceItem.displayName ?? this.fallbackTitle(refreshed.sourceItem.contentKind),
+          refreshed.sourceItem.displayName ??
+          this.fallbackTitle(refreshed.sourceItem.contentKind),
         senderUsername: refreshed.sourceItem.ownerUser.username,
         confidentialityLevel: refreshed.sourceItem.confidentialityLevel,
         contentKind: refreshed.sourceItem.contentKind,
@@ -257,7 +280,10 @@ export class ExtractionService {
     };
   }
 
-  async completeExtractionRetrieval(retrievalAttemptId: string, success: boolean) {
+  async completeExtractionRetrieval(
+    retrievalAttemptId: string,
+    success: boolean,
+  ) {
     const attempt = await this.prisma.retrievalAttempt.findUnique({
       where: { id: retrievalAttemptId },
       include: {
@@ -265,7 +291,11 @@ export class ExtractionService {
       },
     });
 
-    if (!attempt || attempt.retrievalFamily !== RetrievalFamily.EXTRACTION_ACCESS || !attempt.extractionAccess) {
+    if (
+      !attempt ||
+      attempt.retrievalFamily !== RetrievalFamily.EXTRACTION_ACCESS ||
+      !attempt.extractionAccess
+    ) {
       throw new NotFoundException('Retrieval attempt not found');
     }
 
@@ -303,8 +333,14 @@ export class ExtractionService {
         },
       });
 
-      const remaining = Math.max(0, extractionAccess.remainingRetrievalCount - 1);
-      const extractionState = remaining === 0 ? ExtractionAccessState.EXHAUSTED : ExtractionAccessState.ACTIVE;
+      const remaining = Math.max(
+        0,
+        extractionAccess.remainingRetrievalCount - 1,
+      );
+      const extractionState =
+        remaining === 0
+          ? ExtractionAccessState.EXHAUSTED
+          : ExtractionAccessState.ACTIVE;
 
       const updatedExtraction = await tx.extractionAccess.update({
         where: { id: extractionAccess.id },
@@ -321,7 +357,8 @@ export class ExtractionService {
       retrievalAttemptId: completed.updatedAttempt.id,
       status: completed.updatedAttempt.status,
       extractionState: completed.updatedExtraction.state,
-      remainingRetrievalCount: completed.updatedExtraction.remainingRetrievalCount,
+      remainingRetrievalCount:
+        completed.updatedExtraction.remainingRetrievalCount,
     };
   }
 
@@ -349,7 +386,9 @@ export class ExtractionService {
       throw new BadRequestException('Retrieval attempt is not downloadable');
     }
 
-    const refreshed = await this.refreshExtractionState(attempt.extractionAccess.id);
+    const refreshed = await this.refreshExtractionState(
+      attempt.extractionAccess.id,
+    );
     if (
       refreshed.state !== ExtractionAccessState.ACTIVE &&
       refreshed.state !== ExtractionAccessState.CHALLENGE_REQUIRED
@@ -376,16 +415,22 @@ export class ExtractionService {
 
     const parts = this.extractStorageParts(sourceItem.storageBinding);
     const contentLength = parts.reduce((sum, part) => sum + part.byteSize, 0);
-    const stream = Readable.from(this.readParts(parts.map((part) => part.storageKey)));
+    const stream = Readable.from(
+      this.readParts(parts.map((part) => part.storageKey)),
+    );
 
     return {
       stream,
       contentLength,
-      fileName: sourceItem.displayName ?? this.fallbackTitle(sourceItem.contentKind),
+      fileName:
+        sourceItem.displayName ?? this.fallbackTitle(sourceItem.contentKind),
     };
   }
 
-  private resolvePassword(inputPassword: string | undefined, requireSystemGeneratedPassword: boolean) {
+  private resolvePassword(
+    inputPassword: string | undefined,
+    requireSystemGeneratedPassword: boolean,
+  ) {
     if (requireSystemGeneratedPassword || !inputPassword) {
       return this.generateSystemPassword();
     }
@@ -416,7 +461,10 @@ export class ExtractionService {
 
     if (extraction.sourceItem.state !== SourceItemState.ACTIVE) {
       nextState = ExtractionAccessState.INVALIDATED;
-    } else if (extraction.sourceItem.validUntil && extraction.sourceItem.validUntil < new Date()) {
+    } else if (
+      extraction.sourceItem.validUntil &&
+      extraction.sourceItem.validUntil < new Date()
+    ) {
       nextState = ExtractionAccessState.INVALIDATED;
     } else if (extraction.validUntil && extraction.validUntil < new Date()) {
       nextState = ExtractionAccessState.EXPIRED;
@@ -443,7 +491,10 @@ export class ExtractionService {
     return extraction;
   }
 
-  private clampValidUntil(candidate: Date | null, sourceValidUntil: Date | null) {
+  private clampValidUntil(
+    candidate: Date | null,
+    sourceValidUntil: Date | null,
+  ) {
     if (!candidate) {
       return sourceValidUntil;
     }
@@ -464,7 +515,11 @@ export class ExtractionService {
   }
 
   private extractStorageParts(storageBinding: unknown) {
-    if (!storageBinding || typeof storageBinding !== 'object' || !('parts' in storageBinding)) {
+    if (
+      !storageBinding ||
+      typeof storageBinding !== 'object' ||
+      !('parts' in storageBinding)
+    ) {
       throw new BadRequestException('Source item has no stored file bytes');
     }
 

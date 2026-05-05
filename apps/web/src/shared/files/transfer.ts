@@ -1,5 +1,13 @@
 import type { InputHTMLAttributes } from 'react'
 import { api, type ConfidentialityLevel, type FinalizeUploadResult, type GroupStructureKind } from '../api/client.ts'
+import {
+  createEncryptedSourcePackage,
+  decryptFilePayload,
+  decryptSourceMetadata,
+  decryptTextPayload,
+  e2eeVersion,
+  type SourceMetadata,
+} from '../crypto/envelope.ts'
 
 export const largeFileThresholdBytes = 90_000_000
 export const uploadChunkSizeBytes = 8 * 1024 * 1024
@@ -507,12 +515,26 @@ export async function uploadTextItem(text: string, options: UploadOptions) {
     confidentialityLevel: options.confidentialityLevel,
     requestedValidityMinutes: options.requestedValidityMinutes,
     burnAfterReadEnabled: options.burnAfterReadEnabled,
-    displayName: options.displayName,
+    displayName: 'Encrypted text',
+    cryptoVersion: e2eeVersion,
+  })
+  const encrypted = await createEncryptedSourcePackage({
+    sourceSubject: prepared.uploadSessionId,
+    text,
+    metadata: {
+      displayName: options.displayName ?? (text.trim().slice(0, 64) || 'Text'),
+      visibleSummary: text,
+      originalBytes: new TextEncoder().encode(text).byteLength,
+    },
   })
 
   return api.finalizeUpload(prepared.uploadSessionId, {
-    displayName: options.displayName ?? (text.trim().slice(0, 64) || 'Text'),
-    textCiphertextBody: text,
+    displayName: 'Encrypted text',
+    textCiphertextBody: encrypted.textCiphertextBody,
+    cryptoVersion: e2eeVersion,
+    encryptedMetadata: encrypted.encryptedMetadata,
+    contentCryptoMetadata: encrypted.contentCryptoMetadata,
+    ownerKeyEnvelope: encrypted.ownerKeyEnvelope,
   })
 }
 
@@ -534,27 +556,45 @@ export async function uploadFileSelection(
     confidentialityLevel: options.confidentialityLevel,
     requestedValidityMinutes: options.requestedValidityMinutes,
     burnAfterReadEnabled: options.burnAfterReadEnabled,
+    displayName: payload.contentKind === 'GROUPED_CONTENT' ? 'Grouped encrypted content' : 'Encrypted file',
+    cryptoVersion: e2eeVersion,
+  })
+  const metadata: SourceMetadata = {
     displayName: options.displayName ?? payload.displayName,
     manifest: payload.manifest,
+    originalFileCount: payload.originalFileCount,
+    originalBytes: payload.originalBytes,
+    contentType: payload.blob.type || 'application/octet-stream',
+  }
+  const encrypted = await createEncryptedSourcePackage({
+    sourceSubject: prepared.uploadSessionId,
+    blob: payload.blob,
+    metadata,
   })
+  if (!encrypted.encryptedBlob) {
+    throw new Error('Encrypted file payload was not produced.')
+  }
 
-  const uploadedBytes = await uploadBlobParts(prepared.uploadSessionId, payload.blob, payload.displayName, options.onProgress)
+  const uploadedBytes = await uploadBlobParts(prepared.uploadSessionId, encrypted.encryptedBlob, payload.displayName, options.onProgress)
 
   options.onProgress?.({
     stage: 'finalizing',
     uploadedBytes,
-    totalBytes: payload.blob.size,
+    totalBytes: encrypted.encryptedBlob.size,
   })
 
   const finalized = await api.finalizeUpload(prepared.uploadSessionId, {
-    displayName: options.displayName ?? payload.displayName,
-    manifest: payload.manifest,
+    displayName: payload.contentKind === 'GROUPED_CONTENT' ? 'Grouped encrypted content' : 'Encrypted file',
+    cryptoVersion: e2eeVersion,
+    encryptedMetadata: encrypted.encryptedMetadata,
+    contentCryptoMetadata: encrypted.contentCryptoMetadata,
+    ownerKeyEnvelope: encrypted.ownerKeyEnvelope,
   })
 
   options.onProgress?.({
     stage: 'complete',
     uploadedBytes,
-    totalBytes: payload.blob.size,
+    totalBytes: encrypted.encryptedBlob.size,
   })
 
   return finalized
@@ -632,8 +672,24 @@ export async function downloadSourceItem(sourceItemId: string, fallbackName: str
   const attempt = await api.issueSourceItemRetrieval(sourceItemId, makeAttemptScope('source-download'))
 
   try {
-    const response = await api.downloadRetrieval(attempt.retrievalAttemptId)
-    await saveResponseAsDownload(response, fallbackName)
+    if (attempt.contentKind === 'SELF_SPACE_TEXT' && attempt.textCiphertextBody) {
+      const text = await decryptTextPayload(attempt.textCiphertextBody, attempt.wrappedPayloadReference)
+      saveBlobAsDownload(new Blob([text], { type: 'text/plain;charset=utf-8' }), `${fallbackName || 'liminalis-text'}.txt`)
+    } else {
+      const metadata = attempt.encryptedMetadata
+        ? await decryptSourceMetadata({
+            encryptedMetadata: attempt.encryptedMetadata,
+            wrappedPayloadReference: attempt.wrappedPayloadReference,
+          }).catch(() => null)
+        : null
+      const response = await api.downloadRetrieval(attempt.retrievalAttemptId)
+      const decrypted = await decryptFilePayload(await response.blob(), {
+        wrappedPayloadReference: attempt.wrappedPayloadReference,
+        contentCryptoMetadata: attempt.contentCryptoMetadata,
+        encryptedMetadata: attempt.encryptedMetadata,
+      })
+      saveBlobAsDownload(decrypted, metadata?.displayName ?? fallbackName)
+    }
     await api.completeRetrieval(attempt.retrievalAttemptId, true)
     return attempt
   } catch (error) {
@@ -647,7 +703,18 @@ export async function downloadShareObject(shareObjectId: string, fallbackName: s
 
   try {
     const response = await api.downloadRetrieval(attempt.retrievalAttemptId)
-    await saveResponseAsDownload(response, fallbackName)
+    const metadata = attempt.encryptedMetadata
+      ? await decryptSourceMetadata({
+          encryptedMetadata: attempt.encryptedMetadata,
+          wrappedPayloadReference: attempt.wrappedPayloadReference,
+        }).catch(() => null)
+      : null
+    const decrypted = await decryptFilePayload(await response.blob(), {
+      wrappedPayloadReference: attempt.wrappedPayloadReference,
+      contentCryptoMetadata: attempt.contentCryptoMetadata,
+      encryptedMetadata: attempt.encryptedMetadata,
+    })
+    saveBlobAsDownload(decrypted, metadata?.displayName ?? fallbackName)
     await api.completeShareRetrieval(attempt.retrievalAttemptId, true)
     return attempt
   } catch (error) {

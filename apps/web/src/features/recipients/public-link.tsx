@@ -1,8 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
 import { useParams } from 'react-router-dom'
-import { api } from '../../shared/api/client.ts'
+import { api, decodeResponseJsonHeader } from '../../shared/api/client.ts'
+import {
+  decryptFilePayloadWithKey,
+  decryptSourceMetadataWithKey,
+  sourceKeyFromPublicLinkEnvelope,
+  type SourceKeyEnvelope,
+} from '../../shared/crypto/envelope.ts'
 import { StatusView } from '../../shared/ui/components.tsx'
-import { saveResponseAsDownload } from '../../shared/files/transfer.ts'
+import { saveBlobAsDownload } from '../../shared/files/transfer.ts'
 
 type DownloadState = 'starting' | 'done' | 'invalid'
 type TokenDownload = { token: string; promise: Promise<void> }
@@ -15,8 +21,25 @@ function ensureDownload(current: TokenDownload | null, token: string) {
   return {
     token,
     promise: (async () => {
+      const secret = new URLSearchParams(window.location.hash.replace(/^#/u, '')).get('k')
+      if (!secret) {
+        throw new Error('Public link key is missing.')
+      }
+
       const response = await api.downloadPublicLink(token)
-      await saveResponseAsDownload(response, 'liminalis-download.bin')
+      const packageReference = decodeResponseJsonHeader(response, 'x-liminalis-package') as SourceKeyEnvelope | null
+      const encryptedMetadata = decodeResponseJsonHeader(response, 'x-liminalis-encrypted-metadata')
+      const contentCryptoMetadata = decodeResponseJsonHeader(response, 'x-liminalis-content-crypto')
+      if (!packageReference) {
+        throw new Error('Public link package is missing.')
+      }
+
+      const sourceKey = await sourceKeyFromPublicLinkEnvelope(packageReference, secret)
+      const metadata = encryptedMetadata
+        ? await decryptSourceMetadataWithKey(encryptedMetadata, sourceKey).catch(() => null)
+        : null
+      const decrypted = await decryptFilePayloadWithKey(await response.blob(), contentCryptoMetadata, sourceKey)
+      saveBlobAsDownload(decrypted, metadata?.displayName ?? 'liminalis-download.bin')
     })(),
   }
 }

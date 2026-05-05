@@ -2,6 +2,7 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import { Link, useParams } from 'react-router-dom'
 import { useState } from 'react'
 import { api } from '../../shared/api/client.ts'
+import { createE2eeExtraction, createE2eePublicLink, createE2eeUserShare } from '../../shared/files/sharing.ts'
 import { Button, Field, StatusView, TextInput, Toast } from '../../shared/ui/components.tsx'
 
 export function SharePage() {
@@ -18,18 +19,18 @@ export function SharePage() {
   })
 
   const createUserShare = useMutation({
-    mutationFn: () => api.createShare({ sourceItemId, recipientUsername: recipient, requestedValidityMinutes: 60 }),
+    mutationFn: () => createE2eeUserShare({ sourceItemId, recipientUsername: recipient, requestedValidityMinutes: 60 }),
     onSuccess: (data) => setResult(`User share created for recipient: ${data.shareObjectId}`),
   })
 
   const createExtraction = useMutation({
-    mutationFn: () => api.createExtraction({ sourceItemId, password: password.trim() || undefined, requestedValidityMinutes: 60, requestedRetrievalCount: 1 }),
+    mutationFn: () => createE2eeExtraction({ sourceItemId, password: password.trim() || undefined, requestedValidityMinutes: 60, requestedRetrievalCount: 1 }),
     onSuccess: (data) => setResult(`Password extraction ready: /x/${data.entryToken} · password ${data.password}`),
   })
 
   const createPublicLink = useMutation({
-    mutationFn: () => api.createPublicLink({ sourceItemId, requestedValidityMinutes: 60, requestedDownloadCount: 1 }),
-    onSuccess: (data) => setResult(`Public link ready: /p/${data.linkToken}`),
+    mutationFn: () => createE2eePublicLink({ sourceItemId, requestedValidityMinutes: 60, requestedDownloadCount: 1 }),
+    onSuccess: (data) => setResult(`Public link ready: ${data.publicUrl}`),
   })
 
   if (item.isLoading) {

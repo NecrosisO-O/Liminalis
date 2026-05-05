@@ -1,4 +1,4 @@
-import { IsString, Length } from 'class-validator';
+import { IsOptional, IsString, Length } from 'class-validator';
 
 export class RecoveryAttemptDto {
   @IsString()
@@ -10,4 +10,11 @@ export class RecoveryAttemptDto {
 
   @IsString()
   devicePublicIdentity!: string;
+
+  @IsString()
+  deviceWrappingPublicKey!: string;
+
+  @IsOptional()
+  @IsString()
+  userDomainPublicKey?: string;
 }

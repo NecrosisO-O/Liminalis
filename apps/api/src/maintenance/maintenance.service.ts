@@ -23,7 +23,9 @@ export class MaintenanceService {
       throw new ForbiddenException('Trusted device required');
     }
 
-    const device = await this.prisma.trustedDevice.findUnique({ where: { id: trustedDeviceId } });
+    const device = await this.prisma.trustedDevice.findUnique({
+      where: { id: trustedDeviceId },
+    });
     if (!device || device.userId !== userId) {
       throw new NotFoundException('Trusted device not found');
     }
@@ -49,17 +51,31 @@ export class MaintenanceService {
     }
 
     if (input.protectedObjectType === ProtectedObjectType.SOURCE_ITEM) {
-      return this.regrantSourceItem(userId, input.protectedObjectId, trustedDevices.map((device) => device.id));
+      return this.regrantSourceItem(
+        userId,
+        input.protectedObjectId,
+        trustedDevices.map((device) => device.id),
+      );
     }
 
     if (input.protectedObjectType === ProtectedObjectType.SHARE_OBJECT) {
-      return this.regrantShareObject(userId, input.protectedObjectId, trustedDevices.map((device) => device.id));
+      return this.regrantShareObject(
+        userId,
+        input.protectedObjectId,
+        trustedDevices.map((device) => device.id),
+      );
     }
 
-    throw new BadRequestException('Unsupported protected object type for regrant');
+    throw new BadRequestException(
+      'Unsupported protected object type for regrant',
+    );
   }
 
-  private async regrantSourceItem(userId: string, sourceItemId: string, trustedDeviceIds: string[]) {
+  private async regrantSourceItem(
+    userId: string,
+    sourceItemId: string,
+    trustedDeviceIds: string[],
+  ) {
     const sourceItem = await this.prisma.sourceItem.findFirst({
       where: { id: sourceItemId, ownerUserId: userId },
       include: {
@@ -79,7 +95,10 @@ export class MaintenanceService {
       throw new BadRequestException('Current access grant not found');
     }
 
-    if (currentGrant.grantSubjectMode !== AccessGrantSubjectMode.OWNER_DEVICE_SNAPSHOT) {
+    if (
+      currentGrant.grantSubjectMode !==
+      AccessGrantSubjectMode.OWNER_DEVICE_SNAPSHOT
+    ) {
       throw new BadRequestException('Source item is not snapshot-mode access');
     }
 
@@ -123,7 +142,8 @@ export class MaintenanceService {
           recoveryPackageFamilyId: currentGrant.recoveryPackageFamilyId,
           confidentialityLevel: currentGrant.confidentialityLevel,
           allowFutureTrustedDevices: currentGrant.allowFutureTrustedDevices,
-          allowRecipientMultiDeviceAccess: currentGrant.allowRecipientMultiDeviceAccess,
+          allowRecipientMultiDeviceAccess:
+            currentGrant.allowRecipientMultiDeviceAccess,
           issueTrigger: 'device_regrant',
           supersedesAccessGrantSetId: currentGrant.id,
         },
@@ -131,7 +151,11 @@ export class MaintenanceService {
     });
   }
 
-  private async regrantShareObject(userId: string, shareObjectId: string, trustedDeviceIds: string[]) {
+  private async regrantShareObject(
+    userId: string,
+    shareObjectId: string,
+    trustedDeviceIds: string[],
+  ) {
     const shareObject = await this.prisma.shareObject.findFirst({
       where: { id: shareObjectId, recipientUserId: userId },
       include: {
@@ -151,7 +175,10 @@ export class MaintenanceService {
       throw new BadRequestException('Current access grant not found');
     }
 
-    if (currentGrant.grantSubjectMode !== AccessGrantSubjectMode.RECIPIENT_DEVICE_SNAPSHOT) {
+    if (
+      currentGrant.grantSubjectMode !==
+      AccessGrantSubjectMode.RECIPIENT_DEVICE_SNAPSHOT
+    ) {
       throw new BadRequestException('Share object is not snapshot-mode access');
     }
 
@@ -195,7 +222,8 @@ export class MaintenanceService {
           recoveryPackageFamilyId: currentGrant.recoveryPackageFamilyId,
           confidentialityLevel: currentGrant.confidentialityLevel,
           allowFutureTrustedDevices: currentGrant.allowFutureTrustedDevices,
-          allowRecipientMultiDeviceAccess: currentGrant.allowRecipientMultiDeviceAccess,
+          allowRecipientMultiDeviceAccess:
+            currentGrant.allowRecipientMultiDeviceAccess,
           issueTrigger: 'device_regrant',
           supersedesAccessGrantSetId: currentGrant.id,
         },

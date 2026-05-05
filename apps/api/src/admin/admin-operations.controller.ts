@@ -27,7 +27,13 @@ export class AdminOperationsController {
       this.prisma.user.count({ where: { admissionState: 'PENDING_APPROVAL' } }),
       this.prisma.user.count({ where: { enablementState: 'ENABLED' } }),
       this.prisma.user.count({ where: { enablementState: 'DISABLED' } }),
-      this.prisma.inviteCode.count({ where: { consumedAt: null, invalidatedAt: null, expiresAt: { gt: new Date() } } }),
+      this.prisma.inviteCode.count({
+        where: {
+          consumedAt: null,
+          invalidatedAt: null,
+          expiresAt: { gt: new Date() },
+        },
+      }),
       this.prisma.inviteCode.count({ where: { consumedAt: { not: null } } }),
       this.prisma.sourceItem.count(),
       this.prisma.shareObject.count(),
@@ -84,12 +90,17 @@ export class AdminOperationsController {
       }),
     ]);
 
-    const defaultQuotaBytes = settings?.defaultStorageQuotaBytes ?? 1_073_741_824;
+    const defaultQuotaBytes =
+      settings?.defaultStorageQuotaBytes ?? 1_073_741_824;
 
     return users.map((user) => {
       const storageUsedBytes = user.uploadSessions.reduce(
         (userTotal, session) =>
-          userTotal + session.parts.reduce((sessionTotal, part) => sessionTotal + part.byteSize, 0),
+          userTotal +
+          session.parts.reduce(
+            (sessionTotal, part) => sessionTotal + part.byteSize,
+            0,
+          ),
         0,
       );
 

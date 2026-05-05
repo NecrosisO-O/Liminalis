@@ -2,8 +2,14 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import { useMemo, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { api, ApiError, type ExtractionUnlockResult } from '../../shared/api/client.ts'
+import {
+  decryptFilePayloadWithKey,
+  decryptSourceMetadataWithKey,
+  sourceKeyFromPasswordEnvelope,
+  type SourceKeyEnvelope,
+} from '../../shared/crypto/envelope.ts'
 import { Button, Field, StatusView, TextInput, Toast } from '../../shared/ui/components.tsx'
-import { makeAttemptScope, saveResponseAsDownload } from '../../shared/files/transfer.ts'
+import { makeAttemptScope, saveBlobAsDownload } from '../../shared/files/transfer.ts'
 
 export function ExtractionPage() {
   const { entryToken = '' } = useParams()
@@ -31,7 +37,12 @@ export function ExtractionPage() {
 
       try {
         const response = await api.downloadExtractionRetrieval(unlocked.retrievalAttemptId)
-        await saveResponseAsDownload(response, unlocked.metadata.displayTitle || 'liminalis-download.bin')
+        const sourceKey = await sourceKeyFromPasswordEnvelope(unlocked.wrappedPayloadReference as SourceKeyEnvelope, password)
+        const metadata = unlocked.encryptedMetadata
+          ? await decryptSourceMetadataWithKey(unlocked.encryptedMetadata, sourceKey).catch(() => null)
+          : null
+        const decrypted = await decryptFilePayloadWithKey(await response.blob(), unlocked.contentCryptoMetadata, sourceKey)
+        saveBlobAsDownload(decrypted, metadata?.displayName ?? (unlocked.metadata.displayTitle || 'liminalis-download.bin'))
         await api.completeExtractionRetrieval(unlocked.retrievalAttemptId, true)
       } catch (error) {
         await api.completeExtractionRetrieval(unlocked.retrievalAttemptId, false).catch(() => undefined)

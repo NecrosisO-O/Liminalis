@@ -1,7 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { api, type ConfidentialityLevel, type TimelineItem } from '../../shared/api/client.ts'
+import { decryptSourceMetadata, type SourceMetadata } from '../../shared/crypto/envelope.ts'
 import { Button, EmptyState, IconButton, TextArea, Toast } from '../../shared/ui/components.tsx'
 import { confidentialityClass, confidentialityLabel, formatShortDate, formatTime24 } from '../../shared/ui/format.ts'
 import {
@@ -58,12 +59,29 @@ function itemTitle(item: TimelineItem) {
   return item.displayTitle ?? (item.visibleTypeLabel === 'text' ? 'Text' : 'Untitled item')
 }
 
+function ShareIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <circle cx="18" cy="5" r="3" />
+      <circle cx="6" cy="12" r="3" />
+      <circle cx="18" cy="19" r="3" />
+      <path d="m8.7 10.7 6.6-3.4" />
+      <path d="m8.7 13.3 6.6 3.4" />
+    </svg>
+  )
+}
+
+function metadataKey(item: TimelineItem) {
+  return `${item.id}:${JSON.stringify(item.encryptedMetadata ?? null)}`
+}
+
 export function TimelinePage() {
   const queryClient = useQueryClient()
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const [level, setLevel] = useState<ConfidentialityLevel>('SECRET')
   const [text, setText] = useState('')
   const [expandedTextIds, setExpandedTextIds] = useState<Set<string>>(() => new Set())
+  const [metadataCache, setMetadataCache] = useState<Record<string, SourceMetadata | null>>({})
   const [toast, setToast] = useState<{ tone: 'success' | 'danger' | 'warning'; message: string } | null>(null)
 
   const timeline = useQuery({
@@ -72,6 +90,33 @@ export function TimelinePage() {
   })
 
   const groups = useMemo(() => groupTimeline(timeline.data ?? []), [timeline.data])
+
+  useEffect(() => {
+    for (const item of timeline.data ?? []) {
+      if (!item.encryptedMetadata || metadataKey(item) in metadataCache) {
+        continue
+      }
+
+      const ids = itemObjectIds(item)
+      const retrieval = ids.shareObjectId
+        ? api.issueShareRetrieval(ids.shareObjectId, `metadata-${item.id}`)
+        : ids.sourceItemId
+          ? api.issueSourceItemRetrieval(ids.sourceItemId, `metadata-${item.id}`)
+          : null
+
+      void retrieval
+        ?.then((attempt) => decryptSourceMetadata({
+          encryptedMetadata: item.encryptedMetadata,
+          wrappedPayloadReference: attempt.wrappedPayloadReference,
+        }))
+        .then((metadata) => {
+          setMetadataCache((current) => ({ ...current, [metadataKey(item)]: metadata }))
+        })
+        .catch(() => {
+          setMetadataCache((current) => ({ ...current, [metadataKey(item)]: null }))
+        })
+    }
+  }, [metadataCache, timeline.data])
 
   const sendText = useMutation({
     mutationFn: () => uploadTextItem(text.trim(), { confidentialityLevel: level }),
@@ -140,9 +185,11 @@ export function TimelinePage() {
             {group.items.map((item) => {
               const isText = item.visibleTypeLabel === 'text'
               const ids = itemObjectIds(item)
-              const textBody = item.visibleSummary ?? item.displayTitle ?? 'Text item'
+              const decryptedMetadata = metadataCache[metadataKey(item)]
+              const textBody = decryptedMetadata?.visibleSummary ?? item.visibleSummary ?? item.displayTitle ?? 'Text item'
               const isLongText = isText && textBody.length > collapsedTextLimit
               const isExpanded = expandedTextIds.has(item.id)
+              const title = decryptedMetadata?.displayName ?? itemTitle(item)
 
               return (
                 <article
@@ -152,51 +199,51 @@ export function TimelinePage() {
                   <div className="timeline-avatar" aria-hidden="true">{avatarLabel(item.sourceLabel)}</div>
                   <div className="timeline-content">
                     <div className="timeline-meta">{timelineMeta(item)}</div>
-                    <div className={`timeline-card ${isText ? `timeline-card-text ${confidentialityClass(item.confidentialityLevel)}` : 'timeline-card-file'}`}>
-                      {isText ? (
-                        <>
-                          <p className={`timeline-text ${isLongText && !isExpanded ? 'is-collapsed' : ''}`}>{textBody}</p>
-                          {isLongText ? (
-                            <button
-                              className="text-toggle"
-                              type="button"
-                              onClick={() => {
-                                setExpandedTextIds((current) => {
-                                  const next = new Set(current)
-                                  if (next.has(item.id)) {
-                                    next.delete(item.id)
-                                  } else {
-                                    next.add(item.id)
-                                  }
-                                  return next
-                                })
-                              }}
-                            >
-                              {isExpanded ? 'Collapse' : 'Expand'}
-                            </button>
-                          ) : null}
-                        </>
-                      ) : (
-                        <button className="file-tile" type="button" onClick={() => download.mutate(item)} disabled={download.isPending}>
-                          <span className={`file-kind ${confidentialityClass(item.confidentialityLevel)}`} aria-hidden="true">
-                            {item.groupedItemCount ? 'G' : 'F'}
-                          </span>
-                          <span>
-                            <strong>{itemTitle(item)}</strong>
-                            <small>
-                              {item.visibleTypeLabel}
-                              {item.visibleSizeBytes ? ` · ${formatBytes(item.visibleSizeBytes)}` : ''}
-                              {item.groupedItemCount ? ` · ${item.groupedItemCount} items` : ''}
-                            </small>
-                          </span>
-                        </button>
-                      )}
+                    <div className={`timeline-card-row ${isText ? 'timeline-text-row' : 'timeline-file-row'} ${ids.sourceItemId && !isText ? 'has-actions' : ''}`}>
+                      <div className={`timeline-card ${isText ? `timeline-card-text ${confidentialityClass(item.confidentialityLevel)}` : 'timeline-card-file'}`}>
+                        {isText ? (
+                          <>
+                            <p className={`timeline-text ${isLongText && !isExpanded ? 'is-collapsed' : ''}`}>{textBody}</p>
+                            {isLongText ? (
+                              <button
+                                className="text-toggle"
+                                type="button"
+                                onClick={() => {
+                                  setExpandedTextIds((current) => {
+                                    const next = new Set(current)
+                                    if (next.has(item.id)) {
+                                      next.delete(item.id)
+                                    } else {
+                                      next.add(item.id)
+                                    }
+                                    return next
+                                  })
+                                }}
+                              >
+                                {isExpanded ? 'Collapse' : 'Expand'}
+                              </button>
+                            ) : null}
+                          </>
+                        ) : (
+                          <button className="file-tile" type="button" onClick={() => download.mutate(item)} disabled={download.isPending}>
+                            <span className={`file-kind ${confidentialityClass(item.confidentialityLevel)}`} aria-hidden="true">
+                              {item.groupedItemCount ? 'G' : 'F'}
+                            </span>
+                            <span>
+                              <strong>{title}</strong>
+                              <small>
+                                {item.visibleTypeLabel}
+                                {item.visibleSizeBytes ? ` · ${formatBytes(item.visibleSizeBytes)}` : ''}
+                                {item.groupedItemCount ? ` · ${item.groupedItemCount} items` : ''}
+                              </small>
+                            </span>
+                          </button>
+                        )}
+                      </div>
                       {ids.sourceItemId && !isText ? (
-                        <div className="timeline-actions">
-                          <Link className="timeline-action-link share-action" to={`/app/share/${ids.sourceItemId}`} title="Share item" aria-label="Share item">
-                            Share
-                          </Link>
-                        </div>
+                        <Link className="timeline-action-link share-action" to={`/app/share/${ids.sourceItemId}`} title="Share item" aria-label="Share item">
+                          <ShareIcon />
+                        </Link>
                       ) : null}
                     </div>
                   </div>

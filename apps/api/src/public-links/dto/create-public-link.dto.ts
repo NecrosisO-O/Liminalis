@@ -1,4 +1,4 @@
-import { IsInt, IsOptional, IsString, Min } from 'class-validator';
+import { IsInt, IsObject, IsOptional, IsString, Min } from 'class-validator';
 
 export class CreatePublicLinkDto {
   @IsString()
@@ -13,4 +13,8 @@ export class CreatePublicLinkDto {
   @IsInt()
   @Min(1)
   requestedDownloadCount?: number;
+
+  @IsOptional()
+  @IsObject()
+  packageReference?: Record<string, unknown>;
 }

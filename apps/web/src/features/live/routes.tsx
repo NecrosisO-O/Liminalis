@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject } from 'react'
 import { api, type ConfidentialityLevel, type LiveTransferSession } from '../../shared/api/client.ts'
 import { Button, EmptyState, Field, SelectInput, TextInput, Toast } from '../../shared/ui/components.tsx'
 import {
@@ -10,10 +10,11 @@ import {
   formatBytes,
   prepareTransferPayload,
   saveBlobAsDownload,
-  uploadBlobParts,
+  uploadFileSelection,
   type DirectoryInputProps,
   type SelectedFileEntry,
 } from '../../shared/files/transfer.ts'
+import { browserBytes, bytesToBase64Url, base64UrlToBytes } from '../../shared/crypto/serialization.ts'
 import { formatDateTime } from '../../shared/ui/format.ts'
 
 const confidentialityOptions: ConfidentialityLevel[] = ['SECRET', 'CONFIDENTIAL', 'TOP_SECRET']
@@ -147,7 +148,7 @@ export function LiveJoinPage() {
   const navigate = useNavigate()
   const [code, setCode] = useState('')
   const join = useMutation({
-    mutationFn: () => api.joinLiveTransferSession(code.trim()),
+    mutationFn: () => api.joinLiveTransferSession(code.trim().toUpperCase()),
     onSuccess: (session) => navigate(`/live/${sessionId(session)}`, { replace: true }),
   })
 
@@ -179,6 +180,7 @@ export function LiveSessionPage() {
   const [localEntries, setLocalEntries] = useState<SelectedFileEntry[]>(() => loadLiveSelection(routeSessionId))
   const [relayProgress, setRelayProgress] = useState<{ sent: number; total: number } | null>(null)
   const [p2pReady, setP2pReady] = useState(false)
+  const [liveKeyReady, setLiveKeyReady] = useState(false)
   const [receivedRelayChunks, setReceivedRelayChunks] = useState<Record<string, ReceivedRelayChunk>>({})
   const [receivedP2p, setReceivedP2p] = useState<{
     manifest: LivePayloadManifest | null
@@ -187,6 +189,8 @@ export function LiveSessionPage() {
   }>({ manifest: null, chunks: [], receivedBytes: 0 })
   const peerRef = useRef<RTCPeerConnection | null>(null)
   const channelRef = useRef<RTCDataChannel | null>(null)
+  const liveKeyRef = useRef<CryptoKey | null>(null)
+  const liveKeyPairRef = useRef<CryptoKeyPair | null>(null)
   const handledSignalIdsRef = useRef(new Set<string>())
 
   const session = useQuery({
@@ -209,26 +213,35 @@ export function LiveSessionPage() {
         throw new Error('Confirm both sides and activate relay before sending.')
       }
 
+      const liveKey = await ensureLiveSessionKey(routeSessionId, liveKeyRef, liveKeyPairRef)
+      setLiveKeyReady(true)
+      await sendLivePublicKeySignal(routeSessionId, liveKeyPairRef)
       const payload = await buildCurrentLivePayload(localEntries)
       let sequence = 1
       setRelayProgress({ sent: 0, total: payload.blob.size })
 
-      await api.uploadLiveRelayChunk(
-        routeSessionId,
-        sequence,
+      const manifestCiphertext = await encryptLiveBlob(
+        liveKey,
         new Blob([JSON.stringify({
           kind: 'liminalis-live-manifest-v1',
           fileName: payload.displayName,
           byteSize: payload.blob.size,
           contentType: payload.blob.type || 'application/octet-stream',
         })], { type: 'application/json' }),
+        `relay:${routeSessionId}:manifest`,
+      )
+      await api.uploadLiveRelayChunk(
+        routeSessionId,
+        sequence,
+        manifestCiphertext,
       )
       sequence += 1
 
       let sent = 0
       for (let offset = 0; offset < payload.blob.size; offset += relayChunkBytes) {
         const chunk = payload.blob.slice(offset, offset + relayChunkBytes)
-        await api.uploadLiveRelayChunk(routeSessionId, sequence, chunk)
+        const encryptedChunk = await encryptLiveBlob(liveKey, chunk, `relay:${routeSessionId}:chunk:${sequence}`)
+        await api.uploadLiveRelayChunk(routeSessionId, sequence, encryptedChunk)
         sent += chunk.size
         setRelayProgress({ sent, total: payload.blob.size })
         sequence += 1
@@ -292,23 +305,27 @@ export function LiveSessionPage() {
         throw new Error('Stored fallback is not allowed for this session.')
       }
 
-      const prepared = await api.beginLiveStoredFallback(routeSessionId)
-      const payload = await buildCurrentLivePayload(localEntries)
-      await uploadBlobParts(prepared.uploadSessionId, payload.blob, payload.displayName)
-      await api.finalizeUpload(prepared.uploadSessionId, {
-        displayName: payload.displayName,
-        manifest: payload.manifest,
+      const selection = classifySelection(localEntries)
+      if (!selection) {
+        throw new Error('Choose files before using stored fallback.')
+      }
+
+      await api.beginLiveStoredFallback(routeSessionId)
+      await uploadFileSelection(selection, {
+        confidentialityLevel: failed.confidentialityLevel ?? 'SECRET',
+        displayName: selection.displayName,
       })
       await queryClient.invalidateQueries({ queryKey: ['timeline'] })
       await queryClient.invalidateQueries({ queryKey: ['history'] })
       await queryClient.invalidateQueries({ queryKey: ['live', routeSessionId] })
-      return payload.displayName
+      return selection.displayName
     },
     onSuccess: (name) => setToast({ tone: 'success', message: `Stored fallback created for ${name}.` }),
     onError: (error) => setToast({ tone: 'danger', message: error instanceof Error ? error.message : 'Stored fallback failed.' }),
   })
 
   const handleP2pMessage = useCallback((data: unknown) => {
+    void (async () => {
     if (typeof data === 'string') {
       const parsed = JSON.parse(data) as { kind?: string } & Partial<LivePayloadManifest>
       if (parsed.kind === 'liminalis-live-manifest-v1') {
@@ -329,11 +346,18 @@ export function LiveSessionPage() {
     }
 
     const blob = data instanceof Blob ? data : new Blob([data as BlobPart])
+    const liveKey = liveKeyRef.current
+    if (!liveKey) {
+      setToast({ tone: 'danger', message: 'Live encryption key has not arrived yet.' })
+      return
+    }
+    const decrypted = await decryptLiveBlob(liveKey, blob)
     setReceivedP2p((current) => ({
       ...current,
-      chunks: [...current.chunks, blob],
-      receivedBytes: current.receivedBytes + blob.size,
+      chunks: [...current.chunks, decrypted],
+      receivedBytes: current.receivedBytes + decrypted.size,
     }))
+    })().catch((error) => setToast({ tone: 'danger', message: error instanceof Error ? error.message : 'Could not decrypt live payload.' }))
   }, [routeSessionId])
 
   const wireDataChannel = useCallback((channel: RTCDataChannel) => {
@@ -398,6 +422,9 @@ export function LiveSessionPage() {
       }
 
       const payload = await buildCurrentLivePayload(localEntries)
+      const liveKey = await ensureLiveSessionKey(routeSessionId, liveKeyRef, liveKeyPairRef)
+      setLiveKeyReady(true)
+      await sendLivePublicKeySignal(routeSessionId, liveKeyPairRef)
       const manifest: LivePayloadManifest = {
         fileName: payload.displayName,
         byteSize: payload.blob.size,
@@ -406,7 +433,8 @@ export function LiveSessionPage() {
       channel.send(JSON.stringify({ kind: 'liminalis-live-manifest-v1', ...manifest }))
 
       for (let offset = 0; offset < payload.blob.size; offset += p2pChunkBytes) {
-        const buffer = await payload.blob.slice(offset, offset + p2pChunkBytes).arrayBuffer()
+        const encryptedChunk = await encryptLiveBlob(liveKey, payload.blob.slice(offset, offset + p2pChunkBytes), `p2p:${routeSessionId}:${offset}`)
+        const buffer = await encryptedChunk.arrayBuffer()
         await waitForChannelBuffer(channel)
         channel.send(buffer)
       }
@@ -432,9 +460,16 @@ export function LiveSessionPage() {
   }
 
   async function receiveRelayChunk(chunk: { id: string; sequence: number }) {
+    const liveKey = liveKeyRef.current
+    if (!liveKey) {
+      setToast({ tone: 'danger', message: 'Live encryption key has not arrived yet.' })
+      return
+    }
+
     const response = await api.downloadLiveRelayChunk(routeSessionId, chunk.id)
     const blob = await response.blob()
-    setReceivedRelayChunks((current) => ({ ...current, [chunk.id]: { sequence: chunk.sequence, blob } }))
+    const decrypted = await decryptLiveBlob(liveKey, blob)
+    setReceivedRelayChunks((current) => ({ ...current, [chunk.id]: { sequence: chunk.sequence, blob: decrypted } }))
     await api.acknowledgeLiveRelayChunk(routeSessionId, chunk.id)
     await chunks.refetch()
   }
@@ -503,6 +538,12 @@ export function LiveSessionPage() {
         if (peer) {
           await peer.addIceCandidate(new RTCIceCandidate(payload))
         }
+        return
+      }
+
+      if (kind === 'live-public-key') {
+        liveKeyRef.current = await deriveLiveSessionKey(routeSessionId, liveKeyPairRef, payload.publicKey)
+        setLiveKeyReady(true)
       }
     } catch (error) {
       setToast({ tone: 'danger', message: error instanceof Error ? error.message : 'Live signaling failed.' })
@@ -547,6 +588,7 @@ export function LiveSessionPage() {
         <LiveMeta label="Transport" value={activeSession.transportState ?? 'Pending'} />
         <LiveMeta label="P2P" value={activeSession.peerToPeerAllowed ? p2pState : 'Not allowed'} />
         <LiveMeta label="Relay" value={activeSession.relayAllowed ? 'Allowed' : 'Not allowed'} />
+        <LiveMeta label="Payload crypto" value={liveKeyReady ? 'Ready' : 'Waiting'} />
         <LiveMeta label="Stored fallback" value={activeSession.liveToStoredFallbackAllowed ? 'Allowed' : 'Not allowed'} />
       </section>
       <section className="action-panel">
@@ -631,6 +673,106 @@ async function buildCurrentLivePayload(entries: SelectedFileEntry[]) {
   }
 
   return prepareTransferPayload(selection)
+}
+
+async function generateLiveKeyPair() {
+  return crypto.subtle.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, true, ['deriveBits']) as Promise<CryptoKeyPair>
+}
+
+async function ensureLiveKeyPair(sessionId: string, ref: MutableRefObject<CryptoKeyPair | null>) {
+  if (!ref.current) {
+    ref.current = await generateLiveKeyPair()
+    const publicKey = await crypto.subtle.exportKey('jwk', ref.current.publicKey)
+    sessionStorage.setItem(`live-public-key:${sessionId}`, JSON.stringify(publicKey))
+  }
+
+  return ref.current
+}
+
+async function sendLivePublicKeySignal(sessionId: string, ref: MutableRefObject<CryptoKeyPair | null>) {
+  const keyPair = await ensureLiveKeyPair(sessionId, ref)
+  await api.sendLiveSignal(sessionId, 'live-public-key', {
+    version: 'live-e2ee-v1',
+    publicKey: await crypto.subtle.exportKey('jwk', keyPair.publicKey),
+  })
+}
+
+async function deriveLiveSessionKey(
+  sessionId: string,
+  keyPairRef: MutableRefObject<CryptoKeyPair | null>,
+  remotePublicJwk: unknown,
+) {
+  const keyPair = await ensureLiveKeyPair(sessionId, keyPairRef)
+  const remotePublicKey = await crypto.subtle.importKey(
+    'jwk',
+    remotePublicJwk as JsonWebKey,
+    { name: 'ECDH', namedCurve: 'P-256' },
+    false,
+    [],
+  )
+  const sharedBits = await crypto.subtle.deriveBits({ name: 'ECDH', public: remotePublicKey }, keyPair.privateKey, 256)
+  const material = await crypto.subtle.importKey('raw', sharedBits, 'HKDF', false, ['deriveKey'])
+  return crypto.subtle.deriveKey(
+    {
+      name: 'HKDF',
+      hash: 'SHA-256',
+      salt: browserBytes(new TextEncoder().encode(sessionId)),
+      info: new TextEncoder().encode('liminalis-live-e2ee-v1'),
+    },
+    material,
+    { name: 'AES-GCM', length: 256 },
+    false,
+    ['encrypt', 'decrypt'],
+  )
+}
+
+async function ensureLiveSessionKey(
+  sessionId: string,
+  keyRef: MutableRefObject<CryptoKey | null>,
+  keyPairRef: MutableRefObject<CryptoKeyPair | null>,
+) {
+  if (!keyRef.current) {
+    await sendLivePublicKeySignal(sessionId, keyPairRef)
+    throw new Error('Waiting for the other browser live encryption key. Try again after both sides have exchanged signals.')
+  }
+
+  return keyRef.current
+}
+
+async function encryptLiveBlob(key: CryptoKey, blob: Blob, aad: string) {
+  const nonce = new Uint8Array(12)
+  crypto.getRandomValues(nonce)
+  const ciphertext = await crypto.subtle.encrypt(
+    { name: 'AES-GCM', iv: browserBytes(nonce), additionalData: new TextEncoder().encode(aad) },
+    key,
+    browserBytes(new Uint8Array(await blob.arrayBuffer())),
+  )
+  return new Blob([JSON.stringify({
+    version: 'live-e2ee-v1',
+    algorithm: 'AES-GCM-256',
+    nonce: bytesToBase64Url(nonce),
+    aad,
+    ciphertext: bytesToBase64Url(new Uint8Array(ciphertext)),
+  })], { type: 'application/json' })
+}
+
+async function decryptLiveBlob(key: CryptoKey, blob: Blob) {
+  const envelope = JSON.parse(await blob.text()) as {
+    nonce: string
+    aad: string
+    ciphertext: string
+  }
+  const plaintext = await crypto.subtle.decrypt(
+    {
+      name: 'AES-GCM',
+      iv: browserBytes(base64UrlToBytes(envelope.nonce)),
+      additionalData: new TextEncoder().encode(envelope.aad),
+    },
+    key,
+    browserBytes(base64UrlToBytes(envelope.ciphertext)),
+  )
+
+  return new Blob([plaintext], { type: 'application/octet-stream' })
 }
 
 function waitForChannelBuffer(channel: RTCDataChannel) {

@@ -467,6 +467,17 @@ p {
   box-shadow: 0 8px 22px rgba(32, 35, 31, 0.08);
 }
 
+.timeline-card-row {
+  display: grid;
+  width: 100%;
+  position: relative;
+}
+
+.timeline-card-row.timeline-file-row {
+  grid-template-columns: minmax(0, 1fr);
+  width: min(336px, 100%);
+}
+
 .timeline-card.timeline-card-text {
   background: var(--panel);
   color: var(--text);
@@ -481,7 +492,7 @@ p {
   color: var(--text);
   box-shadow: none;
   position: relative;
-  width: min(336px, 100%);
+  width: 100%;
 }
 
 .timeline-card-text.level-confidential {
@@ -557,7 +568,7 @@ p {
   border: 0;
   background: var(--panel);
   border-radius: 8px;
-  padding: 9px 42px 9px 9px;
+  padding: 9px;
   display: grid;
   grid-template-columns: 50px minmax(0, 1fr);
   gap: 12px;
@@ -567,10 +578,6 @@ p {
   width: 100%;
   min-height: 68px;
   box-shadow: 0 8px 22px rgba(32, 35, 31, 0.08);
-}
-
-.timeline-item.outgoing .file-tile {
-  padding: 9px 9px 9px 42px;
 }
 
 .file-kind {
@@ -607,36 +614,38 @@ p {
   color: var(--muted);
 }
 
-.timeline-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  align-items: center;
-  min-height: 18px;
-}
-
-.timeline-card-file .timeline-actions {
-  position: absolute;
-  right: 14px;
-  bottom: 12px;
-}
-
-.timeline-item.outgoing .timeline-card-file .timeline-actions {
-  left: 14px;
-  right: auto;
-}
-
 .timeline-action-link {
   border: 0;
   background: transparent;
   color: var(--muted);
-  font-size: 0.76rem;
-  font-weight: 800;
-  line-height: 1;
+  width: 26px;
+  height: 26px;
   padding: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  position: absolute;
+  right: -34px;
+  bottom: 2px;
+}
+
+.timeline-item.outgoing .timeline-action-link {
+  left: -34px;
+  right: auto;
+}
+
+.timeline-action-link svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .timeline-action-link:hover {
+  background: rgba(13, 103, 87, 0.08);
   color: var(--accent-strong);
   text-decoration: none;
 }
@@ -1003,6 +1012,10 @@ progress {
   }
 
   .timeline-card-file {
+    width: 100%;
+  }
+
+  .timeline-card-row.timeline-file-row {
     width: min(288px, 100%);
   }
 

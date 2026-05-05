@@ -35,7 +35,10 @@ export class IdentityController {
 
   @HttpCode(200)
   @Post('api/auth/login')
-  async login(@Body() input: LoginDto, @Res({ passthrough: true }) response: Response) {
+  async login(
+    @Body() input: LoginDto,
+    @Res({ passthrough: true }) response: Response,
+  ) {
     const user = await this.identityService.validateCredentials(input);
     const session = await this.sessionsService.createSession(user.id);
 
@@ -97,7 +100,10 @@ export class IdentityController {
     @SessionActor() sessionActor: AuthenticatedSession,
     @Body() input: CreateInviteDto,
   ) {
-    return this.identityService.createInvite(sessionActor.userId, input.expiresInMinutes);
+    return this.identityService.createInvite(
+      sessionActor.userId,
+      input.expiresInMinutes,
+    );
   }
 
   @UseGuards(SessionGuard, AdminGuard)

@@ -3,6 +3,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useMemo, useState } from 'react'
 import { api } from '../../shared/api/client.ts'
 import { createDeviceMaterial, ensureDeviceMaterial } from '../../shared/crypto/device.ts'
+import { createPairingApprovalPackage, installPairingApprovalPackage } from '../../shared/crypto/envelope.ts'
 import { Button, Field, StatusView, TextInput } from '../../shared/ui/components.tsx'
 
 const pendingTrustedDeviceStorageKey = 'liminalis_pending_trusted_device_id'
@@ -14,10 +15,11 @@ export function DeviceSetupPage() {
 
   const setup = useMutation({
     mutationFn: async () => {
-      const material = await createDeviceMaterial()
+      const material = await createDeviceMaterial({ includeUserDomainKey: true })
       return api.bootstrapFirstDevice({
         deviceLabel,
         devicePublicIdentity: material.devicePublicIdentity,
+        deviceWrappingPublicKey: material.deviceWrappingPublicKey,
         userDomainPublicKey: material.userDomainPublicKey,
       })
     },
@@ -60,10 +62,11 @@ export function DevicePairPage() {
 
   const pair = useMutation({
     mutationFn: async () => {
-      const material = await ensureDeviceMaterial()
+      const material = await ensureDeviceMaterial({ includeUserDomainKey: false })
       return api.createPairingSession({
         deviceLabel,
         devicePublicIdentity: material.devicePublicIdentity,
+        deviceWrappingPublicKey: material.deviceWrappingPublicKey,
       })
     },
     onSuccess: (session) => {
@@ -100,6 +103,7 @@ export function DevicePairPage() {
 export function DevicePairWaitingPage() {
   const [searchParams] = useSearchParams()
   const pairingSessionId = searchParams.get('pairingSessionId') ?? ''
+  const queryClient = useQueryClient()
   const session = useQuery({
     queryKey: ['trust', 'pairing', pairingSessionId],
     queryFn: () => api.getPairingSession(pairingSessionId),
@@ -108,11 +112,26 @@ export function DevicePairWaitingPage() {
     retry: false,
   })
 
+  const finalize = useMutation({
+    mutationFn: async () => {
+      if (!session.data?.approvalPackage) {
+        throw new Error('Approval package has not arrived yet.')
+      }
+
+      await installPairingApprovalPackage(session.data.approvalPackage)
+      return api.finalizePairing(pairingSessionId)
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['bootstrap'] })
+      window.location.assign('/app')
+    },
+  })
+
   return (
     <main className="entry-screen">
       <section className="entry-panel">
         <p className="eyebrow">Pairing</p>
-        <h1>{session.data?.state === 'TRUSTED' ? 'Browser trusted' : 'Awaiting approval'}</h1>
+        <h1>{session.data?.state === 'TRUSTED' ? 'Browser trusted' : session.data?.approvalPackage ? 'Approval received' : 'Awaiting approval'}</h1>
         <p className="muted">Open the approval screen on an existing trusted browser and verify this short code.</p>
         {session.data ? (
           <div className="code-panel">
@@ -124,8 +143,14 @@ export function DevicePairWaitingPage() {
           <Link className="button button-secondary" to="/device/pair/approve">
             Approve another browser
           </Link>
+          {session.data?.approvalPackage && session.data.state !== 'TRUSTED' ? (
+            <Button variant="primary" onClick={() => finalize.mutate()} disabled={finalize.isPending}>
+              Trust locally and open workspace
+            </Button>
+          ) : null}
           {session.data?.state === 'TRUSTED' ? <Link className="button button-primary" to="/app">Open workspace</Link> : null}
         </div>
+        {finalize.error instanceof Error ? <p className="field-error">{finalize.error.message}</p> : null}
       </section>
     </main>
   )
@@ -147,7 +172,15 @@ export function DevicePairApprovePage() {
   })
 
   const approve = useMutation({
-    mutationFn: api.approvePairing,
+    mutationFn: async (pairingSessionId: string) => {
+      const requesterWrappingKey = resolved.data?.requesterDevice?.deviceWrappingPublicKey
+      if (!requesterWrappingKey) {
+        throw new Error('Requester browser has no wrapping public key.')
+      }
+
+      const approvalPackage = await createPairingApprovalPackage(requesterWrappingKey)
+      return api.approvePairing(pairingSessionId, approvalPackage)
+    },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['trust'] })
       await resolved.refetch()
@@ -205,11 +238,13 @@ export function DeviceRecoveryPage() {
 
   const recovery = useMutation({
     mutationFn: async () => {
-      const material = await ensureDeviceMaterial()
+      const material = await createDeviceMaterial({ includeUserDomainKey: true })
       return api.recoveryAttempt({
         recoveryCode: recoveryCode.replaceAll('-', '').trim(),
         deviceLabel,
         devicePublicIdentity: material.devicePublicIdentity,
+        deviceWrappingPublicKey: material.deviceWrappingPublicKey,
+        userDomainPublicKey: material.userDomainPublicKey,
       })
     },
     onSuccess: async (result) => {

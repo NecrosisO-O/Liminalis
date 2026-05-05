@@ -87,35 +87,18 @@ export class RetrievalService {
       throw new BadRequestException('AccessGrantSet not found');
     }
 
-    const packageSelection = await this.selectOwnerPackageFamily(userId, trustedDeviceId, grantSet);
+    const packageSelection = await this.selectOwnerPackageFamily(
+      userId,
+      trustedDeviceId,
+      grantSet,
+    );
 
-    const attempt = await this.prisma.retrievalAttempt.upsert({
-        where: {
-          retrievalFamily_targetObjectId_requestingUserId_requestingDeviceId_attemptScopeKey: {
-            retrievalFamily: RetrievalFamily.SOURCE_ITEM_OWNER,
-          targetObjectId: sourceItemId,
-          requestingUserId: userId,
-          requestingDeviceId: trustedDeviceId,
-          attemptScopeKey,
-        },
-      },
-      update: {
-        status: RetrievalAttemptStatus.IN_PROGRESS,
-      },
-      create: {
-        retrievalFamily: RetrievalFamily.SOURCE_ITEM_OWNER,
-        targetObjectType: ProtectedObjectType.SOURCE_ITEM,
-        targetObjectId: sourceItemId,
-        sourceItemId,
-        requestingUserId: userId,
-        requestingDeviceId: trustedDeviceId,
-        status: RetrievalAttemptStatus.IN_PROGRESS,
-        attemptScopeKey,
-      },
-      include: {
-        packageReference: true,
-      },
-    });
+    const attempt = await this.upsertSourceOwnerAttempt(
+      userId,
+      trustedDeviceId,
+      sourceItemId,
+      attemptScopeKey,
+    );
 
     let packageReference = attempt.packageReference;
 
@@ -129,8 +112,8 @@ export class RetrievalService {
           eligibleSubjectUserId: userId,
           eligibleSubjectDeviceId: trustedDeviceId,
           packageFamilyVersion: packageSelection.packageFamily.familyVersion,
-          wrappedPayloadReference:
-            packageSelection.packageFamily.referenceBlob as Prisma.InputJsonValue,
+          wrappedPayloadReference: packageSelection.packageFamily
+            .referenceBlob as Prisma.InputJsonValue,
           expiresAt: new Date(Date.now() + 10 * 60_000),
           retrievalAttempt: {
             connect: { id: attempt.id },
@@ -146,9 +129,74 @@ export class RetrievalService {
       wrappedPayloadReference: packageReference.wrappedPayloadReference,
       storageBinding: sourceItem.storageBinding,
       textCiphertextBody: sourceItem.textCiphertextBody,
+      encryptedMetadata: sourceItem.encryptedMetadata,
+      contentCryptoMetadata: sourceItem.contentCryptoMetadata,
       contentKind: sourceItem.contentKind,
       expiresAt: packageReference.expiresAt,
     };
+  }
+
+  private async upsertSourceOwnerAttempt(
+    userId: string,
+    trustedDeviceId: string,
+    sourceItemId: string,
+    attemptScopeKey: string,
+  ) {
+    const uniqueAttemptKey = {
+      retrievalFamily: RetrievalFamily.SOURCE_ITEM_OWNER,
+      targetObjectId: sourceItemId,
+      requestingUserId: userId,
+      requestingDeviceId: trustedDeviceId,
+      attemptScopeKey,
+    };
+
+    try {
+      return await this.prisma.retrievalAttempt.upsert({
+        where: {
+          retrievalFamily_targetObjectId_requestingUserId_requestingDeviceId_attemptScopeKey:
+            uniqueAttemptKey,
+        },
+        update: {
+          status: RetrievalAttemptStatus.IN_PROGRESS,
+        },
+        create: {
+          ...uniqueAttemptKey,
+          targetObjectType: ProtectedObjectType.SOURCE_ITEM,
+          sourceItemId,
+          status: RetrievalAttemptStatus.IN_PROGRESS,
+        },
+        include: {
+          packageReference: true,
+        },
+      });
+    } catch (error) {
+      if (!this.isUniqueConstraintViolation(error)) {
+        throw error;
+      }
+
+      const attempt = await this.prisma.retrievalAttempt.findUnique({
+        where: {
+          retrievalFamily_targetObjectId_requestingUserId_requestingDeviceId_attemptScopeKey:
+            uniqueAttemptKey,
+        },
+        include: {
+          packageReference: true,
+        },
+      });
+
+      if (!attempt) {
+        throw error;
+      }
+
+      return attempt;
+    }
+  }
+
+  private isUniqueConstraintViolation(error: unknown) {
+    return (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === 'P2002'
+    );
   }
 
   async completeSourceItemRetrieval(
@@ -222,13 +270,13 @@ export class RetrievalService {
       await this.projectionService.projectSourceItem(completed.sourceItemId);
     }
 
-      return {
-        retrievalAttemptId: completed.id,
-        status: completed.status,
-        sourceItemState: completed.sourceItem?.burnAfterReadEnabled
-          ? SourceItemState.PURGED
-          : completed.sourceItem?.state ?? null,
-      };
+    return {
+      retrievalAttemptId: completed.id,
+      status: completed.status,
+      sourceItemState: completed.sourceItem?.burnAfterReadEnabled
+        ? SourceItemState.PURGED
+        : (completed.sourceItem?.state ?? null),
+    };
   }
 
   async createDownloadStreamForAttempt(
@@ -267,11 +315,15 @@ export class RetrievalService {
       throw new BadRequestException('Retrieval attempt is not downloadable');
     }
 
-    if (attempt.shareObject && attempt.shareObject.state !== ShareObjectState.ACTIVE) {
+    if (
+      attempt.shareObject &&
+      attempt.shareObject.state !== ShareObjectState.ACTIVE
+    ) {
       throw new BadRequestException('Share object is not retrievable');
     }
 
-    const sourceItem = attempt.sourceItem ?? attempt.shareObject?.sourceItem ?? null;
+    const sourceItem =
+      attempt.sourceItem ?? attempt.shareObject?.sourceItem ?? null;
     if (!sourceItem) {
       throw new NotFoundException('Source item not found');
     }
@@ -291,7 +343,9 @@ export class RetrievalService {
 
     const parts = this.extractStorageParts(sourceItem.storageBinding);
     const contentLength = parts.reduce((sum, part) => sum + part.byteSize, 0);
-    const stream = Readable.from(this.readParts(parts.map((part) => part.storageKey)));
+    const stream = Readable.from(
+      this.readParts(parts.map((part) => part.storageKey)),
+    );
 
     return {
       stream,
@@ -301,7 +355,11 @@ export class RetrievalService {
   }
 
   private extractStorageParts(storageBinding: unknown) {
-    if (!storageBinding || typeof storageBinding !== 'object' || !('parts' in storageBinding)) {
+    if (
+      !storageBinding ||
+      typeof storageBinding !== 'object' ||
+      !('parts' in storageBinding)
+    ) {
       throw new BadRequestException('Source item has no stored file bytes');
     }
 
@@ -356,7 +414,8 @@ export class RetrievalService {
     },
   ) {
     const ordinaryEligible =
-      grantSet.grantSubjectMode !== AccessGrantSubjectMode.OWNER_DEVICE_SNAPSHOT ||
+      grantSet.grantSubjectMode !==
+        AccessGrantSubjectMode.OWNER_DEVICE_SNAPSHOT ||
       grantSet.snapshotDeviceIds.includes(trustedDeviceId);
 
     if (ordinaryEligible) {
@@ -386,6 +445,8 @@ export class RetrievalService {
       };
     }
 
-    throw new ForbiddenException('Trusted device is not eligible for this source item');
+    throw new ForbiddenException(
+      'Trusted device is not eligible for this source item',
+    );
   }
 }

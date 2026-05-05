@@ -157,7 +157,12 @@ describe('Backend quality gate', () => {
     const bootstrap = await request(app.getHttpServer())
       .post('/api/trust/bootstrap-first-device')
       .set('Cookie', sessionCookies)
-      .send({ deviceLabel, devicePublicIdentity, userDomainPublicKey })
+      .send({
+        deviceLabel,
+        devicePublicIdentity,
+        deviceWrappingPublicKey: `${devicePublicIdentity}-wrapping-key`,
+        userDomainPublicKey,
+      })
       .expect(201);
 
     return {

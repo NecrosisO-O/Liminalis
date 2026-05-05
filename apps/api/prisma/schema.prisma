@@ -229,6 +229,7 @@ model TrustedDevice {
   recoveryEstablishedAt  DateTime?
   publicIdentityVersion  Int                   @default(1)
   publicIdentityPayload  String?
+  deviceWrappingPublicKey String?
   createdAt              DateTime              @default(now())
   updatedAt              DateTime              @updatedAt
   pairingRequests        PairingSession[]      @relation("PairingRequester")
@@ -252,6 +253,7 @@ model PairingSession {
   qrToken           String              @unique
   shortCode         String              @unique
   expiresAt         DateTime
+  approvalPackage   Json?
   approvedAt        DateTime?
   rejectedAt        DateTime?
   createdAt         DateTime            @default(now())
@@ -450,6 +452,9 @@ model SourceItem {
   policySnapshot         Json
   displayName            String?
   textCiphertextBody     String?
+  cryptoVersion          String?
+  encryptedMetadata      Json?
+  contentCryptoMetadata  Json?
   storageBinding         Json?
   storageBytes           Int                   @default(0)
   validUntil             DateTime?
@@ -538,6 +543,7 @@ model PublicLink {
   configuredDownloadCount Int
   remainingDownloadCount  Int
   validUntil              DateTime?
+  packageReference        Json?
   deliveryTickets         PublicLinkDeliveryTicket[]
   createdAt               DateTime                  @default(now())
   updatedAt               DateTime                  @updatedAt
@@ -682,6 +688,7 @@ model ActiveTimelineItemProjection {
   confidentialityLevel ConfidentialityLevel
   currentRetrievable Boolean
   visibleSummary     String?
+  encryptedMetadata  Json?
   createdTime        DateTime
   validUntil         DateTime?
   projectedAt        DateTime             @default(now())
@@ -708,6 +715,7 @@ model HistoryEntryProjection {
   retrievable          Boolean
   concreteReason       String?
   visibleSummary       String?
+  encryptedMetadata    Json?
   createdTime          DateTime
   statusTime           DateTime?
   projectedAt          DateTime             @default(now())

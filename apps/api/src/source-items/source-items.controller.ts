@@ -17,7 +17,10 @@ export class SourceItemsController {
     @SessionActor() sessionActor: AuthenticatedSession,
     @Param('sourceItemId') sourceItemId: string,
   ) {
-    return this.sourceItemsService.getSourceItemForOwner(sessionActor.userId, sourceItemId);
+    return this.sourceItemsService.getSourceItemForOwner(
+      sessionActor.userId,
+      sourceItemId,
+    );
   }
 
   @Post(':sourceItemId/revoke')
@@ -25,7 +28,10 @@ export class SourceItemsController {
     @SessionActor() sessionActor: AuthenticatedSession,
     @Param('sourceItemId') sourceItemId: string,
   ) {
-    return this.sourceItemsService.revokeSourceItemForOwner(sessionActor.userId, sourceItemId);
+    return this.sourceItemsService.revokeSourceItemForOwner(
+      sessionActor.userId,
+      sourceItemId,
+    );
   }
 
   @Post(':sourceItemId/confidentiality')

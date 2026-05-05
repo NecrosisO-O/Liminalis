@@ -32,11 +32,13 @@ export type PairingSessionState = {
   approvedAt: string | null
   rejectedAt: string | null
   expiresAt: string
+  approvalPackage?: unknown
   requesterDevice?: {
     id: string
     userId: string
     label: string
     publicIdentityPayload: string | null
+    deviceWrappingPublicKey?: string | null
   }
 }
 
@@ -56,6 +58,7 @@ export type TimelineItem = {
   confidentialityLevel: ConfidentialityLevel
   currentRetrievable: boolean
   visibleSummary?: string | null
+  encryptedMetadata?: unknown
   createdTime: string
   validUntil?: string | null
 }
@@ -74,6 +77,7 @@ export type HistoryEntry = {
   retrievable: boolean
   concreteReason: string | null
   visibleSummary?: string | null
+  encryptedMetadata?: unknown
   createdTime: string
   statusTime?: string | null
   sourceItem?: { validUntil: string | null } | null
@@ -105,6 +109,9 @@ export type SourceItemDetail = {
   state: 'ACTIVE' | 'INVALIDATED' | 'EXPIRED' | 'PURGED'
   displayName: string | null
   textCiphertextBody: string | null
+  cryptoVersion?: string | null
+  encryptedMetadata?: unknown
+  contentCryptoMetadata?: unknown
   storageBytes: number
   validUntil: string | null
   burnAfterReadEnabled: boolean
@@ -125,6 +132,7 @@ export type PrepareUploadInput = {
   burnAfterReadEnabled?: boolean
   displayName?: string
   manifest?: Record<string, unknown>
+  cryptoVersion?: string
 }
 
 export type PrepareUploadResult = {
@@ -148,6 +156,10 @@ export type FinalizeUploadInput = {
   displayName?: string
   textCiphertextBody?: string
   manifest?: Record<string, unknown>
+  cryptoVersion?: string
+  encryptedMetadata?: Record<string, unknown>
+  contentCryptoMetadata?: Record<string, unknown>
+  ownerKeyEnvelope?: Record<string, unknown>
 }
 
 export type FinalizeUploadResult = {
@@ -165,6 +177,8 @@ export type RetrievalIssueResult = {
   sourceItemId?: string
   storageBinding?: unknown
   textCiphertextBody?: string | null
+  encryptedMetadata?: unknown
+  contentCryptoMetadata?: unknown
   contentKind: UploadContentKind
   expiresAt: string
 }
@@ -185,6 +199,7 @@ export type ShareCreationResult = {
   allowRepeatDownload: boolean
   allowRecipientMultiDeviceAccess: boolean
   validUntil: string | null
+  packageReference?: unknown
 }
 
 export type IncomingShare = {
@@ -202,6 +217,13 @@ export type IncomingShare = {
   updatedAt: string
 }
 
+export type RecipientPublicKey = {
+  recipientUserId: string
+  username: string
+  userDomainPublicKey: string
+  keyVersion: number
+}
+
 export type ExtractionCreationResult = {
   extractionAccessId: string
   entryToken: string
@@ -209,6 +231,7 @@ export type ExtractionCreationResult = {
   remainingRetrievalCount: number
   validUntil: string | null
   requireSystemGeneratedPassword: boolean
+  packageReference?: unknown
 }
 
 export type ExtractionEntry = {
@@ -236,6 +259,7 @@ export type PublicLinkCreationResult = {
   linkToken: string
   remainingDownloadCount: number
   validUntil: string | null
+  packageReference?: unknown
 }
 
 export type LiveTransferSession = {
@@ -244,6 +268,7 @@ export type LiveTransferSession = {
   sessionCode: string | null
   state: string
   transportState?: string | null
+  confidentialityLevel?: ConfidentialityLevel
   contentLabel: string
   contentKind: UploadContentKind
   groupedTransfer: boolean
@@ -363,6 +388,21 @@ export function publicLinkDownloadUrl(linkToken: string) {
   return `/api/public-links/${encodeURIComponent(linkToken)}`
 }
 
+export function decodeResponseJsonHeader(response: Response, name: string) {
+  const value = response.headers.get(name)
+  if (!value) {
+    return null
+  }
+
+  const binary = atob(value.replaceAll('-', '+').replaceAll('_', '/').padEnd(Math.ceil(value.length / 4) * 4, '='))
+  const bytes = new Uint8Array(binary.length)
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index)
+  }
+
+  return JSON.parse(new TextDecoder().decode(bytes)) as unknown
+}
+
 export const api = {
   login(input: { username: string; password: string }) {
     return requestJson<{ userId: string; username: string }>('/api/auth/login', {
@@ -389,14 +429,14 @@ export const api = {
     return requestJson<BootstrapState>('/api/bootstrap')
   },
 
-  bootstrapFirstDevice(input: { deviceLabel: string; userDomainPublicKey: string; devicePublicIdentity: string }) {
+  bootstrapFirstDevice(input: { deviceLabel: string; userDomainPublicKey: string; devicePublicIdentity: string; deviceWrappingPublicKey: string }) {
     return requestJson<{ trustedDeviceId: string; recoveryCodes: string[] }>('/api/trust/bootstrap-first-device', {
       method: 'POST',
       body: JSON.stringify(input),
     })
   },
 
-  createPairingSession(input: { deviceLabel: string; devicePublicIdentity: string }) {
+  createPairingSession(input: { deviceLabel: string; devicePublicIdentity: string; deviceWrappingPublicKey: string }) {
     return requestJson<PairingSessionState>('/api/trust/pairing-sessions', {
       method: 'POST',
       body: JSON.stringify(input),
@@ -411,8 +451,15 @@ export const api = {
     return requestJson<PairingSessionState>(`/api/trust/pairing/by-short-code/${encodeURIComponent(shortCode)}`)
   },
 
-  approvePairing(pairingSessionId: string) {
+  approvePairing(pairingSessionId: string, approvalPackage: Record<string, unknown>) {
     return requestJson<PairingSessionState>('/api/trust/pairing/approve', {
+      method: 'POST',
+      body: JSON.stringify({ pairingSessionId, approvalPackage }),
+    })
+  },
+
+  finalizePairing(pairingSessionId: string) {
+    return requestJson<PairingSessionState>('/api/trust/pairing/finalize', {
       method: 'POST',
       body: JSON.stringify({ pairingSessionId }),
     })
@@ -425,7 +472,13 @@ export const api = {
     })
   },
 
-  recoveryAttempt(input: { recoveryCode: string; deviceLabel: string; devicePublicIdentity: string }) {
+  recoveryAttempt(input: {
+    recoveryCode: string
+    deviceLabel: string
+    devicePublicIdentity: string
+    deviceWrappingPublicKey: string
+    userDomainPublicKey?: string
+  }) {
     return requestJson<{ pendingTrustedDeviceId: string; recoveryCodes: string[] }>('/api/recovery/attempt', {
       method: 'POST',
       body: JSON.stringify(input),
@@ -521,7 +574,12 @@ export const api = {
     return requestBlob(`/api/retrieval/attempts/${encodeURIComponent(retrievalAttemptId)}/download`)
   },
 
-  createShare(input: { sourceItemId: string; recipientUsername: string; requestedValidityMinutes?: number }) {
+  createShare(input: {
+    sourceItemId: string
+    recipientUsername: string
+    requestedValidityMinutes?: number
+    packageReference?: Record<string, unknown>
+  }) {
     return requestJson<ShareCreationResult>('/api/shares', {
       method: 'POST',
       body: JSON.stringify(input),
@@ -530,6 +588,10 @@ export const api = {
 
   getIncomingShares() {
     return requestJson<IncomingShare[]>('/api/shares/incoming')
+  },
+
+  getRecipientPublicKey(username: string) {
+    return requestJson<RecipientPublicKey>(`/api/shares/recipient-key/${encodeURIComponent(username)}`)
   },
 
   issueShareRetrieval(shareObjectId: string, attemptScopeKey: string) {
@@ -551,6 +613,7 @@ export const api = {
     password?: string
     requestedValidityMinutes?: number
     requestedRetrievalCount?: number
+    packageReference?: Record<string, unknown>
   }) {
     return requestJson<ExtractionCreationResult>('/api/extraction', {
       method: 'POST',
@@ -589,6 +652,7 @@ export const api = {
     sourceItemId: string
     requestedValidityMinutes?: number
     requestedDownloadCount?: number
+    packageReference?: Record<string, unknown>
   }) {
     return requestJson<PublicLinkCreationResult>('/api/public-links', {
       method: 'POST',

@@ -11,17 +11,22 @@ import {
   DeviceTrustState,
   EnablementState,
   PairingSessionState,
+  Prisma,
 } from '../../generated/prisma/index.js';
 import { PrismaService } from '../prisma/prisma.service';
 import { ApprovePairingDto } from './dto/approve-pairing.dto';
 import { CreatePairingSessionDto } from './dto/create-pairing-session.dto';
 import { FirstDeviceBootstrapDto } from './dto/first-device-bootstrap.dto';
+import { FinalizePairingDto } from './dto/finalize-pairing.dto';
 import { RecoveryAttemptDto } from './dto/recovery-attempt.dto';
 import { RejectPairingDto } from './dto/reject-pairing.dto';
 
 function generateRecoveryCode() {
   const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  return Array.from({ length: 20 }, () => alphabet[randomInt(0, alphabet.length)]).join('');
+  return Array.from(
+    { length: 20 },
+    () => alphabet[randomInt(0, alphabet.length)],
+  ).join('');
 }
 
 @Injectable()
@@ -29,7 +34,10 @@ export class TrustService {
   constructor(private readonly prisma: PrismaService) {}
 
   async bootstrapFirstDevice(userId: string, input: FirstDeviceBootstrapDto) {
-    await this.requireApprovedEnabledUser(userId, 'User cannot establish trust');
+    await this.requireApprovedEnabledUser(
+      userId,
+      'User cannot establish trust',
+    );
 
     const existingTrusted = await this.prisma.trustedDevice.findFirst({
       where: { userId, trustState: DeviceTrustState.TRUSTED },
@@ -39,7 +47,11 @@ export class TrustService {
       throw new BadRequestException('Trusted device already exists');
     }
 
-    const codes = [generateRecoveryCode(), generateRecoveryCode(), generateRecoveryCode()];
+    const codes = [
+      generateRecoveryCode(),
+      generateRecoveryCode(),
+      generateRecoveryCode(),
+    ];
 
     const [codeHashOne, codeHashTwo, codeHashThree] = await Promise.all(
       codes.map((code) => argon2.hash(code)),
@@ -53,6 +65,7 @@ export class TrustService {
           trustState: DeviceTrustState.TRUSTED,
           trustEstablishedAt: new Date(),
           publicIdentityPayload: input.devicePublicIdentity,
+          deviceWrappingPublicKey: input.deviceWrappingPublicKey,
         },
       });
 
@@ -86,7 +99,10 @@ export class TrustService {
   }
 
   async createPairingSession(userId: string, input: CreatePairingSessionDto) {
-    await this.requireApprovedEnabledUser(userId, 'User cannot establish trust');
+    await this.requireApprovedEnabledUser(
+      userId,
+      'User cannot establish trust',
+    );
 
     const device = await this.prisma.trustedDevice.create({
       data: {
@@ -94,6 +110,7 @@ export class TrustService {
         label: input.deviceLabel,
         trustState: DeviceTrustState.UNTRUSTED,
         publicIdentityPayload: input.devicePublicIdentity,
+        deviceWrappingPublicKey: input.deviceWrappingPublicKey,
       },
     });
 
@@ -119,7 +136,10 @@ export class TrustService {
       throw new NotFoundException('Pairing session not found');
     }
 
-    if (session.expiresAt < new Date() && session.state !== PairingSessionState.TRUSTED) {
+    if (
+      session.expiresAt < new Date() &&
+      session.state !== PairingSessionState.TRUSTED
+    ) {
       return this.prisma.pairingSession.update({
         where: { id: session.id },
         data: { state: PairingSessionState.EXPIRED },
@@ -130,17 +150,53 @@ export class TrustService {
     return session;
   }
 
-  async approvePairing(userId: string, trustedDeviceId: string | null, input: ApprovePairingDto) {
+  async approvePairing(
+    userId: string,
+    trustedDeviceId: string | null,
+    input: ApprovePairingDto,
+  ) {
     await this.requireTrustedActorDevice(userId, trustedDeviceId);
 
     const session = await this.getPairingSession(input.pairingSessionId);
 
     if (session.requesterDevice.userId !== userId) {
-      throw new BadRequestException('Pairing session belongs to a different user');
+      throw new BadRequestException(
+        'Pairing session belongs to a different user',
+      );
     }
 
     if (session.state !== PairingSessionState.AWAITING_PAIR) {
       throw new BadRequestException('Pairing session is not awaiting approval');
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      return tx.pairingSession.update({
+        where: { id: session.id },
+        data: {
+          state: PairingSessionState.AWAITING_APPROVAL,
+          approverDeviceId: trustedDeviceId,
+          approvalPackage: input.approvalPackage as Prisma.InputJsonValue,
+          approvedAt: new Date(),
+        },
+        include: { requesterDevice: true, approverDevice: true },
+      });
+    });
+  }
+
+  async finalizePairing(userId: string, input: FinalizePairingDto) {
+    const session = await this.getPairingSession(input.pairingSessionId);
+
+    if (session.requesterDevice.userId !== userId) {
+      throw new BadRequestException(
+        'Pairing session belongs to a different user',
+      );
+    }
+
+    if (
+      session.state !== PairingSessionState.AWAITING_APPROVAL ||
+      !session.approvalPackage
+    ) {
+      throw new BadRequestException('Pairing session is not ready to finalize');
     }
 
     return this.prisma.$transaction(async (tx) => {
@@ -156,20 +212,25 @@ export class TrustService {
         where: { id: session.id },
         data: {
           state: PairingSessionState.TRUSTED,
-          approverDeviceId: trustedDeviceId,
-          approvedAt: new Date(),
         },
+        include: { requesterDevice: true, approverDevice: true },
       });
     });
   }
 
-  async rejectPairing(userId: string, trustedDeviceId: string | null, input: RejectPairingDto) {
+  async rejectPairing(
+    userId: string,
+    trustedDeviceId: string | null,
+    input: RejectPairingDto,
+  ) {
     await this.requireTrustedActorDevice(userId, trustedDeviceId);
 
     const session = await this.getPairingSession(input.pairingSessionId);
 
     if (session.requesterDevice.userId !== userId) {
-      throw new BadRequestException('Pairing session belongs to a different user');
+      throw new BadRequestException(
+        'Pairing session belongs to a different user',
+      );
     }
 
     if (session.state !== PairingSessionState.AWAITING_PAIR) {
@@ -196,7 +257,10 @@ export class TrustService {
       throw new NotFoundException('Pairing session not found');
     }
 
-    if (session.expiresAt < new Date() && session.state !== PairingSessionState.TRUSTED) {
+    if (
+      session.expiresAt < new Date() &&
+      session.state !== PairingSessionState.TRUSTED
+    ) {
       throw new BadRequestException('Pairing session expired');
     }
 
@@ -213,7 +277,10 @@ export class TrustService {
       throw new NotFoundException('Pairing session not found');
     }
 
-    if (session.expiresAt < new Date() && session.state !== PairingSessionState.TRUSTED) {
+    if (
+      session.expiresAt < new Date() &&
+      session.state !== PairingSessionState.TRUSTED
+    ) {
       throw new BadRequestException('Pairing session expired');
     }
 
@@ -221,7 +288,10 @@ export class TrustService {
   }
 
   async recoveryAttempt(userId: string, input: RecoveryAttemptDto) {
-    await this.requireApprovedEnabledUser(userId, 'User cannot complete recovery');
+    await this.requireApprovedEnabledUser(
+      userId,
+      'User cannot complete recovery',
+    );
 
     const recoverySet = await this.prisma.recoveryCredentialSet.findUnique({
       where: { userId },
@@ -232,41 +302,78 @@ export class TrustService {
     }
 
     const [one, two, three] = await Promise.all([
-      argon2.verify(recoverySet.codeHashOne, input.recoveryCode).catch(() => false),
-      argon2.verify(recoverySet.codeHashTwo, input.recoveryCode).catch(() => false),
-      argon2.verify(recoverySet.codeHashThree, input.recoveryCode).catch(() => false),
+      argon2
+        .verify(recoverySet.codeHashOne, input.recoveryCode)
+        .catch(() => false),
+      argon2
+        .verify(recoverySet.codeHashTwo, input.recoveryCode)
+        .catch(() => false),
+      argon2
+        .verify(recoverySet.codeHashThree, input.recoveryCode)
+        .catch(() => false),
     ]);
 
     if (!one && !two && !three) {
       throw new BadRequestException('Recovery code is invalid');
     }
 
-    const codes = [generateRecoveryCode(), generateRecoveryCode(), generateRecoveryCode()];
+    const codes = [
+      generateRecoveryCode(),
+      generateRecoveryCode(),
+      generateRecoveryCode(),
+    ];
     const [codeHashOne, codeHashTwo, codeHashThree] = await Promise.all(
       codes.map((code) => argon2.hash(code)),
     );
 
-    const device = await this.prisma.trustedDevice.create({
-      data: {
-        userId,
-        label: input.deviceLabel,
-        trustState: DeviceTrustState.UNTRUSTED,
-        recoveryRequestedAt: new Date(),
-        publicIdentityPayload: input.devicePublicIdentity,
-      },
-    });
+    const device = await this.prisma.$transaction(async (tx) => {
+      const createdDevice = await tx.trustedDevice.create({
+        data: {
+          userId,
+          label: input.deviceLabel,
+          trustState: DeviceTrustState.UNTRUSTED,
+          recoveryRequestedAt: new Date(),
+          publicIdentityPayload: input.devicePublicIdentity,
+          deviceWrappingPublicKey: input.deviceWrappingPublicKey,
+        },
+      });
 
-    await this.prisma.recoveryCredentialSet.update({
-      where: { userId },
-      data: {
-        codeHashOne,
-        codeHashTwo,
-        codeHashThree,
-        pendingDisplayBlob: JSON.stringify(codes),
-        pendingDisplayUntil: new Date(Date.now() + 30 * 60_000),
-        rotatedAt: new Date(),
-        acknowledgedAt: null,
-      },
+      if (input.userDomainPublicKey) {
+        const latestKey = await tx.userDomainWrappingKey.findFirst({
+          where: { userId },
+          orderBy: { version: 'desc' },
+          select: { version: true },
+        });
+
+        await tx.userDomainWrappingKey.updateMany({
+          where: { userId, isCurrent: true },
+          data: { isCurrent: false },
+        });
+
+        await tx.userDomainWrappingKey.create({
+          data: {
+            userId,
+            version: (latestKey?.version ?? 0) + 1,
+            publicKey: input.userDomainPublicKey,
+            isCurrent: true,
+          },
+        });
+      }
+
+      await tx.recoveryCredentialSet.update({
+        where: { userId },
+        data: {
+          codeHashOne,
+          codeHashTwo,
+          codeHashThree,
+          pendingDisplayBlob: JSON.stringify(codes),
+          pendingDisplayUntil: new Date(Date.now() + 30 * 60_000),
+          rotatedAt: new Date(),
+          acknowledgedAt: null,
+        },
+      });
+
+      return createdDevice;
     });
 
     return {
@@ -276,9 +383,14 @@ export class TrustService {
   }
 
   async acknowledgeRecoveryRotation(userId: string, trustedDeviceId: string) {
-    await this.requireApprovedEnabledUser(userId, 'User cannot complete recovery');
+    await this.requireApprovedEnabledUser(
+      userId,
+      'User cannot complete recovery',
+    );
 
-    const device = await this.prisma.trustedDevice.findUnique({ where: { id: trustedDeviceId } });
+    const device = await this.prisma.trustedDevice.findUnique({
+      where: { id: trustedDeviceId },
+    });
 
     if (!device || device.userId !== userId) {
       throw new NotFoundException('Trusted device not found');
@@ -308,7 +420,10 @@ export class TrustService {
   }
 
   async getPendingRecoveryDisplay(userId: string) {
-    await this.requireApprovedEnabledUser(userId, 'User cannot view recovery codes');
+    await this.requireApprovedEnabledUser(
+      userId,
+      'User cannot view recovery codes',
+    );
 
     const recoverySet = await this.prisma.recoveryCredentialSet.findUnique({
       where: { userId },
@@ -348,7 +463,10 @@ export class TrustService {
     return user;
   }
 
-  private async requireTrustedActorDevice(userId: string, trustedDeviceId: string | null) {
+  private async requireTrustedActorDevice(
+    userId: string,
+    trustedDeviceId: string | null,
+  ) {
     if (!trustedDeviceId) {
       throw new ForbiddenException('Trusted approver device required');
     }

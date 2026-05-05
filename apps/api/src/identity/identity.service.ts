@@ -24,7 +24,12 @@ export class IdentityService {
       where: { code: input.inviteCode },
     });
 
-    if (!invite || invite.invalidatedAt || invite.consumedAt || invite.expiresAt < new Date()) {
+    if (
+      !invite ||
+      invite.invalidatedAt ||
+      invite.consumedAt ||
+      invite.expiresAt < new Date()
+    ) {
       throw new BadRequestException('Invite code is invalid');
     }
 
@@ -113,7 +118,9 @@ export class IdentityService {
 
   async createInvite(createdById: string, expiresInMinutes: number) {
     if (expiresInMinutes <= 0 || expiresInMinutes > 240) {
-      throw new BadRequestException('Invite expiry must be between 1 and 240 minutes');
+      throw new BadRequestException(
+        'Invite expiry must be between 1 and 240 minutes',
+      );
     }
 
     return this.prisma.inviteCode.create({
@@ -137,7 +144,9 @@ export class IdentityService {
   }
 
   async invalidateInvite(inviteId: string) {
-    const invite = await this.prisma.inviteCode.findUnique({ where: { id: inviteId } });
+    const invite = await this.prisma.inviteCode.findUnique({
+      where: { id: inviteId },
+    });
 
     if (!invite) {
       throw new NotFoundException('Invite not found');

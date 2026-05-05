@@ -1,6 +1,11 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { Readable } from 'stream';
 import {
+  Prisma,
   PublicLinkState,
   SourceItemState,
   UploadContentKind,
@@ -31,7 +36,9 @@ export class PublicLinksService {
     }
 
     if (sourceItem.state !== SourceItemState.ACTIVE) {
-      throw new BadRequestException('Source item is not eligible for public links');
+      throw new BadRequestException(
+        'Source item is not eligible for public links',
+      );
     }
 
     if (sourceItem.validUntil && sourceItem.validUntil < new Date()) {
@@ -43,7 +50,9 @@ export class PublicLinksService {
     }
 
     if (sourceItem.contentKind === UploadContentKind.SELF_SPACE_TEXT) {
-      throw new BadRequestException('Text items cannot be linked outward in v1');
+      throw new BadRequestException(
+        'Text items cannot be linked outward in v1',
+      );
     }
 
     const decision = await this.policyService.evaluatePublicLinkCreation({
@@ -64,7 +73,13 @@ export class PublicLinksService {
         linkToken: crypto.randomUUID(),
         configuredDownloadCount: decision.resolvedDownloadCount,
         remainingDownloadCount: decision.resolvedDownloadCount,
-        validUntil: this.clampValidUntil(candidateValidUntil, sourceItem.validUntil),
+        validUntil: this.clampValidUntil(
+          candidateValidUntil,
+          sourceItem.validUntil,
+        ),
+        packageReference: input.packageReference as
+          | Prisma.InputJsonValue
+          | undefined,
       },
     });
 
@@ -73,6 +88,7 @@ export class PublicLinksService {
       linkToken: publicLink.linkToken,
       remainingDownloadCount: publicLink.remainingDownloadCount,
       validUntil: publicLink.validUntil,
+      packageReference: publicLink.packageReference,
     };
   }
 
@@ -83,7 +99,9 @@ export class PublicLinksService {
       throw this.invalidPublicLink();
     }
 
-    const parts = this.extractStorageParts(publicLink.sourceItem.storageBinding);
+    const parts = this.extractStorageParts(
+      publicLink.sourceItem.storageBinding,
+    );
     const contentLength = parts.reduce((sum, part) => sum + part.byteSize, 0);
 
     const reservation = await this.reservePublicDownload(publicLink.id);
@@ -91,7 +109,9 @@ export class PublicLinksService {
       throw this.invalidPublicLink();
     }
 
-    const stream = Readable.from(this.readParts(parts.map((part) => part.storageKey)));
+    const stream = Readable.from(
+      this.readParts(parts.map((part) => part.storageKey)),
+    );
 
     return {
       publicLinkId: publicLink.id,
@@ -99,6 +119,9 @@ export class PublicLinksService {
       stream,
       contentLength,
       fileName: publicLink.sourceItem.displayName ?? 'liminalis-download.bin',
+      packageReference: publicLink.packageReference,
+      encryptedMetadata: publicLink.sourceItem.encryptedMetadata,
+      contentCryptoMetadata: publicLink.sourceItem.contentCryptoMetadata,
     };
   }
 
@@ -134,13 +157,16 @@ export class PublicLinksService {
         ticket.publicLink.sourceItem.state === SourceItemState.ACTIVE &&
         (!ticket.publicLink.sourceItem.validUntil ||
           ticket.publicLink.sourceItem.validUntil >= new Date()) &&
-        (!ticket.publicLink.validUntil || ticket.publicLink.validUntil >= new Date());
+        (!ticket.publicLink.validUntil ||
+          ticket.publicLink.validUntil >= new Date());
 
       return tx.publicLink.update({
         where: { id: ticket.publicLinkId },
         data: {
           remainingDownloadCount: { increment: 1 },
-          state: canReactivate ? PublicLinkState.ACTIVE : ticket.publicLink.state,
+          state: canReactivate
+            ? PublicLinkState.ACTIVE
+            : ticket.publicLink.state,
         },
       });
     });
@@ -222,7 +248,10 @@ export class PublicLinksService {
       throw this.invalidPublicLink();
     }
 
-    const publicLink = await this.redeemIssuedTicket(ticket.id, ticket.publicLink.id);
+    const publicLink = await this.redeemIssuedTicket(
+      ticket.id,
+      ticket.publicLink.id,
+    );
 
     return {
       publicLinkId: publicLink.id,
@@ -242,7 +271,8 @@ export class PublicLinksService {
       if (
         publicLink.state !== PublicLinkState.ACTIVE ||
         publicLink.sourceItem.state !== SourceItemState.ACTIVE ||
-        (publicLink.sourceItem.validUntil && publicLink.sourceItem.validUntil < new Date()) ||
+        (publicLink.sourceItem.validUntil &&
+          publicLink.sourceItem.validUntil < new Date()) ||
         (publicLink.validUntil && publicLink.validUntil < new Date()) ||
         publicLink.remainingDownloadCount <= 0
       ) {
@@ -295,7 +325,9 @@ export class PublicLinksService {
   }
 
   private async refreshPublicLinkStateByToken(linkToken: string) {
-    const publicLink = await this.prisma.publicLink.findUnique({ where: { linkToken } });
+    const publicLink = await this.prisma.publicLink.findUnique({
+      where: { linkToken },
+    });
 
     if (!publicLink) {
       throw this.invalidPublicLink();
@@ -316,7 +348,10 @@ export class PublicLinksService {
 
     if (publicLink.sourceItem.state !== SourceItemState.ACTIVE) {
       nextState = PublicLinkState.INVALIDATED;
-    } else if (publicLink.sourceItem.validUntil && publicLink.sourceItem.validUntil < new Date()) {
+    } else if (
+      publicLink.sourceItem.validUntil &&
+      publicLink.sourceItem.validUntil < new Date()
+    ) {
       nextState = PublicLinkState.INVALIDATED;
     } else if (publicLink.validUntil && publicLink.validUntil < new Date()) {
       nextState = PublicLinkState.EXPIRED;
@@ -336,7 +371,11 @@ export class PublicLinksService {
   }
 
   private extractStorageParts(storageBinding: unknown) {
-    if (!storageBinding || typeof storageBinding !== 'object' || !('parts' in storageBinding)) {
+    if (
+      !storageBinding ||
+      typeof storageBinding !== 'object' ||
+      !('parts' in storageBinding)
+    ) {
       throw this.invalidPublicLink();
     }
 
@@ -371,7 +410,10 @@ export class PublicLinksService {
     }
   }
 
-  private clampValidUntil(candidate: Date | null, sourceValidUntil: Date | null) {
+  private clampValidUntil(
+    candidate: Date | null,
+    sourceValidUntil: Date | null,
+  ) {
     if (!candidate) {
       return sourceValidUntil;
     }

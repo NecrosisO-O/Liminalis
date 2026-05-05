@@ -17,12 +17,20 @@ export class SharesController {
     @SessionActor() sessionActor: AuthenticatedSession,
     @Body() input: CreateShareDto,
   ) {
-    return this.sharesService.createUserTargetedShare(sessionActor.userId, input);
+    return this.sharesService.createUserTargetedShare(
+      sessionActor.userId,
+      input,
+    );
   }
 
   @Get('incoming')
   async getIncomingShares(@SessionActor() sessionActor: AuthenticatedSession) {
     return this.sharesService.getIncomingShares(sessionActor.userId);
+  }
+
+  @Get('recipient-key/:username')
+  async getRecipientKey(@Param('username') username: string) {
+    return this.sharesService.getRecipientPublicKey(username);
   }
 
   @Post(':shareObjectId/attempts/:attemptScopeKey')

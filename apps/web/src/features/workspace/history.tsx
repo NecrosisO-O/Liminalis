@@ -1,20 +1,54 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { api, type ConfidentialityLevel, type HistoryEntry, type SourceItemDetail } from '../../shared/api/client.ts'
+import { decryptSourceMetadata, decryptTextPayload, type SourceMetadata } from '../../shared/crypto/envelope.ts'
 import { Button, Dialog, EmptyState, Field, SelectInput, TextInput, Toast } from '../../shared/ui/components.tsx'
 import { confidentialityClass, formatDateTime, humanEnum } from '../../shared/ui/format.ts'
 import { downloadShareObject, downloadSourceItem, formatBytes, itemObjectIds } from '../../shared/files/transfer.ts'
+import { createE2eeExtraction, createE2eePublicLink, createE2eeUserShare } from '../../shared/files/sharing.ts'
 
 function titleFor(entry: HistoryEntry) {
   return entry.displayTitle ?? humanEnum(entry.visibleTypeLabel, 'Untitled item')
 }
 
+function metadataKey(entry: HistoryEntry) {
+  return `${entry.id}:${JSON.stringify(entry.encryptedMetadata ?? null)}`
+}
+
 export function HistoryPage() {
+  const [metadataCache, setMetadataCache] = useState<Record<string, SourceMetadata | null>>({})
   const history = useQuery({
     queryKey: ['history'],
     queryFn: api.getHistory,
   })
+
+  useEffect(() => {
+    for (const entry of history.data ?? []) {
+      if (!entry.encryptedMetadata || metadataKey(entry) in metadataCache) {
+        continue
+      }
+
+      const ids = itemObjectIds(entry)
+      const retrieval = ids.shareObjectId
+        ? api.issueShareRetrieval(ids.shareObjectId, `history-metadata-${entry.id}`)
+        : ids.sourceItemId
+          ? api.issueSourceItemRetrieval(ids.sourceItemId, `history-metadata-${entry.id}`)
+          : null
+
+      void retrieval
+        ?.then((attempt) => decryptSourceMetadata({
+          encryptedMetadata: entry.encryptedMetadata,
+          wrappedPayloadReference: attempt.wrappedPayloadReference,
+        }))
+        .then((metadata) => {
+          setMetadataCache((current) => ({ ...current, [metadataKey(entry)]: metadata }))
+        })
+        .catch(() => {
+          setMetadataCache((current) => ({ ...current, [metadataKey(entry)]: null }))
+        })
+    }
+  }, [history.data, metadataCache])
 
   return (
     <section className="workspace-page">
@@ -41,7 +75,7 @@ export function HistoryPage() {
               <Link key={entry.id} className="table-row" to={`/app/items/${entry.sourceObjectId}`}>
                 <span className="record-cell">
                   <i className={confidentialityClass(entry.confidentialityLevel)} />
-                  <strong>{titleFor(entry)}</strong>
+                  <strong>{metadataCache[metadataKey(entry)]?.displayName ?? titleFor(entry)}</strong>
                 </span>
                 <span>{entry.visibleTypeLabel}</span>
                 <span>{entry.sourceLabel}</span>
@@ -65,6 +99,8 @@ export function ItemDetailPage() {
   const [validity, setValidity] = useState('60')
   const [level, setLevel] = useState<ConfidentialityLevel>('SECRET')
   const [shareOpen, setShareOpen] = useState(false)
+  const [decryptedMetadata, setDecryptedMetadata] = useState<SourceMetadata | null>(null)
+  const [decryptedText, setDecryptedText] = useState<string | null>(null)
 
   const history = useQuery({
     queryKey: ['history'],
@@ -132,6 +168,38 @@ export function ItemDetailPage() {
 
   const detail = sourceItem.data
 
+  useEffect(() => {
+    if (!detail?.encryptedMetadata || !ids.sourceItemId) {
+      return
+    }
+
+    let active = true
+    void api.issueSourceItemRetrieval(ids.sourceItemId, `detail-metadata-${ids.sourceItemId}`)
+      .then(async (attempt) => {
+        const metadata = await decryptSourceMetadata({
+          encryptedMetadata: detail.encryptedMetadata,
+          wrappedPayloadReference: attempt.wrappedPayloadReference,
+        })
+        const text = detail.textCiphertextBody
+          ? await decryptTextPayload(detail.textCiphertextBody, attempt.wrappedPayloadReference).catch(() => null)
+          : null
+        if (active) {
+          setDecryptedMetadata(metadata)
+          setDecryptedText(text)
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setDecryptedMetadata(null)
+          setDecryptedText(null)
+        }
+      })
+
+    return () => {
+      active = false
+    }
+  }, [detail?.encryptedMetadata, detail?.textCiphertextBody, ids.sourceItemId])
+
   if (history.isLoading || sourceItem.isLoading) {
     return <section className="workspace-page"><EmptyState title="Loading item" /></section>
   }
@@ -150,7 +218,7 @@ export function ItemDetailPage() {
       <header className="detail-hero">
         <div>
           <p className="eyebrow">Item detail</p>
-          <h2>{detail?.displayName ?? projection?.displayTitle ?? itemId}</h2>
+          <h2>{decryptedMetadata?.displayName ?? detail?.displayName ?? projection?.displayTitle ?? itemId}</h2>
           <p className="muted">{projection?.sourceLabel ?? 'Self space'} · {detail?.contentKind ?? projection?.visibleTypeLabel ?? 'item'}</p>
         </div>
         <div className="actions">
@@ -171,7 +239,7 @@ export function ItemDetailPage() {
       {detail?.textCiphertextBody ? (
         <section className="content-panel">
           <h3>Text</h3>
-          <p>{detail.textCiphertextBody}</p>
+          <p>{decryptedText ?? 'Encrypted text is not available on this browser.'}</p>
         </section>
       ) : null}
       {detail ? (
@@ -216,16 +284,16 @@ function ShareDialog({ sourceItem, sourceItemId, onClose }: { sourceItem?: Sourc
   const [result, setResult] = useState<string | null>(null)
 
   const share = useMutation({
-    mutationFn: () => api.createShare({ sourceItemId, recipientUsername: recipient, requestedValidityMinutes: 60 }),
+    mutationFn: () => createE2eeUserShare({ sourceItemId, recipientUsername: recipient, requestedValidityMinutes: 60 }),
     onSuccess: (data) => setResult(`User share created: ${data.shareObjectId}`),
   })
   const extraction = useMutation({
-    mutationFn: () => api.createExtraction({ sourceItemId, password: password.trim() || undefined, requestedValidityMinutes: 60, requestedRetrievalCount: 1 }),
+    mutationFn: () => createE2eeExtraction({ sourceItemId, password: password.trim() || undefined, requestedValidityMinutes: 60, requestedRetrievalCount: 1 }),
     onSuccess: (data) => setResult(`Extraction: /x/${data.entryToken} · password ${data.password}`),
   })
   const publicLink = useMutation({
-    mutationFn: () => api.createPublicLink({ sourceItemId, requestedValidityMinutes: 60, requestedDownloadCount: 1 }),
-    onSuccess: (data) => setResult(`Public link: /p/${data.linkToken}`),
+    mutationFn: () => createE2eePublicLink({ sourceItemId, requestedValidityMinutes: 60, requestedDownloadCount: 1 }),
+    onSuccess: (data) => setResult(`Public link: ${data.publicUrl}`),
   })
 
   return (
