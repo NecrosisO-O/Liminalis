@@ -5,6 +5,7 @@ import { api } from '../../shared/api/client.ts'
 import { createDeviceMaterial, ensureDeviceMaterial } from '../../shared/crypto/device.ts'
 import { createPairingApprovalPackage, installPairingApprovalPackage } from '../../shared/crypto/envelope.ts'
 import { Button, Field, StatusView, TextInput } from '../../shared/ui/components.tsx'
+import { useBootstrap } from '../access/bootstrap.ts'
 
 const pendingTrustedDeviceStorageKey = 'liminalis_pending_trusted_device_id'
 
@@ -140,9 +141,6 @@ export function DevicePairWaitingPage() {
           </div>
         ) : null}
         <div className="actions">
-          <Link className="button button-secondary" to="/device/pair/approve">
-            Approve another browser
-          </Link>
           {session.data?.approvalPackage && session.data.state !== 'TRUSTED' ? (
             <Button variant="primary" onClick={() => finalize.mutate()} disabled={finalize.isPending}>
               Trust locally and open workspace
@@ -157,17 +155,20 @@ export function DevicePairWaitingPage() {
 }
 
 export function DevicePairApprovePage() {
+  const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const queryCode = searchParams.get('code') ?? ''
   const querySessionId = searchParams.get('pairingSessionId') ?? ''
   const queryClient = useQueryClient()
+  const bootstrap = useBootstrap()
   const [shortCode, setShortCode] = useState(queryCode)
   const [resolvedSessionId] = useState(querySessionId)
+  const canApprove = bootstrap.data?.accountState === 'active' && bootstrap.data.trustState === 'trusted'
 
   const resolved = useQuery({
     queryKey: ['trust', 'pairing-approval', shortCode, resolvedSessionId],
     queryFn: () => (resolvedSessionId ? api.getPairingSession(resolvedSessionId) : api.resolvePairingByShortCode(shortCode.trim())),
-    enabled: resolvedSessionId !== '' || shortCode.trim() !== '',
+    enabled: canApprove && (resolvedSessionId !== '' || shortCode.trim() !== ''),
     retry: false,
   })
 
@@ -183,7 +184,7 @@ export function DevicePairApprovePage() {
     },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['trust'] })
-      await resolved.refetch()
+      navigate('/app/settings', { replace: true })
     },
   })
 
@@ -193,6 +194,26 @@ export function DevicePairApprovePage() {
       await resolved.refetch()
     },
   })
+
+  if (bootstrap.isLoading) {
+    return (
+      <main className="entry-screen">
+        <StatusView eyebrow="Trust" title="Checking this browser" detail="Only an existing trusted browser can approve a new pairing request." />
+      </main>
+    )
+  }
+
+  if (!canApprove) {
+    return (
+      <main className="entry-screen">
+        <StatusView
+          eyebrow="Trust"
+          title="Use an existing trusted browser"
+          detail="This approval screen is only available from a browser that is already trusted on this account."
+        />
+      </main>
+    )
+  }
 
   return (
     <main className="entry-screen">

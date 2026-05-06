@@ -602,7 +602,7 @@ export class LiveTransferService {
     }
 
     this.assertParticipant(session, userId, trustedDeviceId);
-    this.assertRelayActive(session);
+    this.assertRelayActive(session, { allowCompleted: true });
 
     return this.prisma.liveTransferRelayChunk.findMany({
       where: {
@@ -640,7 +640,7 @@ export class LiveTransferService {
     }
 
     this.assertParticipant(session, userId, trustedDeviceId);
-    this.assertRelayActive(session);
+    this.assertRelayActive(session, { allowCompleted: true });
 
     const chunk = await this.prisma.liveTransferRelayChunk.findFirst({
       where: {
@@ -679,6 +679,7 @@ export class LiveTransferService {
     }
 
     this.assertParticipant(session, userId, trustedDeviceId);
+    this.assertRelayActive(session, { allowCompleted: true });
 
     const chunk = await this.prisma.liveTransferRelayChunk.findFirst({
       where: {
@@ -800,13 +801,16 @@ export class LiveTransferService {
     }
   }
 
-  private assertCanExchangeTransportData(session: {
-    state: LiveTransferSessionState;
-    initiatorConfirmedAt: Date | null;
-    joinerConfirmedAt: Date | null;
-    joinerUserId: string | null;
-    joinerDeviceId: string | null;
-  }) {
+  private assertCanExchangeTransportData(
+    session: {
+      state: LiveTransferSessionState;
+      initiatorConfirmedAt: Date | null;
+      joinerConfirmedAt: Date | null;
+      joinerUserId: string | null;
+      joinerDeviceId: string | null;
+    },
+    options: { allowCompleted?: boolean } = {},
+  ) {
     if (!session.joinerUserId || !session.joinerDeviceId) {
       throw new BadRequestException(
         'Live-transfer session has no joined participant',
@@ -819,26 +823,32 @@ export class LiveTransferService {
       );
     }
 
-    if (
-      session.state !== LiveTransferSessionState.CONNECTING &&
-      session.state !== LiveTransferSessionState.ACTIVE
-    ) {
+    const stateAllowsExchange =
+      session.state === LiveTransferSessionState.CONNECTING ||
+      session.state === LiveTransferSessionState.ACTIVE ||
+      (options.allowCompleted &&
+        session.state === LiveTransferSessionState.COMPLETED);
+
+    if (!stateAllowsExchange) {
       throw new BadRequestException(
         'Live-transfer session is not ready for signaling',
       );
     }
   }
 
-  private assertRelayActive(session: {
-    relayAllowed: boolean;
-    transportState: LiveTransferTransportState | null;
-    state: LiveTransferSessionState;
-    initiatorConfirmedAt: Date | null;
-    joinerConfirmedAt: Date | null;
-    joinerUserId: string | null;
-    joinerDeviceId: string | null;
-  }) {
-    this.assertCanExchangeTransportData(session);
+  private assertRelayActive(
+    session: {
+      relayAllowed: boolean;
+      transportState: LiveTransferTransportState | null;
+      state: LiveTransferSessionState;
+      initiatorConfirmedAt: Date | null;
+      joinerConfirmedAt: Date | null;
+      joinerUserId: string | null;
+      joinerDeviceId: string | null;
+    },
+    options: { allowCompleted?: boolean } = {},
+  ) {
+    this.assertCanExchangeTransportData(session, options);
 
     if (!session.relayAllowed) {
       throw new BadRequestException(

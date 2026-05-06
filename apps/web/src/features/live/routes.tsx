@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject } from 'react'
-import { api, type ConfidentialityLevel, type LiveTransferSession } from '../../shared/api/client.ts'
+import { api, type ConfidentialityLevel, type LiveRelayChunk, type LiveTransferSession } from '../../shared/api/client.ts'
 import { Button, EmptyState, Field, SelectInput, TextInput, Toast } from '../../shared/ui/components.tsx'
 import {
   classifySelection,
@@ -58,6 +58,14 @@ function isReadyForRelay(session: LiveTransferSession | undefined) {
   return canExchangeLiveData(session) && activeTransport(session) === 'RELAY_ACTIVE'
 }
 
+function canAttemptRelay(session: LiveTransferSession | undefined) {
+  return Boolean(
+    session?.relayAllowed &&
+      canExchangeLiveData(session) &&
+      activeTransport(session) !== 'RELAY_ACTIVE',
+  )
+}
+
 function orderedChunks(chunks: Blob[]) {
   return new Blob(chunks)
 }
@@ -95,7 +103,10 @@ export function LiveStartPage() {
           <p className="eyebrow">Live transfer</p>
           <h2>Start a direct file session</h2>
         </div>
-        <Link className="button button-secondary" to="/app">Back to workspace</Link>
+        <div className="actions">
+          <Link className="button button-primary" to="/live/join">Join by code</Link>
+          <Link className="button button-secondary" to="/app">Back to workspace</Link>
+        </div>
       </header>
       <input ref={fileInputRef} hidden type="file" multiple onChange={(event) => setEntries(entriesFromFileList(event.target.files))} />
       <input
@@ -154,6 +165,10 @@ export function LiveJoinPage() {
           <p className="eyebrow">Live transfer</p>
           <h2>Join by code</h2>
         </div>
+        <div className="actions">
+          <Link className="button button-secondary" to="/live/start">Start session</Link>
+          <Link className="button button-secondary" to="/app">Workspace</Link>
+        </div>
       </header>
       <section className="action-panel">
         <Field label="Session code" error={join.error instanceof Error ? join.error.message : null}>
@@ -175,8 +190,11 @@ export function LiveSessionPage() {
   const [localEntries, setLocalEntries] = useState<SelectedFileEntry[]>(() => loadLiveSelection(routeSessionId))
   const [relayProgress, setRelayProgress] = useState<{ sent: number; total: number } | null>(null)
   const [p2pReady, setP2pReady] = useState(false)
-  const [liveKeyReady, setLiveKeyReady] = useState(false)
+  const [p2pSending, setP2pSending] = useState(false)
+  const [liveKeyReadySessionId, setLiveKeyReadySessionId] = useState('')
+  const [copiedSessionCode, setCopiedSessionCode] = useState('')
   const [receivedRelayChunks, setReceivedRelayChunks] = useState<Record<string, ReceivedRelayChunk>>({})
+  const [receivingRelayChunkIds, setReceivingRelayChunkIds] = useState<Set<string>>(() => new Set())
   const [receivedP2p, setReceivedP2p] = useState<{
     manifest: LivePayloadManifest | null
     chunks: Blob[]
@@ -187,6 +205,8 @@ export function LiveSessionPage() {
   const liveKeyRef = useRef<CryptoKey | null>(null)
   const liveKeyPairRef = useRef<CryptoKeyPair | null>(null)
   const handledSignalIdsRef = useRef(new Set<string>())
+  const livePublicKeySentRef = useRef(false)
+  const liveKeyReady = liveKeyReadySessionId === routeSessionId
 
   const session = useQuery({
     queryKey: ['live', routeSessionId],
@@ -202,14 +222,13 @@ export function LiveSessionPage() {
     },
   })
 
-  const relay = useMutation({
+  const sendRelay = useMutation({
     mutationFn: async () => {
       if (!isReadyForRelay(session.data)) {
         throw new Error('Confirm both sides and activate relay before sending.')
       }
 
-      const liveKey = await ensureLiveSessionKey(routeSessionId, liveKeyRef, liveKeyPairRef)
-      setLiveKeyReady(true)
+      const liveKey = ensureLiveSessionKey(liveKeyRef)
       await sendLivePublicKeySignal(routeSessionId, liveKeyPairRef)
       const payload = await buildCurrentLivePayload(localEntries)
       let sequence = 1
@@ -242,7 +261,6 @@ export function LiveSessionPage() {
         sequence += 1
       }
 
-      await api.completeLiveTransferSession(routeSessionId).catch(() => undefined)
       setToast({ tone: 'success', message: `Relay payload sent as ${payload.displayName}.` })
     },
     onError: (error) => setToast({ tone: 'danger', message: error instanceof Error ? error.message : 'Relay upload failed.' }),
@@ -271,15 +289,23 @@ export function LiveSessionPage() {
     },
   })
 
-  const activateRelay = useMutation({
+  const useRelay = useMutation({
     mutationFn: async () => {
+      if (!activeSession?.relayAllowed || !canExchangeLiveData(activeSession)) {
+        throw new Error('Confirm both sides before using relay.')
+      }
+
+      if (activeTransport(activeSession) !== 'RELAY_ATTEMPT') {
+        await api.updateLiveTransferTransport(routeSessionId, 'RELAY_ATTEMPT')
+      }
+
       await api.updateLiveTransferTransport(routeSessionId, 'RELAY_ACTIVE')
     },
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['live', routeSessionId] })
       setToast({ tone: 'success', message: 'Relay transport is active.' })
     },
-    onError: (error) => setToast({ tone: 'danger', message: error instanceof Error ? error.message : 'Could not activate relay.' }),
+    onError: (error) => setToast({ tone: 'danger', message: error instanceof Error ? error.message : 'Could not use relay.' }),
   })
 
   const fail = useMutation({
@@ -410,6 +436,7 @@ export function LiveSessionPage() {
   }
 
   async function sendP2pPayload() {
+    setP2pSending(true)
     try {
       const channel = channelRef.current
       if (!channel || channel.readyState !== 'open') {
@@ -417,8 +444,7 @@ export function LiveSessionPage() {
       }
 
       const payload = await buildCurrentLivePayload(localEntries)
-      const liveKey = await ensureLiveSessionKey(routeSessionId, liveKeyRef, liveKeyPairRef)
-      setLiveKeyReady(true)
+      const liveKey = ensureLiveSessionKey(liveKeyRef)
       await sendLivePublicKeySignal(routeSessionId, liveKeyPairRef)
       const manifest: LivePayloadManifest = {
         fileName: payload.displayName,
@@ -439,7 +465,33 @@ export function LiveSessionPage() {
       setToast({ tone: 'success', message: `P2P payload sent as ${payload.displayName}.` })
     } catch (error) {
       setToast({ tone: 'danger', message: error instanceof Error ? error.message : 'P2P send failed.' })
+    } finally {
+      setP2pSending(false)
     }
+  }
+
+  function sendFiles() {
+    if (localEntries.length === 0) {
+      setToast({ tone: 'warning', message: 'Choose files before sending.' })
+      return
+    }
+
+    if (!liveKeyReady) {
+      setToast({ tone: 'danger', message: 'Live encryption key has not arrived yet.' })
+      return
+    }
+
+    if (p2pReady) {
+      void sendP2pPayload()
+      return
+    }
+
+    if (isReadyForRelay(activeSession)) {
+      sendRelay.mutate()
+      return
+    }
+
+    setToast({ tone: 'warning', message: 'Connect directly or use relay before sending files.' })
   }
 
   async function saveP2pPayload() {
@@ -454,19 +506,93 @@ export function LiveSessionPage() {
     await api.completeLiveTransferSession(routeSessionId).catch(() => undefined)
   }
 
-  async function receiveRelayChunk(chunk: { id: string; sequence: number }) {
+  function setRelayChunkReceiving(chunkId: string, receiving: boolean) {
+    setReceivingRelayChunkIds((current) => {
+      const next = new Set(current)
+      if (receiving) {
+        next.add(chunkId)
+      } else {
+        next.delete(chunkId)
+      }
+      return next
+    })
+  }
+
+  async function receiveRelayChunk(
+    chunk: Pick<LiveRelayChunk, 'id' | 'sequence'>,
+    options: { quiet?: boolean; refetch?: boolean } = {},
+  ): Promise<{ ok: boolean; message?: string }> {
+    if (receivedRelayChunks[chunk.id]) {
+      return { ok: true }
+    }
+
     const liveKey = liveKeyRef.current
     if (!liveKey) {
+      const message = 'Live encryption key has not arrived yet.'
+      if (!options.quiet) {
+        setToast({ tone: 'danger', message })
+      }
+      return { ok: false, message }
+    }
+
+    setRelayChunkReceiving(chunk.id, true)
+    try {
+      const response = await api.downloadLiveRelayChunk(routeSessionId, chunk.id)
+      const blob = await response.blob()
+      const decrypted = await decryptLiveBlob(liveKey, blob)
+      setReceivedRelayChunks((current) => ({ ...current, [chunk.id]: { sequence: chunk.sequence, blob: decrypted } }))
+      await api.acknowledgeLiveRelayChunk(routeSessionId, chunk.id)
+      if (options.refetch !== false) {
+        await chunks.refetch()
+      }
+      if (!options.quiet) {
+        setToast({ tone: 'success', message: `Relay chunk #${chunk.sequence} received.` })
+      }
+      return { ok: true }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Relay chunk receive failed.'
+      if (!options.quiet) {
+        setToast({ tone: 'danger', message })
+      }
+      return { ok: false, message }
+    } finally {
+      setRelayChunkReceiving(chunk.id, false)
+    }
+  }
+
+  async function receiveAllRelayChunks() {
+    const pending = (chunks.data ?? []).filter((chunk) => !receivedRelayChunks[chunk.id])
+    if (!liveKeyReady) {
       setToast({ tone: 'danger', message: 'Live encryption key has not arrived yet.' })
       return
     }
 
-    const response = await api.downloadLiveRelayChunk(routeSessionId, chunk.id)
-    const blob = await response.blob()
-    const decrypted = await decryptLiveBlob(liveKey, blob)
-    setReceivedRelayChunks((current) => ({ ...current, [chunk.id]: { sequence: chunk.sequence, blob: decrypted } }))
-    await api.acknowledgeLiveRelayChunk(routeSessionId, chunk.id)
+    if (pending.length === 0) {
+      setToast({ tone: 'warning', message: 'No relay chunks are waiting to receive.' })
+      return
+    }
+
+    let receivedCount = 0
+    let failureMessage = ''
+    for (const chunk of pending) {
+      const result = await receiveRelayChunk(chunk, { quiet: true, refetch: false })
+      if (!result.ok) {
+        failureMessage = result.message ?? 'Relay receive failed.'
+        break
+      }
+      receivedCount += 1
+    }
+
     await chunks.refetch()
+    if (failureMessage) {
+      setToast({
+        tone: 'danger',
+        message: receivedCount > 0 ? `Received ${receivedCount} chunk(s), then failed: ${failureMessage}` : failureMessage,
+      })
+      return
+    }
+
+    setToast({ tone: 'success', message: `Received ${receivedCount} relay chunk${receivedCount === 1 ? '' : 's'}.` })
   }
 
   async function saveRelayPayload() {
@@ -478,6 +604,8 @@ export function LiveSessionPage() {
     const manifestEntry = await findRelayManifest(downloaded)
     if (!manifestEntry) {
       saveBlobAsDownload(new Blob(downloaded.sort(([, left], [, right]) => left.sequence - right.sequence).map(([, chunk]) => chunk.blob)), 'liminalis-live-relay.bin')
+      await api.completeLiveTransferSession(routeSessionId).catch(() => undefined)
+      setToast({ tone: 'success', message: 'Relay payload saved as liminalis-live-relay.bin.' })
       return
     }
 
@@ -488,9 +616,29 @@ export function LiveSessionPage() {
       .map(([, chunk]) => chunk.blob)
     saveBlobAsDownload(orderedChunks(dataParts), manifest.fileName)
     await api.completeLiveTransferSession(routeSessionId).catch(() => undefined)
+    setToast({ tone: 'success', message: `Relay payload saved as ${manifest.fileName}.` })
   }
 
   const activeSession = session.data
+
+  useEffect(() => {
+    liveKeyRef.current = null
+    liveKeyPairRef.current = null
+    handledSignalIdsRef.current.clear()
+    livePublicKeySentRef.current = false
+  }, [routeSessionId])
+
+  useEffect(() => {
+    if (!canExchangeLiveData(activeSession) || livePublicKeySentRef.current) {
+      return
+    }
+
+    livePublicKeySentRef.current = true
+    void sendLivePublicKeySignal(routeSessionId, liveKeyPairRef).catch((error) => {
+      livePublicKeySentRef.current = false
+      setToast({ tone: 'danger', message: error instanceof Error ? error.message : 'Could not exchange live encryption key.' })
+    })
+  }, [activeSession, routeSessionId])
 
   useEffect(() => {
     return () => {
@@ -538,7 +686,7 @@ export function LiveSessionPage() {
 
       if (kind === 'live-public-key') {
         liveKeyRef.current = await deriveLiveSessionKey(routeSessionId, liveKeyPairRef, payload.publicKey)
-        setLiveKeyReady(true)
+        setLiveKeyReadySessionId(routeSessionId)
       }
     } catch (error) {
       setToast({ tone: 'danger', message: error instanceof Error ? error.message : 'Live signaling failed.' })
@@ -564,6 +712,29 @@ export function LiveSessionPage() {
     return <section className="workspace-page"><EmptyState title="Live session not found" /></section>
   }
 
+  const currentSessionCode = activeSession.sessionCode ?? ''
+  const codeCopied = copiedSessionCode === currentSessionCode
+  const relayChunks = chunks.data ?? []
+  const pendingRelayChunks = relayChunks.filter((chunk) => !receivedRelayChunks[chunk.id])
+  const receivedRelayChunkCount = Object.keys(receivedRelayChunks).length
+  const relayReceiveInProgress = receivingRelayChunkIds.size > 0
+  const canSaveRelayPayload = receivedRelayChunkCount > 0 && pendingRelayChunks.length === 0 && !relayReceiveInProgress
+  const sendFilesInProgress = p2pSending || sendRelay.isPending
+  const canSendFiles = localEntries.length > 0 && liveKeyReady && (p2pReady || isReadyForRelay(activeSession))
+
+  async function copySessionCode() {
+    if (!currentSessionCode) {
+      return
+    }
+
+    try {
+      await navigator.clipboard.writeText(currentSessionCode)
+      setCopiedSessionCode(currentSessionCode)
+    } catch {
+      setToast({ tone: 'danger', message: 'Session code could not be copied.' })
+    }
+  }
+
   return (
     <section className="workspace-page live-page">
       {toast ? <Toast tone={toast.tone}>{toast.message}</Toast> : null}
@@ -571,13 +742,23 @@ export function LiveSessionPage() {
         <div>
           <p className="eyebrow">Live session</p>
           <h2>{activeSession.contentLabel}</h2>
-          <p className="muted">Code {activeSession.sessionCode ?? 'hidden'} · expires {formatDateTime(activeSession.expiresAt)}</p>
         </div>
         <div className="actions">
           <Link className="button button-secondary" to="/live/join">Join another</Link>
           <Link className="button button-secondary" to="/app">Workspace</Link>
         </div>
       </header>
+      <section className="code-panel live-code-panel">
+        <span className="eyebrow">Session code</span>
+        <strong>{currentSessionCode || 'Unavailable'}</strong>
+        <p className="muted">Expires {formatDateTime(activeSession.expiresAt)}</p>
+        <div className="actions">
+          <Button variant="primary" onClick={() => void copySessionCode()} disabled={!currentSessionCode}>
+            {codeCopied ? 'Copied' : 'Copy code'}
+          </Button>
+          <Link className="button button-secondary" to="/live/join">Join by code</Link>
+        </div>
+      </section>
       <section className="detail-grid">
         <LiveMeta label="State" value={activeSession.state} />
         <LiveMeta label="Transport" value={activeSession.transportState ?? 'Pending'} />
@@ -595,12 +776,17 @@ export function LiveSessionPage() {
           <p className="muted">Choose files here when this browser is the sender or when using stored fallback.</p>
         )}
         <div className="actions">
-          <Button variant="primary" onClick={() => confirm.mutate()} disabled={confirm.isPending}>Confirm participation</Button>
+          <Button variant="primary" onClick={() => confirm.mutate()} disabled={confirm.isPending || activeSession.state !== 'AWAITING_CONFIRMATION'}>
+            {activeSession.state === 'AWAITING_JOIN' ? 'Waiting for joiner' : 'Confirm participation'}
+          </Button>
           <Button onClick={() => chooseLocalFiles.mutate()} disabled={chooseLocalFiles.isPending}>Choose files</Button>
           <Button onClick={startP2p} disabled={!activeSession.peerToPeerAllowed || !canExchangeLiveData(activeSession)}>Start P2P</Button>
-          <Button onClick={sendP2pPayload} disabled={localEntries.length === 0 || !p2pReady}>Send P2P payload</Button>
-          <Button onClick={() => activateRelay.mutate()} disabled={!activeSession.relayAllowed || !canExchangeLiveData(activeSession) || activeTransport(activeSession) === 'RELAY_ACTIVE'}>Activate relay</Button>
-          <Button onClick={() => relay.mutate()} disabled={!isReadyForRelay(activeSession) || localEntries.length === 0 || relay.isPending}>Send relay payload</Button>
+          <Button onClick={() => useRelay.mutate()} disabled={!canAttemptRelay(activeSession) || useRelay.isPending}>
+            {useRelay.isPending ? 'Using relay' : 'Use relay'}
+          </Button>
+          <Button onClick={sendFiles} disabled={!canSendFiles || sendFilesInProgress}>
+            {sendFilesInProgress ? 'Sending files' : 'Send files'}
+          </Button>
           <Button onClick={() => storedFallback.mutate()} disabled={!activeSession.liveToStoredFallbackAllowed || localEntries.length === 0 || storedFallback.isPending}>Stored fallback</Button>
           <Button variant="danger" onClick={() => fail.mutate()} disabled={fail.isPending}>Cancel</Button>
         </div>
@@ -617,18 +803,33 @@ export function LiveSessionPage() {
         </section>
       ) : null}
       <section className="table-panel">
-        <h3>Relay chunks</h3>
+        <div className="table-panel-heading">
+          <h3>Relay chunks</h3>
+          <Button
+            onClick={() => void receiveAllRelayChunks()}
+            disabled={!liveKeyReady || pendingRelayChunks.length === 0 || relayReceiveInProgress}
+          >
+            {relayReceiveInProgress ? 'Receiving files' : 'Receive files'}
+          </Button>
+        </div>
         {chunks.data?.length === 0 ? <p className="muted">No relay chunks yet.</p> : null}
-        {chunks.data?.map((chunk) => (
-          <div key={chunk.id} className="file-row">
-            <span>#{chunk.sequence} · {formatBytes(chunk.byteSize)}</span>
-            <Button onClick={() => void receiveRelayChunk(chunk)}>Receive</Button>
-          </div>
-        ))}
-        {Object.keys(receivedRelayChunks).length > 0 ? (
+        {relayChunks.map((chunk) => {
+          const isReceiving = receivingRelayChunkIds.has(chunk.id)
+          const isReceived = Boolean(receivedRelayChunks[chunk.id])
+          return (
+            <div key={chunk.id} className="file-row">
+              <span>#{chunk.sequence} · {formatBytes(chunk.byteSize)}</span>
+              <span className="muted">{isReceived ? 'Received' : isReceiving ? 'Receiving' : 'Waiting'}</span>
+            </div>
+          )
+        })}
+        {receivedRelayChunkCount > 0 ? (
           <div className="file-row">
-            <span>{Object.keys(receivedRelayChunks).length} relay chunk{Object.keys(receivedRelayChunks).length === 1 ? '' : 's'} received</span>
-            <Button onClick={() => void saveRelayPayload()}>Save relay payload</Button>
+            <span>
+              {receivedRelayChunkCount} relay chunk{receivedRelayChunkCount === 1 ? '' : 's'} received.
+              {pendingRelayChunks.length > 0 ? ` ${pendingRelayChunks.length} still waiting.` : ' Ready to save.'}
+            </span>
+            <Button onClick={() => void saveRelayPayload()} disabled={!canSaveRelayPayload}>Save relay payload</Button>
           </div>
         ) : null}
       </section>
@@ -721,13 +922,8 @@ async function deriveLiveSessionKey(
   )
 }
 
-async function ensureLiveSessionKey(
-  sessionId: string,
-  keyRef: MutableRefObject<CryptoKey | null>,
-  keyPairRef: MutableRefObject<CryptoKeyPair | null>,
-) {
+function ensureLiveSessionKey(keyRef: MutableRefObject<CryptoKey | null>) {
   if (!keyRef.current) {
-    await sendLivePublicKeySignal(sessionId, keyPairRef)
     throw new Error('Waiting for the other browser live encryption key. Try again after both sides have exchanged signals.')
   }
 
