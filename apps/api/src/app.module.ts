@@ -5,6 +5,7 @@ import { appConfig } from './config/app.config';
 import { LiveTransferModule } from './live-transfer/live-transfer.module';
 import { MaintenanceModule } from './maintenance/maintenance.module';
 import { IdentityModule } from './identity/identity.module';
+import { InstanceModule } from './instance/instance.module';
 import { PolicyModule } from './policy/policy.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { ProjectionsModule } from './projections/projections.module';
@@ -23,6 +24,7 @@ import { UploadsModule } from './uploads/uploads.module';
       load: [appConfig],
     }),
     AdminModule,
+    InstanceModule,
     LiveTransferModule,
     MaintenanceModule,
     PrismaModule,

@@ -10,6 +10,7 @@ const navItems: ReadonlyArray<{ to: string; label: string; end?: boolean }> = [
   { to: '/admin/users', label: 'Users' },
   { to: '/admin/policy', label: 'Policy' },
   { to: '/admin/storage', label: 'Storage' },
+  { to: '/admin/settings', label: 'Settings' },
 ]
 
 export function AdminShell() {

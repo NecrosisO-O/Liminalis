@@ -289,7 +289,7 @@ function ShareDialog({ sourceItem, sourceItemId, onClose }: { sourceItem?: Sourc
   })
   const extraction = useMutation({
     mutationFn: () => createE2eeExtraction({ sourceItemId, password: password.trim() || undefined, requestedValidityMinutes: 60, requestedRetrievalCount: 1 }),
-    onSuccess: (data) => setResult(`Extraction: /x/${data.entryToken} · password ${data.password}`),
+    onSuccess: (data) => setResult(`Extraction: ${data.publicUrl} · password ${data.password}`),
   })
   const publicLink = useMutation({
     mutationFn: () => createE2eePublicLink({ sourceItemId, requestedValidityMinutes: 60, requestedDownloadCount: 1 }),

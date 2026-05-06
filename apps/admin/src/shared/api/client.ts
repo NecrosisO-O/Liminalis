@@ -86,6 +86,13 @@ export type PolicyState = {
   currentBundles: PolicyBundle[]
 }
 
+export type InstanceSettings = {
+  singletonKey: string
+  defaultConfidentialityLevel: ConfidentialityLevel
+  defaultStorageQuotaBytes: number
+  publicOrigin: string | null
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
 }
@@ -193,6 +200,17 @@ export const api = {
     return request<unknown>('/api/admin/operations/storage/quota', {
       method: 'POST',
       body: JSON.stringify({ userId: userId ?? undefined, quotaBytes: quotaBytes ?? undefined }),
+    })
+  },
+
+  getInstanceSettings() {
+    return request<InstanceSettings>('/api/admin/operations/settings')
+  },
+
+  updateInstanceSettings(input: { publicOrigin?: string | null; defaultStorageQuotaBytes?: number }) {
+    return request<InstanceSettings>('/api/admin/operations/settings', {
+      method: 'POST',
+      body: JSON.stringify(input),
     })
   },
 

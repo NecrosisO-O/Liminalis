@@ -5,10 +5,55 @@ import { Button, Field, Input, Select } from '../../shared/ui/components.tsx'
 import { formatBytes, formatDate } from '../../shared/ui/format.ts'
 
 const levels: ConfidentialityLevel[] = ['SECRET', 'CONFIDENTIAL', 'TOP_SECRET']
+const bytesPerMiB = 1024 * 1024
+const policySections = ['lifecycle', 'shareAvailability', 'userTargetedSharing', 'passwordExtraction', 'publicLinks', 'liveTransfer'] as const
+type PolicySectionName = (typeof policySections)[number]
+type PolicyValue = boolean | number | string | null
+
+const sectionLabels: Record<PolicySectionName, string> = {
+  lifecycle: 'Lifecycle',
+  shareAvailability: 'Share availability',
+  userTargetedSharing: 'User-targeted sharing',
+  passwordExtraction: 'Password extraction',
+  publicLinks: 'Public links',
+  liveTransfer: 'Live transfer',
+}
+
+function titleize(value: string) {
+  return value
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/[_-]+/g, ' ')
+    .replace(/\b\w/g, (letter) => letter.toUpperCase())
+}
+
+function bytesToMiBInput(bytes: number | null | undefined) {
+  if (bytes === null || bytes === undefined) {
+    return ''
+  }
+
+  return Number.isInteger(bytes / bytesPerMiB)
+    ? String(bytes / bytesPerMiB)
+    : (bytes / bytesPerMiB).toFixed(2)
+}
+
+function miBInputToBytes(value: string, fallback: number | null = null) {
+  const trimmed = value.trim()
+  if (!trimmed) {
+    return fallback
+  }
+
+  const mib = Number(trimmed)
+  return Number.isFinite(mib) ? Math.round(mib * bytesPerMiB) : fallback
+}
+
+function originInputToValue(value: string) {
+  return value.trim() || null
+}
 
 export function OverviewPage() {
   const summary = useQuery({ queryKey: ['admin', 'summary'], queryFn: api.getOperationsSummary })
   const storage = useQuery({ queryKey: ['admin', 'storage-users'], queryFn: api.getStorageUsers })
+  const settings = useQuery({ queryKey: ['admin', 'settings'], queryFn: api.getInstanceSettings })
   const pendingStorage = storage.data?.reduce((sum, user) => sum + user.storageUsedBytes, 0) ?? 0
 
   return (
@@ -24,6 +69,7 @@ export function OverviewPage() {
         <Stat label="Trusted devices" value={summary.data?.objects.trustedDevices ?? 0} />
         <Stat label="Active invites" value={summary.data?.invites.activeInvites ?? 0} />
         <Stat label="Stored bytes" value={formatBytes(summary.data?.storage.uploadedCiphertextBytes ?? pendingStorage)} />
+        <Stat label="Public origin" value={settings.data?.publicOrigin ?? 'Not set'} />
       </div>
     </section>
   )
@@ -142,32 +188,47 @@ export function UsersPage() {
 export function StoragePage() {
   const queryClient = useQueryClient()
   const storage = useQuery({ queryKey: ['admin', 'storage-users'], queryFn: api.getStorageUsers })
-  const [defaultQuota, setDefaultQuota] = useState('1073741824')
+  const settings = useQuery({ queryKey: ['admin', 'settings'], queryFn: api.getInstanceSettings })
+  const [defaultQuotaMiB, setDefaultQuotaMiB] = useState<string | null>(null)
   const [userQuota, setUserQuota] = useState<Record<string, string>>({})
   const setQuota = useMutation({
     mutationFn: ({ userId, quotaBytes }: { userId: string | null; quotaBytes: number | null }) => api.setStorageQuota(userId, quotaBytes),
     onSuccess: async () => {
+      setDefaultQuotaMiB(null)
       await queryClient.invalidateQueries({ queryKey: ['admin', 'storage-users'] })
       await queryClient.invalidateQueries({ queryKey: ['admin', 'summary'] })
+      await queryClient.invalidateQueries({ queryKey: ['admin', 'settings'] })
     },
   })
+  const displayedDefaultQuotaMiB = defaultQuotaMiB ?? (bytesToMiBInput(settings.data?.defaultStorageQuotaBytes) || '1024')
 
   return (
     <section className="admin-page">
       <header className="page-heading"><h2>Storage</h2></header>
       <div className="toolbar">
-        <Field label="Default quota bytes"><Input value={defaultQuota} onChange={(event) => setDefaultQuota(event.target.value)} /></Field>
-        <Button variant="primary" onClick={() => setQuota.mutate({ userId: null, quotaBytes: Number(defaultQuota) })}>Set default quota</Button>
+        <Field label="Default quota MiB">
+          <Input
+            value={displayedDefaultQuotaMiB}
+            onChange={(event) => setDefaultQuotaMiB(event.target.value)}
+            inputMode="decimal"
+          />
+        </Field>
+        <Button
+          variant="primary"
+          onClick={() => setQuota.mutate({ userId: null, quotaBytes: miBInputToBytes(displayedDefaultQuotaMiB, settings.data?.defaultStorageQuotaBytes ?? null) })}
+        >
+          Set default quota
+        </Button>
       </div>
       <div className="admin-table storage-table">
-        <div className="table-head"><span>User</span><span>Used</span><span>Quota</span><span>Custom quota bytes</span><span>Action</span></div>
+        <div className="table-head"><span>User</span><span>Used</span><span>Quota</span><span>Custom quota MiB</span><span>Action</span></div>
         {storage.data?.map((row) => (
           <div key={row.userId} className="table-row">
             <strong>{row.username}</strong>
             <span>{formatBytes(row.storageUsedBytes)}</span>
             <span>{formatBytes(row.storageQuotaBytes)}{row.hasCustomQuota ? ' · custom' : ''}</span>
-            <Input value={userQuota[row.userId] ?? ''} onChange={(event) => setUserQuota((current) => ({ ...current, [row.userId]: event.target.value }))} placeholder="Blank resets" />
-            <Button onClick={() => setQuota.mutate({ userId: row.userId, quotaBytes: userQuota[row.userId] ? Number(userQuota[row.userId]) : null })}>Apply</Button>
+            <Input value={userQuota[row.userId] ?? ''} onChange={(event) => setUserQuota((current) => ({ ...current, [row.userId]: event.target.value }))} placeholder="Blank resets" inputMode="decimal" />
+            <Button onClick={() => setQuota.mutate({ userId: row.userId, quotaBytes: miBInputToBytes(userQuota[row.userId] ?? '') })}>Apply</Button>
           </div>
         ))}
       </div>
@@ -212,20 +273,28 @@ export function PolicyPage() {
     onSuccess: async () => queryClient.invalidateQueries({ queryKey: ['admin', 'policy'] }),
   })
 
-  function updateSection(section: keyof Pick<PolicyBundle, 'lifecycle' | 'shareAvailability' | 'userTargetedSharing' | 'passwordExtraction' | 'publicLinks' | 'liveTransfer'>, key: string, value: string) {
+  function updateSection(section: PolicySectionName, key: string, value: PolicyValue) {
     if (!activeDraft) {
       return
     }
 
-    const parsed: boolean | number | string | null =
-      value === 'true' ? true : value === 'false' ? false : value === 'null' ? null : Number.isFinite(Number(value)) && value.trim() !== '' ? Number(value) : value
     setDraft({
       ...activeDraft,
       [section]: {
         ...activeDraft[section],
-        [key]: parsed,
+        [key]: value,
       },
     })
+  }
+
+  function updateInputSection(section: PolicySectionName, key: string, value: string, current: PolicyValue) {
+    const parsed: PolicyValue =
+      current === null && value.trim() === ''
+        ? null
+        : typeof current === 'number'
+          ? (value.trim() === '' ? null : Number(value))
+          : value
+    updateSection(section, key, parsed)
   }
 
   return (
@@ -239,13 +308,17 @@ export function PolicyPage() {
       </div>
       {activeDraft ? (
         <div className="policy-grid">
-          {(['lifecycle', 'shareAvailability', 'userTargetedSharing', 'passwordExtraction', 'publicLinks', 'liveTransfer'] as const).map((section) => (
+          {policySections.map((section) => (
             <section key={section} className="policy-section">
-              <h3>{section}</h3>
+              <h3>{sectionLabels[section]}</h3>
               {Object.entries(activeDraft[section]).map(([key, value]) => (
-                <Field key={key} label={key}>
-                  <Input value={String(value)} onChange={(event) => updateSection(section, key, event.target.value)} />
-                </Field>
+                <PolicyField
+                  key={key}
+                  fieldKey={key}
+                  value={value}
+                  onChange={(nextValue) => updateSection(section, key, nextValue)}
+                  onInputChange={(nextValue) => updateInputSection(section, key, nextValue, value)}
+                />
               ))}
             </section>
           ))}
@@ -257,6 +330,106 @@ export function PolicyPage() {
       </section>
       {publish.error instanceof Error ? <p className="error-text">{publish.error.message}</p> : null}
       {restore.error instanceof Error ? <p className="error-text">{restore.error.message}</p> : null}
+    </section>
+  )
+}
+
+function PolicyField({
+  fieldKey,
+  value,
+  onChange,
+  onInputChange,
+}: {
+  fieldKey: string
+  value: PolicyValue
+  onChange: (value: PolicyValue) => void
+  onInputChange: (value: string) => void
+}) {
+  if (typeof value === 'boolean') {
+    return (
+      <label className="policy-row policy-row-switch">
+        <span>
+          <strong>{titleize(fieldKey)}</strong>
+          <small>{fieldKey}</small>
+        </span>
+        <button
+          type="button"
+          className={`switch ${value ? 'is-on' : ''}`}
+          role="switch"
+          aria-checked={value}
+          onClick={() => onChange(!value)}
+        >
+          <span>{value ? 'On' : 'Off'}</span>
+        </button>
+      </label>
+    )
+  }
+
+  return (
+    <label className="policy-row">
+      <span>
+        <strong>{titleize(fieldKey)}</strong>
+        <small>{fieldKey}</small>
+      </span>
+      <Input
+        className="policy-input"
+        value={value === null ? '' : String(value)}
+        placeholder={value === null ? 'No limit' : undefined}
+        inputMode={typeof value === 'number' || value === null ? 'decimal' : undefined}
+        onChange={(event) => onInputChange(event.target.value)}
+      />
+    </label>
+  )
+}
+
+export function SettingsPage() {
+  const queryClient = useQueryClient()
+  const settings = useQuery({ queryKey: ['admin', 'settings'], queryFn: api.getInstanceSettings })
+  const [publicOrigin, setPublicOrigin] = useState<string | null>(null)
+  const [quotaMiB, setQuotaMiB] = useState<string | null>(null)
+  const displayedPublicOrigin = publicOrigin ?? settings.data?.publicOrigin ?? ''
+  const displayedQuotaMiB = quotaMiB ?? (bytesToMiBInput(settings.data?.defaultStorageQuotaBytes) || '1024')
+  const previewOrigin = displayedPublicOrigin.trim() || window.location.origin
+  const save = useMutation({
+    mutationFn: () => api.updateInstanceSettings({
+      publicOrigin: originInputToValue(displayedPublicOrigin),
+      defaultStorageQuotaBytes: miBInputToBytes(displayedQuotaMiB, settings.data?.defaultStorageQuotaBytes ?? null) ?? undefined,
+    }),
+    onSuccess: async () => {
+      setPublicOrigin(null)
+      setQuotaMiB(null)
+      await queryClient.invalidateQueries({ queryKey: ['admin', 'settings'] })
+      await queryClient.invalidateQueries({ queryKey: ['admin', 'storage-users'] })
+      await queryClient.invalidateQueries({ queryKey: ['admin', 'summary'] })
+    },
+  })
+
+  return (
+    <section className="admin-page settings-page">
+      <header className="page-heading">
+        <h2>Settings</h2>
+        <p className="muted">Instance-wide references used by generated recipient URLs and admin defaults.</p>
+      </header>
+      <section className="settings-panel">
+        <Field label="Public origin">
+          <Input
+            value={displayedPublicOrigin}
+            onChange={(event) => setPublicOrigin(event.target.value)}
+            placeholder="https://example.example"
+          />
+        </Field>
+        <Field label="Default storage quota MiB">
+          <Input value={displayedQuotaMiB} onChange={(event) => setQuotaMiB(event.target.value)} inputMode="decimal" />
+        </Field>
+        <div className="settings-preview">
+          <span>Public link preview</span>
+          <strong>{`${previewOrigin}/p/example#k=secret`}</strong>
+        </div>
+        <Button variant="primary" onClick={() => save.mutate()} disabled={save.isPending}>
+          Save settings
+        </Button>
+        {save.error instanceof Error ? <p className="error-text">{save.error.message}</p> : null}
+      </section>
     </section>
   )
 }

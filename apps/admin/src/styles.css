@@ -10,6 +10,7 @@
   --text: #1f241f;
   --muted: #677060;
   --accent: #285e54;
+  --accent-soft: #e6f0ec;
   --danger: #a3373e;
   --shadow: 0 16px 34px rgba(24, 32, 23, 0.1);
 }
@@ -244,6 +245,7 @@ p {
 .toolbar,
 .record-card,
 .policy-section,
+.settings-panel,
 .history-strip {
   background: var(--panel);
   border: 1px solid var(--line);
@@ -337,13 +339,107 @@ p {
 
 .policy-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(330px, 1fr));
   gap: 14px;
+  align-items: start;
 }
 
 .policy-section {
   display: grid;
-  gap: 10px;
+  gap: 12px;
+  padding: 14px;
+}
+
+.policy-section h3 {
+  font-size: 0.98rem;
+}
+
+.policy-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+}
+
+.policy-row > span {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.settings-preview strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.policy-row strong {
+  line-height: 1.25;
+}
+
+.policy-row small,
+.settings-preview span {
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+
+.policy-row-switch {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.policy-input {
+  min-width: 0;
+  width: 100%;
+}
+
+.switch {
+  width: 72px;
+  min-height: 32px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: var(--panel-soft);
+  color: var(--muted);
+  padding: 3px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  cursor: pointer;
+  font-size: 0.72rem;
+  font-weight: 850;
+}
+
+.switch span {
+  width: 34px;
+  height: 24px;
+  border-radius: 999px;
+  background: #fff;
+  box-shadow: 0 2px 8px rgba(24, 32, 23, 0.15);
+  display: grid;
+  place-items: center;
+}
+
+.switch.is-on {
+  justify-content: flex-end;
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent);
+}
+
+.settings-panel {
+  width: min(760px, 100%);
+  display: grid;
+  gap: 14px;
+}
+
+.settings-preview {
+  display: grid;
+  gap: 4px;
+  border: 1px solid var(--line);
+  background: var(--accent-soft);
+  border-radius: 8px;
+  padding: 12px;
 }
 
 .history-strip {
@@ -379,5 +475,13 @@ p {
   .stat-grid,
   .policy-grid {
     grid-template-columns: 1fr;
+  }
+
+  .policy-row {
+    grid-template-columns: 1fr;
+  }
+
+  .policy-row-switch {
+    grid-template-columns: minmax(0, 1fr) auto;
   }
 }

@@ -14,6 +14,12 @@ function randomExtractionPassword() {
   return Array.from(bytes, (byte) => byte.toString(36).padStart(2, '0')).join('').slice(0, 24)
 }
 
+async function publicOrigin() {
+  const settings = await api.getPublicInstanceSettings().catch(() => null)
+  const configured = settings?.publicOrigin?.trim()
+  return (configured || window.location.origin).replace(/\/+$/u, '')
+}
+
 export async function ownerSourceEnvelope(sourceItemId: string) {
   const attempt = await api.issueSourceItemRetrieval(sourceItemId, `share-package-${sourceItemId}`)
   return attempt.wrappedPayloadReference as SourceKeyEnvelope
@@ -56,13 +62,22 @@ export async function createE2eeExtraction(input: {
     `liminalis:${e2eeVersion}:extraction:${input.sourceItemId}`,
   )
 
-  return api.createExtraction({
+  const [created, origin] = await Promise.all([
+    api.createExtraction({
+      sourceItemId: input.sourceItemId,
+      password,
+      requestedValidityMinutes: input.requestedValidityMinutes,
+      requestedRetrievalCount: input.requestedRetrievalCount,
+      packageReference,
+    }),
+    publicOrigin(),
+  ])
+
+  return {
+    ...created,
     sourceItemId: input.sourceItemId,
-    password,
-    requestedValidityMinutes: input.requestedValidityMinutes,
-    requestedRetrievalCount: input.requestedRetrievalCount,
-    packageReference,
-  })
+    publicUrl: `${origin}/x/${created.entryToken}`,
+  }
 }
 
 export async function createE2eePublicLink(input: {
@@ -84,8 +99,10 @@ export async function createE2eePublicLink(input: {
     packageReference,
   })
 
+  const origin = await publicOrigin()
+
   return {
     ...created,
-    publicUrl: `/p/${created.linkToken}#k=${secret}`,
+    publicUrl: `${origin}/p/${created.linkToken}#k=${secret}`,
   }
 }

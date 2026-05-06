@@ -25,7 +25,7 @@ export function SharePage() {
 
   const createExtraction = useMutation({
     mutationFn: () => createE2eeExtraction({ sourceItemId, password: password.trim() || undefined, requestedValidityMinutes: 60, requestedRetrievalCount: 1 }),
-    onSuccess: (data) => setResult(`Password extraction ready: /x/${data.entryToken} · password ${data.password}`),
+    onSuccess: (data) => setResult(`Password extraction ready: ${data.publicUrl} · password ${data.password}`),
   })
 
   const createPublicLink = useMutation({

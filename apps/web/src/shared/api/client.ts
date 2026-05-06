@@ -262,6 +262,10 @@ export type PublicLinkCreationResult = {
   packageReference?: unknown
 }
 
+export type PublicInstanceSettings = {
+  publicOrigin: string | null
+}
+
 export type LiveTransferSession = {
   id?: string
   liveTransferSessionId?: string
@@ -427,6 +431,12 @@ export const api = {
 
   bootstrap() {
     return requestJson<BootstrapState>('/api/bootstrap')
+  },
+
+  getPublicInstanceSettings() {
+    return requestJson<PublicInstanceSettings>('/api/instance/public-settings', {
+      credentials: 'omit',
+    })
   },
 
   bootstrapFirstDevice(input: { deviceLabel: string; userDomainPublicKey: string; devicePublicIdentity: string; deviceWrappingPublicKey: string }) {

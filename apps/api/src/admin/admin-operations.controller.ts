@@ -1,8 +1,32 @@
-import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AdminGuard } from '../common/guards/admin.guard';
 import { SessionGuard } from '../common/guards/session.guard';
 import { SetStorageQuotaDto } from './dto/set-storage-quota.dto';
+import { UpdateInstanceSettingsDto } from './dto/update-instance-settings.dto';
+
+const defaultStorageQuotaBytes = 1_073_741_824;
+
+function normalizePublicOrigin(value: string | null | undefined) {
+  const trimmed = value?.trim() ?? '';
+  if (!trimmed) {
+    return null;
+  }
+
+  try {
+    const parsed = new URL(trimmed);
+    return parsed.origin;
+  } catch {
+    throw new BadRequestException('Public origin must be a valid absolute URL');
+  }
+}
 
 @Controller('api/admin/operations')
 @UseGuards(SessionGuard, AdminGuard)
@@ -91,7 +115,7 @@ export class AdminOperationsController {
     ]);
 
     const defaultQuotaBytes =
-      settings?.defaultStorageQuotaBytes ?? 1_073_741_824;
+      settings?.defaultStorageQuotaBytes ?? defaultStorageQuotaBytes;
 
     return users.map((user) => {
       const storageUsedBytes = user.uploadSessions.reduce(
@@ -133,14 +157,60 @@ export class AdminOperationsController {
 
     return this.prisma.instanceSetting.upsert({
       where: { singletonKey: 'default' },
-      update: { defaultStorageQuotaBytes: input.quotaBytes ?? 1_073_741_824 },
+      update: {
+        defaultStorageQuotaBytes: input.quotaBytes ?? defaultStorageQuotaBytes,
+      },
       create: {
         singletonKey: 'default',
-        defaultStorageQuotaBytes: input.quotaBytes ?? 1_073_741_824,
+        defaultStorageQuotaBytes: input.quotaBytes ?? defaultStorageQuotaBytes,
       },
       select: {
         singletonKey: true,
         defaultStorageQuotaBytes: true,
+      },
+    });
+  }
+
+  @Get('settings')
+  async getInstanceSettings() {
+    return this.prisma.instanceSetting.upsert({
+      where: { singletonKey: 'default' },
+      update: {},
+      create: {
+        singletonKey: 'default',
+        defaultStorageQuotaBytes,
+      },
+      select: {
+        singletonKey: true,
+        defaultConfidentialityLevel: true,
+        defaultStorageQuotaBytes: true,
+        publicOrigin: true,
+      },
+    });
+  }
+
+  @Post('settings')
+  async updateInstanceSettings(@Body() input: UpdateInstanceSettingsDto) {
+    const publicOrigin = normalizePublicOrigin(input.publicOrigin);
+    return this.prisma.instanceSetting.upsert({
+      where: { singletonKey: 'default' },
+      update: {
+        publicOrigin,
+        ...(input.defaultStorageQuotaBytes === undefined
+          ? {}
+          : { defaultStorageQuotaBytes: input.defaultStorageQuotaBytes }),
+      },
+      create: {
+        singletonKey: 'default',
+        publicOrigin,
+        defaultStorageQuotaBytes:
+          input.defaultStorageQuotaBytes ?? defaultStorageQuotaBytes,
+      },
+      select: {
+        singletonKey: true,
+        defaultConfidentialityLevel: true,
+        defaultStorageQuotaBytes: true,
+        publicOrigin: true,
       },
     });
   }
