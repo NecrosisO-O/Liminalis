@@ -730,9 +730,10 @@ describe('Manual integration coverage', () => {
     expect(
       liveRecords.body.some(
         (row: { contentLabel?: string }) =>
-          row.contentLabel === 'manual live file',
+          row.contentLabel === 'Encrypted live transfer',
       ),
     ).toBe(true);
+    expect(JSON.stringify(liveRecords.body)).not.toContain('manual live file');
 
     const topSecretLive = await request(app.getHttpServer())
       .post('/api/live-transfer/sessions')

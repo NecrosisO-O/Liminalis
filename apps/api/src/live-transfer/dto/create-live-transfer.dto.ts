@@ -5,8 +5,9 @@ import {
 } from '../../../generated/prisma/index.js';
 
 export class CreateLiveTransferDto {
+  @IsOptional()
   @IsString()
-  contentLabel!: string;
+  contentLabel?: string;
 
   @IsEnum(UploadContentKind)
   contentKind!: UploadContentKind;

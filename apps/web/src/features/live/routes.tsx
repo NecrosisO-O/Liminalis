@@ -68,7 +68,6 @@ export function LiveStartPage() {
   const folderInputRef = useRef<HTMLInputElement | null>(null)
   const [entries, setEntries] = useState<SelectedFileEntry[]>([])
   const [level, setLevel] = useState<ConfidentialityLevel>('SECRET')
-  const [label, setLabel] = useState('')
   const selection = useMemo(() => classifySelection(entries), [entries])
 
   const create = useMutation({
@@ -78,7 +77,6 @@ export function LiveStartPage() {
       }
 
       return api.createLiveTransferSession({
-        contentLabel: label.trim() || selection.displayName,
         contentKind: selection.contentKind,
         groupedTransfer: selection.contentKind === 'GROUPED_CONTENT',
         confidentialityLevel: level,
@@ -127,9 +125,6 @@ export function LiveStartPage() {
         </div>
       </section>
       <section className="action-panel">
-        <Field label="Label">
-          <TextInput value={label} onChange={(event) => setLabel(event.target.value)} placeholder={selection?.displayName ?? 'Live transfer'} />
-        </Field>
         <Field label="Confidentiality">
           <SelectInput value={level} onChange={(event) => setLevel(event.target.value as ConfidentialityLevel)}>
             {confidentialityOptions.map((option) => <option key={option}>{option}</option>)}

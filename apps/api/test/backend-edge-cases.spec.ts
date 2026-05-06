@@ -884,7 +884,7 @@ describe('Backend edge-case coverage', () => {
       .expect(201)
       .expect((response) => {
         expect(response.body.uploadSessionId).toBeTruthy();
-        expect(response.body.contentLabel).toBe('cancelled live file');
+        expect(response.body.contentLabel).toBe('Encrypted live transfer');
       });
 
     const records = await request(app.getHttpServer())
@@ -897,5 +897,6 @@ describe('Backend edge-case coverage', () => {
           row.sessionOutcome === 'cancelled',
       ),
     ).toBe(true);
+    expect(JSON.stringify(records.body)).not.toContain('cancelled live file');
   });
 });

@@ -2605,8 +2605,17 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
       .expect(200);
 
     expect(yaraRecords.body).toHaveLength(1);
-    expect(yaraRecords.body[0].contentLabel).toBe('peer file');
+    expect(yaraRecords.body[0].contentLabel).toBe('Encrypted live transfer');
     expect(yaraRecords.body[0].sessionOutcome).toBe('completed');
+
+    const persistedLiveSession =
+      await prisma.liveTransferSession.findUniqueOrThrow({
+        where: { id: liveSession.body.liveTransferSessionId },
+      });
+    expect(persistedLiveSession.contentLabel).toBe('Encrypted live transfer');
+    expect(
+      JSON.stringify({ persistedLiveSession, records: yaraRecords.body }),
+    ).not.toContain('peer file');
   });
 
   it('blocks relay when policy disables it and allows explicit live-to-stored fallback only after failure', async () => {
@@ -2838,7 +2847,7 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
       .expect(201)
       .expect((response) => {
         expect(response.body.uploadSessionId).toBeTruthy();
-        expect(response.body.contentLabel).toBe('secret fallback file');
+        expect(response.body.contentLabel).toBe('Encrypted live transfer');
         expect(response.body.confidentialityLevel).toBe('SECRET');
       });
   });

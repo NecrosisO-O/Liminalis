@@ -21,6 +21,8 @@ import { UpdateLiveTransportDto } from './dto/update-live-transport.dto';
 @Injectable()
 export class LiveTransferService {
   private readonly awaitingJoinTtlMs = 5 * 60 * 1000;
+  private readonly liveTransferLabel = 'Encrypted live transfer';
+  private readonly groupedLiveTransferLabel = 'Encrypted grouped live transfer';
 
   constructor(
     private readonly prisma: PrismaService,
@@ -58,7 +60,10 @@ export class LiveTransferService {
         policyBundleId: decision.policyBundle.id,
         policySnapshot: decision.snapshotFieldsToPersist,
         state: LiveTransferSessionState.AWAITING_JOIN,
-        contentLabel: input.contentLabel,
+        contentLabel: this.safeContentLabel(
+          input.contentKind,
+          input.groupedTransfer ?? false,
+        ),
         contentKind: input.contentKind,
         groupedTransfer: input.groupedTransfer ?? false,
         relayAllowed: decision.allowRelay,
@@ -376,7 +381,10 @@ export class LiveTransferService {
       return {
         liveTransferSessionId: session.id,
         uploadSessionId: session.storedFallbackUploadSessionId,
-        contentLabel: session.contentLabel,
+        contentLabel: this.safeContentLabel(
+          session.contentKind,
+          session.groupedTransfer,
+        ),
         contentKind: session.contentKind,
         confidentialityLevel: session.confidentialityLevel,
         groupedTransfer: session.groupedTransfer,
@@ -392,7 +400,10 @@ export class LiveTransferService {
         contentKind: session.contentKind,
         groupStructureKind: session.groupedTransfer ? 'MULTI_FILE' : undefined,
         confidentialityLevel: session.confidentialityLevel,
-        displayName: session.contentLabel,
+        displayName: this.safeContentLabel(
+          session.contentKind,
+          session.groupedTransfer,
+        ),
       },
     );
 
@@ -404,7 +415,10 @@ export class LiveTransferService {
     return {
       liveTransferSessionId: session.id,
       uploadSessionId: uploadSession.uploadSessionId,
-      contentLabel: session.contentLabel,
+      contentLabel: this.safeContentLabel(
+        session.contentKind,
+        session.groupedTransfer,
+      ),
       contentKind: session.contentKind,
       confidentialityLevel: session.confidentialityLevel,
       groupedTransfer: session.groupedTransfer,
@@ -876,6 +890,17 @@ export class LiveTransferService {
     throw new ForbiddenException('Live-transfer participant required');
   }
 
+  private safeContentLabel(
+    contentKind: UploadContentKind,
+    groupedTransfer: boolean,
+  ) {
+    if (groupedTransfer || contentKind === 'GROUPED_CONTENT') {
+      return this.groupedLiveTransferLabel;
+    }
+
+    return this.liveTransferLabel;
+  }
+
   private async projectRetainedRecord(sessionId: string) {
     const session = await this.prisma.liveTransferSession.findUnique({
       where: { id: sessionId },
@@ -888,6 +913,11 @@ export class LiveTransferService {
     if (!session || !session.retainRecord) {
       return;
     }
+
+    const contentLabel = this.safeContentLabel(
+      session.contentKind,
+      session.groupedTransfer,
+    );
 
     const records = [
       {
@@ -917,7 +947,7 @@ export class LiveTransferService {
           participantLabel: record.participantLabel,
           sessionOutcome: session.state.toLowerCase(),
           transportSummary: session.transportState?.toLowerCase() ?? null,
-          contentLabel: session.contentLabel,
+          contentLabel,
           contentKind: session.contentKind,
           groupedTransfer: session.groupedTransfer,
           startedAt: session.createdAt,
@@ -930,7 +960,7 @@ export class LiveTransferService {
           participantLabel: record.participantLabel,
           sessionOutcome: session.state.toLowerCase(),
           transportSummary: session.transportState?.toLowerCase() ?? null,
-          contentLabel: session.contentLabel,
+          contentLabel,
           contentKind: session.contentKind,
           groupedTransfer: session.groupedTransfer,
           startedAt: session.createdAt,

@@ -665,7 +665,7 @@ export const api = {
   },
 
   createLiveTransferSession(input: {
-    contentLabel: string
+    contentLabel?: string
     contentKind: UploadContentKind
     confidentialityLevel?: ConfidentialityLevel
     groupedTransfer?: boolean
