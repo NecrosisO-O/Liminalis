@@ -1,7 +1,6 @@
 import { BadRequestException, Injectable, OnModuleInit } from '@nestjs/common';
 import {
   ConfidentialityLevel,
-  Prisma,
   PolicyBundle,
   UploadContentKind,
 } from '../../generated/prisma/index.js';

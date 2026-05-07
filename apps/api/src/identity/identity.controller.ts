@@ -60,7 +60,7 @@ export class IdentityController {
     @Res({ passthrough: true }) response: Response,
     @SessionActor() sessionActor: AuthenticatedSession | null,
   ) {
-    const token = response.req?.cookies?.liminalis_session;
+    const token = this.sessionCookieFromResponse(response);
     if (token) {
       await this.sessionsService.destroySession(token);
     }
@@ -71,6 +71,16 @@ export class IdentityController {
       ok: true,
       sessionId: sessionActor?.sessionId ?? null,
     };
+  }
+
+  private sessionCookieFromResponse(response: Response) {
+    const cookies = (
+      response.req as unknown as {
+        cookies?: Record<string, string | undefined>;
+      }
+    ).cookies;
+
+    return cookies?.liminalis_session;
   }
 
   @UseGuards(SessionGuard)

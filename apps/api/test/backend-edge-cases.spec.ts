@@ -647,6 +647,41 @@ describe('Backend edge-case coverage', () => {
     expect(quotaStorage.hasCustomQuota).toBe(true);
   });
 
+  it('preserves public origin when only default storage quota is updated', async () => {
+    const adminCookies = await login('owner', 'admin123456');
+    const publicOrigin = 'https://liminalis.example.test';
+
+    await request(app.getHttpServer())
+      .post('/api/admin/operations/settings')
+      .set('Cookie', adminCookies)
+      .send({ publicOrigin, defaultStorageQuotaBytes: 256 * 1024 * 1024 })
+      .expect(201)
+      .expect((response) => {
+        expect(response.body.publicOrigin).toBe(publicOrigin);
+        expect(response.body.defaultStorageQuotaBytes).toBe(268435456);
+      });
+
+    await request(app.getHttpServer())
+      .post('/api/admin/operations/settings')
+      .set('Cookie', adminCookies)
+      .send({ defaultStorageQuotaBytes: 128 * 1024 * 1024 })
+      .expect(201)
+      .expect((response) => {
+        expect(response.body.publicOrigin).toBe(publicOrigin);
+        expect(response.body.defaultStorageQuotaBytes).toBe(134217728);
+      });
+
+    await request(app.getHttpServer())
+      .post('/api/admin/operations/settings')
+      .set('Cookie', adminCookies)
+      .send({ publicOrigin: null })
+      .expect(201)
+      .expect((response) => {
+        expect(response.body.publicOrigin).toBeNull();
+        expect(response.body.defaultStorageQuotaBytes).toBe(134217728);
+      });
+  });
+
   it('cascades source revocation and top-secret upgrades to shares, extractions, public links, and open retrieval attempts', async () => {
     const adminCookies = await login('owner', 'admin123456');
     await createApprovedUser(

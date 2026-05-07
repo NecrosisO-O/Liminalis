@@ -1852,7 +1852,7 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
       requestedValidityMinutes: 30,
     });
 
-    const blockedShare = await request(app.getHttpServer())
+    await request(app.getHttpServer())
       .post('/api/shares')
       .set('Cookie', taliaCookies)
       .send({
@@ -2042,7 +2042,7 @@ describe('M1, M2, and M3 foundation (e2e)', () => {
       requestedValidityMinutes: 30,
     });
 
-    const blockedShare = await request(app.getHttpServer())
+    await request(app.getHttpServer())
       .post('/api/shares')
       .set('Cookie', veraCookies)
       .send({

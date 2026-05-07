@@ -569,7 +569,7 @@ export class UploadsService {
     const currentBytes = usage._sum.byteSize ?? 0n;
     const replacedBytes = existingPart?.byteSize ?? 0n;
     const projectedBytes =
-      currentBytes - replacedBytes + inputBytesToBigInt(incomingByteSize)!;
+      currentBytes - replacedBytes + inputBytesToBigInt(incomingByteSize);
 
     if (projectedBytes > quotaBytes) {
       throw new ForbiddenException('Storage quota exceeded');

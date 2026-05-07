@@ -424,8 +424,8 @@ export class IdentityService {
       ...retrievalPackageReferenceIds,
     ]);
 
-    const liveTransferSessions =
-      await this.prisma.liveTransferSession.findMany({
+    const liveTransferSessions = await this.prisma.liveTransferSession.findMany(
+      {
         where: {
           OR: [
             { initiatorUserId: userId },
@@ -435,12 +435,15 @@ export class IdentityService {
           ],
         },
         select: { id: true, storedFallbackUploadSessionId: true },
-      });
+      },
+    );
     const liveTransferSessionIds = uniqueStrings(
       liveTransferSessions.map((session) => session.id),
     );
     const storedFallbackUploadSessionIds = uniqueStrings(
-      liveTransferSessions.map((session) => session.storedFallbackUploadSessionId),
+      liveTransferSessions.map(
+        (session) => session.storedFallbackUploadSessionId,
+      ),
     );
 
     const uploadSessionIds = uniqueStrings(

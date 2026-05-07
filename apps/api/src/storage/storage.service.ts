@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
+import type { Stats } from 'fs';
 import { Readable } from 'stream';
 import { LocalDiskStorageDriver } from './local-disk-storage.driver';
 
@@ -42,7 +43,7 @@ export class StorageService {
   }
 
   async requireExistingObject(storageKey: string, expectedByteSize?: number) {
-    let stats;
+    let stats: Stats;
 
     try {
       stats = await this.localDiskStorageDriver.stat(storageKey);

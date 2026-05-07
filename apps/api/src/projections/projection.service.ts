@@ -1,13 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import {
-  ConfidentialityLevel,
+  Prisma,
   ProjectionSourceType,
   ShareObject,
   ShareObjectState,
   SourceItem,
   SourceItemState,
   UploadContentKind,
-  Prisma,
 } from '../../generated/prisma/index.js';
 import { sumBytes } from '../common/utils/byte-values';
 import { PrismaService } from '../prisma/prisma.service';
@@ -345,7 +344,9 @@ export class ProjectionService {
           ? null
           : BigInt(sourceItem.textCiphertextBody.length)
         : sourceItem.uploadSession
-          ? sumBytes(sourceItem.uploadSession.parts.map((part) => part.byteSize))
+          ? sumBytes(
+              sourceItem.uploadSession.parts.map((part) => part.byteSize),
+            )
           : null;
     const groupedItemCount = sourceItem.groupManifest
       ? Array.isArray(

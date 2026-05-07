@@ -263,7 +263,10 @@ describe('Trusted browser resume (e2e)', () => {
 
     await request(app.getHttpServer())
       .get('/api/bootstrap')
-      .set('Cookie', mergeCookies(freshSessionCookies, resume.get('set-cookie')))
+      .set(
+        'Cookie',
+        mergeCookies(freshSessionCookies, resume.get('set-cookie')),
+      )
       .expect(200)
       .expect(({ body }) => {
         expect(body.trustState).toBe('trusted');

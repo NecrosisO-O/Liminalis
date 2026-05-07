@@ -183,9 +183,7 @@ export class TrustService {
       throw new NotFoundException('Trusted device not found');
     }
 
-    const expiresAt = new Date(
-      Date.now() + trustedDeviceResumeChallengeTtlMs,
-    );
+    const expiresAt = new Date(Date.now() + trustedDeviceResumeChallengeTtlMs);
     const challenge = JSON.stringify({
       version: trustedDeviceResumeVersion,
       userId,
@@ -222,11 +220,12 @@ export class TrustService {
       'User cannot resume trusted browser',
     );
 
-    const challenge =
-      await this.prisma.trustedDeviceResumeChallenge.findUnique({
+    const challenge = await this.prisma.trustedDeviceResumeChallenge.findUnique(
+      {
         where: { id: input.challengeId },
         include: { trustedDevice: true },
-      });
+      },
+    );
 
     if (
       !challenge ||

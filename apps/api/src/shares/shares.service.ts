@@ -14,7 +14,6 @@ import {
   RetrievalFamily,
   ShareObjectInactiveReason,
   ShareObjectState,
-  type SourceItem,
   SourceItemState,
   UploadContentKind,
 } from '../../generated/prisma/index.js';

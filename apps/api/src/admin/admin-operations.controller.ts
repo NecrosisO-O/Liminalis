@@ -205,14 +205,17 @@ export class AdminOperationsController {
 
   @Post('settings')
   async updateInstanceSettings(@Body() input: UpdateInstanceSettingsDto) {
-    const publicOrigin = normalizePublicOrigin(input.publicOrigin);
+    const shouldUpdatePublicOrigin = input.publicOrigin !== undefined;
+    const publicOrigin = shouldUpdatePublicOrigin
+      ? normalizePublicOrigin(input.publicOrigin)
+      : undefined;
     const defaultStorageQuotaBytes = inputBytesToBigInt(
       input.defaultStorageQuotaBytes,
     );
     const settings = await this.prisma.instanceSetting.upsert({
       where: { singletonKey: 'default' },
       update: {
-        publicOrigin,
+        ...(shouldUpdatePublicOrigin ? { publicOrigin } : {}),
         ...(input.defaultStorageQuotaBytes === undefined
           ? {}
           : { defaultStorageQuotaBytes: defaultStorageQuotaBytes! }),
@@ -234,9 +237,9 @@ export class AdminOperationsController {
     return this.instanceSettingsForJson(settings);
   }
 
-  private instanceSettingsForJson<T extends { defaultStorageQuotaBytes: bigint }>(
-    settings: T,
-  ) {
+  private instanceSettingsForJson<
+    T extends { defaultStorageQuotaBytes: bigint },
+  >(settings: T) {
     return {
       ...settings,
       defaultStorageQuotaBytes: bytesToJsonNumber(
