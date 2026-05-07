@@ -12,7 +12,9 @@ import { SessionActor } from '../common/decorators/session.decorator';
 import { SessionGuard } from '../common/guards/session.guard';
 import type { AuthenticatedSession } from '../common/types/auth.types';
 import { ApprovePairingDto } from './dto/approve-pairing.dto';
+import { CompleteTrustedDeviceResumeDto } from './dto/complete-trusted-device-resume.dto';
 import { CreatePairingSessionDto } from './dto/create-pairing-session.dto';
+import { CreateTrustedDeviceResumeChallengeDto } from './dto/create-trusted-device-resume-challenge.dto';
 import { FirstDeviceBootstrapDto } from './dto/first-device-bootstrap.dto';
 import { FinalizePairingDto } from './dto/finalize-pairing.dto';
 import { RecoveryAttemptDto } from './dto/recovery-attempt.dto';
@@ -22,6 +24,14 @@ import { TrustService } from './trust.service';
 @Controller('api')
 export class TrustController {
   constructor(private readonly trustService: TrustService) {}
+
+  private setTrustedDeviceCookie(response: Response, trustedDeviceId: string) {
+    response.cookie('liminalis_trusted_device', trustedDeviceId, {
+      httpOnly: true,
+      sameSite: 'lax',
+      secure: false,
+    });
+  }
 
   @UseGuards(SessionGuard)
   @Post('trust/bootstrap-first-device')
@@ -35,11 +45,7 @@ export class TrustController {
       input,
     );
 
-    response.cookie('liminalis_trusted_device', result.trustedDeviceId, {
-      httpOnly: true,
-      sameSite: 'lax',
-      secure: false,
-    });
+    this.setTrustedDeviceCookie(response, result.trustedDeviceId);
 
     return result;
   }
@@ -56,11 +62,38 @@ export class TrustController {
       input,
     );
 
-    response.cookie('liminalis_trusted_device', result.requesterDeviceId, {
-      httpOnly: true,
-      sameSite: 'lax',
-      secure: false,
-    });
+    this.setTrustedDeviceCookie(response, result.requesterDeviceId);
+
+    return result;
+  }
+
+  @UseGuards(SessionGuard)
+  @Post('trust/resume-challenge')
+  async createTrustedDeviceResumeChallenge(
+    @SessionActor() sessionActor: AuthenticatedSession,
+    @Body() input: CreateTrustedDeviceResumeChallengeDto,
+  ) {
+    return this.trustService.createTrustedDeviceResumeChallenge(
+      sessionActor.userId,
+      sessionActor.sessionId,
+      input,
+    );
+  }
+
+  @UseGuards(SessionGuard)
+  @Post('trust/resume')
+  async completeTrustedDeviceResume(
+    @SessionActor() sessionActor: AuthenticatedSession,
+    @Body() input: CompleteTrustedDeviceResumeDto,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    const result = await this.trustService.completeTrustedDeviceResume(
+      sessionActor.userId,
+      sessionActor.sessionId,
+      input,
+    );
+
+    this.setTrustedDeviceCookie(response, result.trustedDeviceId);
 
     return result;
   }
@@ -109,11 +142,7 @@ export class TrustController {
       input,
     );
 
-    response.cookie('liminalis_trusted_device', result.requesterDeviceId, {
-      httpOnly: true,
-      sameSite: 'lax',
-      secure: false,
-    });
+    this.setTrustedDeviceCookie(response, result.requesterDeviceId);
 
     return result;
   }
@@ -159,11 +188,7 @@ export class TrustController {
       trustedDeviceId,
     );
 
-    response.cookie('liminalis_trusted_device', trustedDeviceId, {
-      httpOnly: true,
-      sameSite: 'lax',
-      secure: false,
-    });
+    this.setTrustedDeviceCookie(response, trustedDeviceId);
 
     return result;
   }

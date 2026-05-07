@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject } from 'react'
 import { api, type ConfidentialityLevel, type LiveRelayChunk, type LiveTransferSession } from '../../shared/api/client.ts'
 import { Button, EmptyState, Field, SelectInput, TextInput, Toast } from '../../shared/ui/components.tsx'
@@ -72,11 +72,15 @@ function orderedChunks(chunks: Blob[]) {
 
 export function LiveStartPage() {
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const folderInputRef = useRef<HTMLInputElement | null>(null)
   const [entries, setEntries] = useState<SelectedFileEntry[]>([])
   const [level, setLevel] = useState<ConfidentialityLevel>('SECRET')
+  const [joinOpen, setJoinOpen] = useState(false)
+  const [joinCode, setJoinCode] = useState('')
   const selection = useMemo(() => classifySelection(entries), [entries])
+  const joinVisible = joinOpen || searchParams.get('join') === '1'
 
   const create = useMutation({
     mutationFn: () => {
@@ -95,6 +99,10 @@ export function LiveStartPage() {
       navigate(`/live/${sessionId(session)}`, { replace: true })
     },
   })
+  const join = useMutation({
+    mutationFn: () => api.joinLiveTransferSession(joinCode.trim().toUpperCase()),
+    onSuccess: (session) => navigate(`/live/${sessionId(session)}`, { replace: true }),
+  })
 
   return (
     <section className="workspace-page live-page">
@@ -104,7 +112,20 @@ export function LiveStartPage() {
           <h2>Start a direct file session</h2>
         </div>
         <div className="actions">
-          <Link className="button button-primary" to="/live/join">Join by code</Link>
+          <Button
+            variant="primary"
+            type="button"
+            onClick={() => {
+              setJoinOpen(!joinVisible)
+              setSearchParams((params) => {
+                const next = new URLSearchParams(params)
+                next.delete('join')
+                return next
+              }, { replace: true })
+            }}
+          >
+            Join by code
+          </Button>
           <Link className="button button-secondary" to="/app">Back to workspace</Link>
         </div>
       </header>
@@ -146,6 +167,24 @@ export function LiveStartPage() {
           Start session
         </Button>
       </section>
+      {joinVisible ? (
+        <form
+          className="action-panel live-join-panel"
+          onSubmit={(event) => {
+            event.preventDefault()
+            if (joinCode.trim() && !join.isPending) {
+              join.mutate()
+            }
+          }}
+        >
+          <Field label="Session code" error={join.error instanceof Error ? join.error.message : null}>
+            <TextInput value={joinCode} onChange={(event) => setJoinCode(event.target.value.toUpperCase())} />
+          </Field>
+          <Button type="submit" variant="primary" disabled={!joinCode.trim() || join.isPending}>
+            Join session
+          </Button>
+        </form>
+      ) : null}
     </section>
   )
 }
@@ -744,7 +783,7 @@ export function LiveSessionPage() {
           <h2>{activeSession.contentLabel}</h2>
         </div>
         <div className="actions">
-          <Link className="button button-secondary" to="/live/join">Join another</Link>
+          <Link className="button button-secondary" to="/live/start">Live transfer</Link>
           <Link className="button button-secondary" to="/app">Workspace</Link>
         </div>
       </header>
@@ -756,7 +795,7 @@ export function LiveSessionPage() {
           <Button variant="primary" onClick={() => void copySessionCode()} disabled={!currentSessionCode}>
             {codeCopied ? 'Copied' : 'Copy code'}
           </Button>
-          <Link className="button button-secondary" to="/live/join">Join by code</Link>
+          <Link className="button button-secondary" to="/live/start?join=1">Join by code</Link>
         </div>
       </section>
       <section className="detail-grid">

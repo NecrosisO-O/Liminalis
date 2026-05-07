@@ -15,6 +15,13 @@ import {
   UploadSessionPhase,
 } from '../../generated/prisma/index.js';
 import type { Readable } from 'stream';
+import {
+  DEFAULT_STORAGE_QUOTA_BYTES,
+  bytesToJsonNumber,
+  inputBytesToBigInt,
+  partsForJson,
+  sumBytes,
+} from '../common/utils/byte-values';
 import { PrismaService } from '../prisma/prisma.service';
 import { PolicyService } from '../policy/policy.service';
 import { ProjectionService } from '../projections/projection.service';
@@ -112,6 +119,8 @@ export class UploadsService {
       input.byteSize,
     );
 
+    const byteSize = inputBytesToBigInt(input.byteSize);
+
     await this.prisma.uploadPart.upsert({
       where: {
         uploadSessionId_partNumber: {
@@ -121,14 +130,14 @@ export class UploadsService {
       },
       update: {
         storageKey: input.storageKey,
-        byteSize: input.byteSize,
+        byteSize,
         checksum: input.checksum,
       },
       create: {
         uploadSessionId,
         partNumber: input.partNumber,
         storageKey: input.storageKey,
-        byteSize: input.byteSize,
+        byteSize,
         checksum: input.checksum,
       },
     });
@@ -189,6 +198,7 @@ export class UploadsService {
       throw error;
     }
 
+    const storedByteSize = inputBytesToBigInt(stored.byteSize);
     const part = await this.prisma.uploadPart.upsert({
       where: {
         uploadSessionId_partNumber: {
@@ -198,14 +208,14 @@ export class UploadsService {
       },
       update: {
         storageKey: stored.storageKey,
-        byteSize: stored.byteSize,
+        byteSize: storedByteSize,
         checksum: stored.checksum,
       },
       create: {
         uploadSessionId,
         partNumber,
         storageKey: stored.storageKey,
-        byteSize: stored.byteSize,
+        byteSize: storedByteSize,
         checksum: stored.checksum,
       },
     });
@@ -223,7 +233,7 @@ export class UploadsService {
       uploadPartId: part.id,
       partNumber: part.partNumber,
       storageKey: part.storageKey,
-      byteSize: part.byteSize,
+      byteSize: bytesToJsonNumber(part.byteSize),
       checksum: part.checksum,
     };
   }
@@ -281,7 +291,7 @@ export class UploadsService {
           checksum: true,
         },
       });
-      const storageBytes = parts.reduce((sum, part) => sum + part.byteSize, 0);
+      const storageBytes = sumBytes(parts.map((part) => part.byteSize));
       const cryptoMetadata = input.contentCryptoMetadata
         ? (input.contentCryptoMetadata as Prisma.InputJsonValue)
         : Prisma.JsonNull;
@@ -294,7 +304,7 @@ export class UploadsService {
           : ({
               uploadSessionId,
               partCount,
-              parts,
+              parts: partsForJson(parts),
               crypto: input.contentCryptoMetadata ?? null,
             } as Prisma.InputJsonValue);
       const genericDisplayName = this.genericDisplayName(session.contentKind);
@@ -555,10 +565,11 @@ export class UploadsService {
     const quotaBytes =
       user?.storageQuotaBytes ??
       settings?.defaultStorageQuotaBytes ??
-      1_073_741_824;
-    const currentBytes = usage._sum.byteSize ?? 0;
-    const replacedBytes = existingPart?.byteSize ?? 0;
-    const projectedBytes = currentBytes - replacedBytes + incomingByteSize;
+      DEFAULT_STORAGE_QUOTA_BYTES;
+    const currentBytes = usage._sum.byteSize ?? 0n;
+    const replacedBytes = existingPart?.byteSize ?? 0n;
+    const projectedBytes =
+      currentBytes - replacedBytes + inputBytesToBigInt(incomingByteSize)!;
 
     if (projectedBytes > quotaBytes) {
       throw new ForbiddenException('Storage quota exceeded');

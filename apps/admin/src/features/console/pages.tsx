@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useMemo, useState } from 'react'
+import { Fragment, useMemo, useState } from 'react'
 import { api, type ConfidentialityLevel, type PolicyBundle } from '../../shared/api/client.ts'
 import { Button, Field, Input, Select } from '../../shared/ui/components.tsx'
 import { formatBytes, formatDate } from '../../shared/ui/format.ts'
@@ -147,6 +147,8 @@ export function ApprovalsPage() {
 
 export function UsersPage() {
   const queryClient = useQueryClient()
+  const [removeTargetId, setRemoveTargetId] = useState<string | null>(null)
+  const [removeConfirmation, setRemoveConfirmation] = useState('')
   const users = useQuery({ queryKey: ['admin', 'users'], queryFn: api.listUsers })
   const storage = useQuery({ queryKey: ['admin', 'storage-users'], queryFn: api.getStorageUsers })
   const disable = useMutation({
@@ -157,6 +159,18 @@ export function UsersPage() {
     mutationFn: api.enableUser,
     onSuccess: async () => queryClient.invalidateQueries({ queryKey: ['admin', 'users'] }),
   })
+  const remove = useMutation({
+    mutationFn: ({ userId, confirmUsername }: { userId: string; confirmUsername: string }) => api.removeUser(userId, confirmUsername),
+    onSuccess: async () => {
+      setRemoveTargetId(null)
+      setRemoveConfirmation('')
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['admin', 'users'] }),
+        queryClient.invalidateQueries({ queryKey: ['admin', 'storage-users'] }),
+        queryClient.invalidateQueries({ queryKey: ['admin', 'summary'] }),
+      ])
+    },
+  })
 
   return (
     <section className="admin-page">
@@ -165,19 +179,67 @@ export function UsersPage() {
         <div className="table-head"><span>User</span><span>State</span><span>Role</span><span>Devices</span><span>Storage</span><span>Action</span></div>
         {users.data?.map((user) => {
           const storageRow = storage.data?.find((row) => row.userId === user.id)
+          const isRemoving = removeTargetId === user.id
+          const removeError = isRemoving && remove.error instanceof Error ? remove.error.message : null
           return (
-            <div key={user.id} className="table-row">
-              <strong>{user.username}</strong>
-              <span>{user.admissionState} · {user.enablementState}</span>
-              <span>{user.role}</span>
-              <span>{user.devices?.length ?? 0}</span>
-              <span>{storageRow ? `${formatBytes(storageRow.storageUsedBytes)} / ${formatBytes(storageRow.storageQuotaBytes)}` : 'Loading'}</span>
-              {user.enablementState === 'DISABLED' ? (
-                <Button onClick={() => enable.mutate(user.id)} disabled={enable.isPending}>Enable</Button>
-              ) : (
-                <Button variant="danger" onClick={() => disable.mutate(user.id)} disabled={disable.isPending}>Disable</Button>
-              )}
-            </div>
+            <Fragment key={user.id}>
+              <div className="table-row">
+                <strong>{user.username}</strong>
+                <span>{user.admissionState} · {user.enablementState}</span>
+                <span>{user.role}</span>
+                <span>{user.devices?.length ?? 0}</span>
+                <span>{storageRow ? `${formatBytes(storageRow.storageUsedBytes)} / ${formatBytes(storageRow.storageQuotaBytes)}` : 'Loading'}</span>
+                <div className="user-actions">
+                  {user.enablementState === 'DISABLED' ? (
+                    <Button onClick={() => enable.mutate(user.id)} disabled={enable.isPending || remove.isPending}>Enable</Button>
+                  ) : (
+                    <Button variant="danger" onClick={() => disable.mutate(user.id)} disabled={disable.isPending || remove.isPending}>Disable</Button>
+                  )}
+                  {user.role === 'REGULAR_USER' ? (
+                    <Button
+                      variant="danger"
+                      onClick={() => {
+                        setRemoveTargetId(user.id)
+                        setRemoveConfirmation('')
+                      }}
+                      disabled={remove.isPending}
+                    >
+                      Remove
+                    </Button>
+                  ) : null}
+                </div>
+              </div>
+              {isRemoving ? (
+                <div className="user-remove-confirm">
+                  <div>
+                    <strong>Remove {user.username}</strong>
+                    <span>This permanently removes the account, its transfer records, and stored ciphertext objects.</span>
+                  </div>
+                  <Field label="Type username to confirm">
+                    <Input value={removeConfirmation} onChange={(event) => setRemoveConfirmation(event.target.value)} />
+                  </Field>
+                  {removeError ? <p className="error-text">{removeError}</p> : null}
+                  <div className="user-actions">
+                    <Button
+                      onClick={() => {
+                        setRemoveTargetId(null)
+                        setRemoveConfirmation('')
+                      }}
+                      disabled={remove.isPending}
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      variant="danger"
+                      onClick={() => remove.mutate({ userId: user.id, confirmUsername: removeConfirmation })}
+                      disabled={removeConfirmation !== user.username || remove.isPending}
+                    >
+                      {remove.isPending ? 'Removing' : 'Remove permanently'}
+                    </Button>
+                  </div>
+                </div>
+              ) : null}
+            </Fragment>
           )
         })}
       </div>

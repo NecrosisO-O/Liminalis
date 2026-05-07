@@ -9,6 +9,7 @@ import {
   UploadContentKind,
   Prisma,
 } from '../../generated/prisma/index.js';
+import { sumBytes } from '../common/utils/byte-values';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
@@ -330,7 +331,7 @@ export class ProjectionService {
     sourceItem: SourceItem & {
       ownerUser: { username: string };
       groupManifest: { manifestJson: unknown } | null;
-      uploadSession: { parts: Array<{ byteSize: number }> } | null;
+      uploadSession: { parts: Array<{ byteSize: bigint }> } | null;
     },
   ) {
     const visibleTypeLabel = this.visibleTypeLabel(
@@ -340,11 +341,12 @@ export class ProjectionService {
     const visibleSummary = null;
     const visibleSizeBytes =
       sourceItem.contentKind === UploadContentKind.SELF_SPACE_TEXT
-        ? (sourceItem.textCiphertextBody?.length ?? null)
-        : (sourceItem.uploadSession?.parts.reduce(
-            (sum, part) => sum + part.byteSize,
-            0,
-          ) ?? null);
+        ? sourceItem.textCiphertextBody === null
+          ? null
+          : BigInt(sourceItem.textCiphertextBody.length)
+        : sourceItem.uploadSession
+          ? sumBytes(sourceItem.uploadSession.parts.map((part) => part.byteSize))
+          : null;
     const groupedItemCount = sourceItem.groupManifest
       ? Array.isArray(
           (sourceItem.groupManifest.manifestJson as { members?: unknown })
@@ -415,7 +417,7 @@ export class ProjectionService {
         contentKind: UploadContentKind;
         displayName: string | null;
         encryptedMetadata?: unknown;
-        storageBytes?: number;
+        storageBytes?: bigint;
         groupManifest: { manifestJson: unknown } | null;
       };
     },

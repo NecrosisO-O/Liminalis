@@ -9,10 +9,14 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { AdminGuard } from '../common/guards/admin.guard';
 import { SessionGuard } from '../common/guards/session.guard';
+import {
+  DEFAULT_STORAGE_QUOTA_BYTES,
+  bytesToJsonNumber,
+  inputBytesToBigInt,
+  sumBytes,
+} from '../common/utils/byte-values';
 import { SetStorageQuotaDto } from './dto/set-storage-quota.dto';
 import { UpdateInstanceSettingsDto } from './dto/update-instance-settings.dto';
-
-const defaultStorageQuotaBytes = 1_073_741_824;
 
 function normalizePublicOrigin(value: string | null | undefined) {
   const trimmed = value?.trim() ?? '';
@@ -82,7 +86,9 @@ export class AdminOperationsController {
         trustedDevices,
       },
       storage: {
-        uploadedCiphertextBytes: uploadParts._sum.byteSize ?? 0,
+        uploadedCiphertextBytes: bytesToJsonNumber(
+          uploadParts._sum.byteSize ?? 0n,
+        ),
       },
     };
   }
@@ -115,18 +121,15 @@ export class AdminOperationsController {
     ]);
 
     const defaultQuotaBytes =
-      settings?.defaultStorageQuotaBytes ?? defaultStorageQuotaBytes;
+      settings?.defaultStorageQuotaBytes ?? DEFAULT_STORAGE_QUOTA_BYTES;
 
     return users.map((user) => {
-      const storageUsedBytes = user.uploadSessions.reduce(
-        (userTotal, session) =>
-          userTotal +
-          session.parts.reduce(
-            (sessionTotal, part) => sessionTotal + part.byteSize,
-            0,
-          ),
-        0,
+      const storageUsedBytes = sumBytes(
+        user.uploadSessions.flatMap((session) =>
+          session.parts.map((part) => part.byteSize),
+        ),
       );
+      const storageQuotaBytes = user.storageQuotaBytes ?? defaultQuotaBytes;
 
       return {
         userId: user.id,
@@ -134,8 +137,8 @@ export class AdminOperationsController {
         role: user.role,
         admissionState: user.admissionState,
         enablementState: user.enablementState,
-        storageUsedBytes,
-        storageQuotaBytes: user.storageQuotaBytes ?? defaultQuotaBytes,
+        storageUsedBytes: bytesToJsonNumber(storageUsedBytes),
+        storageQuotaBytes: bytesToJsonNumber(storageQuotaBytes),
         hasCustomQuota: user.storageQuotaBytes !== null,
       };
     });
@@ -143,42 +146,51 @@ export class AdminOperationsController {
 
   @Post('storage/quota')
   async setStorageQuota(@Body() input: SetStorageQuotaDto) {
+    const quotaBytes = inputBytesToBigInt(input.quotaBytes);
+
     if (input.userId) {
-      return this.prisma.user.update({
+      const user = await this.prisma.user.update({
         where: { id: input.userId },
-        data: { storageQuotaBytes: input.quotaBytes ?? null },
+        data: { storageQuotaBytes: quotaBytes },
         select: {
           id: true,
           username: true,
           storageQuotaBytes: true,
         },
       });
+
+      return {
+        ...user,
+        storageQuotaBytes: bytesToJsonNumber(user.storageQuotaBytes),
+      };
     }
 
-    return this.prisma.instanceSetting.upsert({
+    const settings = await this.prisma.instanceSetting.upsert({
       where: { singletonKey: 'default' },
       update: {
-        defaultStorageQuotaBytes: input.quotaBytes ?? defaultStorageQuotaBytes,
+        defaultStorageQuotaBytes: quotaBytes ?? DEFAULT_STORAGE_QUOTA_BYTES,
       },
       create: {
         singletonKey: 'default',
-        defaultStorageQuotaBytes: input.quotaBytes ?? defaultStorageQuotaBytes,
+        defaultStorageQuotaBytes: quotaBytes ?? DEFAULT_STORAGE_QUOTA_BYTES,
       },
       select: {
         singletonKey: true,
         defaultStorageQuotaBytes: true,
       },
     });
+
+    return this.instanceSettingsForJson(settings);
   }
 
   @Get('settings')
   async getInstanceSettings() {
-    return this.prisma.instanceSetting.upsert({
+    const settings = await this.prisma.instanceSetting.upsert({
       where: { singletonKey: 'default' },
       update: {},
       create: {
         singletonKey: 'default',
-        defaultStorageQuotaBytes,
+        defaultStorageQuotaBytes: DEFAULT_STORAGE_QUOTA_BYTES,
       },
       select: {
         singletonKey: true,
@@ -187,24 +199,29 @@ export class AdminOperationsController {
         publicOrigin: true,
       },
     });
+
+    return this.instanceSettingsForJson(settings);
   }
 
   @Post('settings')
   async updateInstanceSettings(@Body() input: UpdateInstanceSettingsDto) {
     const publicOrigin = normalizePublicOrigin(input.publicOrigin);
-    return this.prisma.instanceSetting.upsert({
+    const defaultStorageQuotaBytes = inputBytesToBigInt(
+      input.defaultStorageQuotaBytes,
+    );
+    const settings = await this.prisma.instanceSetting.upsert({
       where: { singletonKey: 'default' },
       update: {
         publicOrigin,
         ...(input.defaultStorageQuotaBytes === undefined
           ? {}
-          : { defaultStorageQuotaBytes: input.defaultStorageQuotaBytes }),
+          : { defaultStorageQuotaBytes: defaultStorageQuotaBytes! }),
       },
       create: {
         singletonKey: 'default',
         publicOrigin,
         defaultStorageQuotaBytes:
-          input.defaultStorageQuotaBytes ?? defaultStorageQuotaBytes,
+          defaultStorageQuotaBytes ?? DEFAULT_STORAGE_QUOTA_BYTES,
       },
       select: {
         singletonKey: true,
@@ -213,5 +230,18 @@ export class AdminOperationsController {
         publicOrigin: true,
       },
     });
+
+    return this.instanceSettingsForJson(settings);
+  }
+
+  private instanceSettingsForJson<T extends { defaultStorageQuotaBytes: bigint }>(
+    settings: T,
+  ) {
+    return {
+      ...settings,
+      defaultStorageQuotaBytes: bytesToJsonNumber(
+        settings.defaultStorageQuotaBytes,
+      ),
+    };
   }
 }

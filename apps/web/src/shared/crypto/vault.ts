@@ -192,6 +192,17 @@ export async function requireVault() {
   return vault
 }
 
+export async function signTrustedDeviceResumeChallenge(challenge: string) {
+  const vault = await requireVault()
+  const signature = await crypto.subtle.sign(
+    { name: 'ECDSA', hash: 'SHA-256' },
+    vault.deviceIdentityPrivateKey,
+    new TextEncoder().encode(challenge),
+  )
+
+  return bytesToBase64Url(new Uint8Array(signature))
+}
+
 export async function requireUserDomainVault() {
   const vault = await requireVault()
   if (!vault.userDomainPrivateKey || !vault.userDomainPublicKey || !vault.userDomainPublicKeyPayload) {

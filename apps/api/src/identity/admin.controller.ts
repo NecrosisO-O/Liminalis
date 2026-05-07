@@ -4,6 +4,7 @@ import { AdminGuard } from '../common/guards/admin.guard';
 import { SessionGuard } from '../common/guards/session.guard';
 import type { AuthenticatedSession } from '../common/types/auth.types';
 import { ApproveUserDto } from './dto/approve-user.dto';
+import { RemoveUserDto } from './dto/remove-user.dto';
 import { ToggleUserDto } from './dto/toggle-user.dto';
 import { IdentityService } from './identity.service';
 
@@ -33,5 +34,17 @@ export class AdminUsersController {
   @Post('enable')
   async enable(@Body() input: ToggleUserDto) {
     return this.identityService.enableUser(input.userId);
+  }
+
+  @Post('remove')
+  async remove(
+    @SessionActor() sessionActor: AuthenticatedSession,
+    @Body() input: RemoveUserDto,
+  ) {
+    return this.identityService.removeUser(
+      input.userId,
+      sessionActor.userId,
+      input.confirmUsername,
+    );
   }
 }

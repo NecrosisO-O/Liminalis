@@ -9,7 +9,6 @@ const navItems: ReadonlyArray<{ to: string; label: string; end?: boolean }> = [
   { to: '/app/upload', label: 'Advanced upload' },
   { to: '/app/history', label: 'History' },
   { to: '/live/start', label: 'Live transfer' },
-  { to: '/live/join', label: 'Join live' },
   { to: '/app/settings', label: 'Settings' },
 ]
 

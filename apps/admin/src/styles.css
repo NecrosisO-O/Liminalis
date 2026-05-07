@@ -308,7 +308,7 @@ p {
 
 .users-table .table-head,
 .users-table .table-row {
-  grid-template-columns: 1fr 1.5fr 0.8fr 0.7fr 1.5fr 120px;
+  grid-template-columns: 1fr 1.5fr 0.8fr 0.7fr 1.5fr 210px;
 }
 
 .storage-table .table-head,
@@ -335,6 +335,38 @@ p {
 
 .record-card span {
   color: var(--muted);
+}
+
+.user-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-start;
+}
+
+.user-remove-confirm {
+  min-width: 850px;
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(240px, 360px) auto;
+  gap: 12px;
+  align-items: end;
+  padding: 14px 12px;
+  border-bottom: 1px solid var(--line);
+  background: #fff8f7;
+}
+
+.user-remove-confirm > div:first-child {
+  display: grid;
+  gap: 4px;
+}
+
+.user-remove-confirm span {
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+
+.user-remove-confirm .error-text {
+  grid-column: 1 / -1;
 }
 
 .policy-grid {

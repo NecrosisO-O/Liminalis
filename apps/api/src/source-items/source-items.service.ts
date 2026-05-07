@@ -13,6 +13,7 @@ import {
   ShareObjectState,
   SourceItemState,
 } from '../../generated/prisma/index.js';
+import { bytesToJsonNumber } from '../common/utils/byte-values';
 import { PolicyService } from '../policy/policy.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ProjectionService } from '../projections/projection.service';
@@ -50,14 +51,14 @@ export class SourceItemsService {
       throw new NotFoundException('Source item not found');
     }
 
-    return sourceItem;
+    return this.sourceItemForJson(sourceItem);
   }
 
   async revokeSourceItemForOwner(userId: string, sourceItemId: string) {
     const sourceItem = await this.requireOwnedSourceItem(userId, sourceItemId);
 
     if (sourceItem.state !== SourceItemState.ACTIVE) {
-      return sourceItem;
+      return this.sourceItemForJson(sourceItem);
     }
 
     await this.invalidateSourceItem(sourceItem.id, SourceItemState.INVALIDATED);
@@ -261,5 +262,12 @@ export class SourceItemsService {
         this.projectionService.projectShareObject(shareId),
       ),
     );
+  }
+
+  private sourceItemForJson<T extends { storageBytes: bigint }>(sourceItem: T) {
+    return {
+      ...sourceItem,
+      storageBytes: bytesToJsonNumber(sourceItem.storageBytes),
+    };
   }
 }

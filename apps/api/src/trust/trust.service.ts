@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import * as argon2 from 'argon2';
-import { randomInt, randomUUID } from 'crypto';
+import { randomBytes, randomInt, randomUUID, webcrypto } from 'crypto';
 import {
   AdmissionState,
   DeviceTrustState,
@@ -15,11 +15,16 @@ import {
 } from '../../generated/prisma/index.js';
 import { PrismaService } from '../prisma/prisma.service';
 import { ApprovePairingDto } from './dto/approve-pairing.dto';
+import { CompleteTrustedDeviceResumeDto } from './dto/complete-trusted-device-resume.dto';
 import { CreatePairingSessionDto } from './dto/create-pairing-session.dto';
+import { CreateTrustedDeviceResumeChallengeDto } from './dto/create-trusted-device-resume-challenge.dto';
 import { FirstDeviceBootstrapDto } from './dto/first-device-bootstrap.dto';
 import { FinalizePairingDto } from './dto/finalize-pairing.dto';
 import { RecoveryAttemptDto } from './dto/recovery-attempt.dto';
 import { RejectPairingDto } from './dto/reject-pairing.dto';
+
+const trustedDeviceResumeVersion = 'liminalis-trusted-device-resume-v1';
+const trustedDeviceResumeChallengeTtlMs = 2 * 60 * 1000;
 
 function generateRecoveryCode() {
   const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -27,6 +32,35 @@ function generateRecoveryCode() {
     { length: 20 },
     () => alphabet[randomInt(0, alphabet.length)],
   ).join('');
+}
+
+function base64UrlBytes(byteLength: number) {
+  return randomBytes(byteLength).toString('base64url');
+}
+
+function bytesFromBase64Url(value: string) {
+  return Uint8Array.from(Buffer.from(value, 'base64url'));
+}
+
+async function verifyTrustedDeviceSignature(input: {
+  publicIdentityPayload: string;
+  challenge: string;
+  signature: string;
+}) {
+  const publicKey = await webcrypto.subtle.importKey(
+    'jwk',
+    JSON.parse(input.publicIdentityPayload) as JsonWebKey,
+    { name: 'ECDSA', namedCurve: 'P-256' },
+    false,
+    ['verify'],
+  );
+
+  return webcrypto.subtle.verify(
+    { name: 'ECDSA', hash: 'SHA-256' },
+    publicKey,
+    bytesFromBase64Url(input.signature),
+    new TextEncoder().encode(input.challenge),
+  );
 }
 
 @Injectable()
@@ -124,6 +158,119 @@ export class TrustService {
         expiresAt: new Date(Date.now() + 5 * 60_000),
       },
     });
+  }
+
+  async createTrustedDeviceResumeChallenge(
+    userId: string,
+    sessionId: string,
+    input: CreateTrustedDeviceResumeChallengeDto,
+  ) {
+    await this.requireApprovedEnabledUser(
+      userId,
+      'User cannot resume trusted browser',
+    );
+
+    const device = await this.prisma.trustedDevice.findFirst({
+      where: {
+        userId,
+        trustState: DeviceTrustState.TRUSTED,
+        publicIdentityPayload: input.devicePublicIdentity,
+      },
+      select: { id: true },
+    });
+
+    if (!device) {
+      throw new NotFoundException('Trusted device not found');
+    }
+
+    const expiresAt = new Date(
+      Date.now() + trustedDeviceResumeChallengeTtlMs,
+    );
+    const challenge = JSON.stringify({
+      version: trustedDeviceResumeVersion,
+      userId,
+      sessionId,
+      trustedDeviceId: device.id,
+      nonce: base64UrlBytes(32),
+      expiresAt: expiresAt.toISOString(),
+    });
+
+    const record = await this.prisma.trustedDeviceResumeChallenge.create({
+      data: {
+        userId,
+        sessionId,
+        trustedDeviceId: device.id,
+        challenge,
+        expiresAt,
+      },
+    });
+
+    return {
+      challengeId: record.id,
+      challenge: record.challenge,
+      expiresAt: record.expiresAt,
+    };
+  }
+
+  async completeTrustedDeviceResume(
+    userId: string,
+    sessionId: string,
+    input: CompleteTrustedDeviceResumeDto,
+  ) {
+    await this.requireApprovedEnabledUser(
+      userId,
+      'User cannot resume trusted browser',
+    );
+
+    const challenge =
+      await this.prisma.trustedDeviceResumeChallenge.findUnique({
+        where: { id: input.challengeId },
+        include: { trustedDevice: true },
+      });
+
+    if (
+      !challenge ||
+      challenge.userId !== userId ||
+      challenge.sessionId !== sessionId ||
+      challenge.consumedAt ||
+      challenge.expiresAt < new Date()
+    ) {
+      throw new BadRequestException('Trusted browser resume expired');
+    }
+
+    if (
+      challenge.trustedDevice.trustState !== DeviceTrustState.TRUSTED ||
+      !challenge.trustedDevice.publicIdentityPayload
+    ) {
+      throw new ForbiddenException('Trusted browser is not available');
+    }
+
+    const verified = await verifyTrustedDeviceSignature({
+      publicIdentityPayload: challenge.trustedDevice.publicIdentityPayload,
+      challenge: challenge.challenge,
+      signature: input.signature,
+    }).catch(() => false);
+
+    if (!verified) {
+      throw new ForbiddenException('Trusted browser proof is invalid');
+    }
+
+    const consumed = await this.prisma.trustedDeviceResumeChallenge.updateMany({
+      where: {
+        id: challenge.id,
+        consumedAt: null,
+        expiresAt: { gt: new Date() },
+      },
+      data: { consumedAt: new Date() },
+    });
+
+    if (consumed.count !== 1) {
+      throw new BadRequestException('Trusted browser resume expired');
+    }
+
+    return {
+      trustedDeviceId: challenge.trustedDeviceId,
+    };
   }
 
   async getPairingSession(pairingSessionId: string) {

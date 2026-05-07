@@ -1,16 +1,26 @@
 import type { InputHTMLAttributes } from 'react'
-import { api, type ConfidentialityLevel, type FinalizeUploadResult, type GroupStructureKind } from '../api/client.ts'
+import { api, ApiError, type ConfidentialityLevel, type FinalizeUploadResult, type GroupStructureKind } from '../api/client.ts'
 import {
+  canStreamDecryptFilePayload,
+  createEncryptedSourceContext,
   createEncryptedSourcePackage,
-  decryptFilePayload,
-  decryptSourceMetadata,
+  decryptFilePayloadWithKey,
+  decryptSourceMetadataWithKey,
   decryptTextPayload,
   e2eeVersion,
+  encryptedFileCiphertextBytes,
+  encryptFilePayloadChunk,
+  sourceKeyFromWrappedReference,
+  streamDecryptFilePayloadWithKey,
   type SourceMetadata,
 } from '../crypto/envelope.ts'
 
 export const largeFileThresholdBytes = 90_000_000
 export const uploadChunkSizeBytes = 8 * 1024 * 1024
+export const nativeStreamSaveThresholdBytes = 1_500_000_000
+const objectUrlRevokeDelayMs = 60_000
+const uploadPartRetryCount = 3
+const uploadPartRetryBaseDelayMs = 800
 
 export type SelectedFileEntry = {
   file: File
@@ -26,6 +36,9 @@ export type UploadProgress = {
   currentFileName?: string
   partNumber?: number
   partCount?: number
+  retryAttempt?: number
+  retryDelayMs?: number
+  backgrounded?: boolean
 }
 
 export type UploadOptions = {
@@ -34,6 +47,14 @@ export type UploadOptions = {
   burnAfterReadEnabled?: boolean
   displayName?: string
   onProgress?: (progress: UploadProgress) => void
+}
+
+type EncryptedFileChunkMetadata = {
+  partNumber: number
+  nonce: string
+  aad: string
+  plaintextBytes: number
+  ciphertextBytes: number
 }
 
 export type ClassifiedSelection = {
@@ -81,6 +102,50 @@ type DragFileSystemDirectoryEntry = DragFileSystemEntry & {
 
 type DataTransferItemWithEntry = DataTransferItem & {
   webkitGetAsEntry?: () => DragFileSystemEntry | null
+}
+
+type FileSystemWritableFileStreamLike = {
+  write: (data: BlobPart | Uint8Array | { type: 'write'; data: BlobPart | Uint8Array; position?: number }) => Promise<void>
+  close: () => Promise<void>
+  abort?: (reason?: unknown) => Promise<void>
+}
+
+type FileSystemFileHandleLike = {
+  createWritable: () => Promise<FileSystemWritableFileStreamLike>
+}
+
+type SaveFilePickerOptionsLike = {
+  suggestedName?: string
+  types?: Array<{
+    description?: string
+    accept: Record<string, string[]>
+  }>
+}
+
+type WindowWithSaveFilePicker = Window & {
+  showSaveFilePicker?: (options?: SaveFilePickerOptionsLike) => Promise<FileSystemFileHandleLike>
+}
+
+export class DownloadRequiresUserActionError extends Error {
+  constructor(message = 'Large encrypted downloads need a save action from this browser.') {
+    super(message)
+    this.name = 'DownloadRequiresUserActionError'
+  }
+}
+
+export class LargeDownloadUnsupportedError extends Error {
+  constructor(message = 'This browser cannot stream-save this large encrypted file.') {
+    super(message)
+    this.name = 'LargeDownloadUnsupportedError'
+  }
+}
+
+export function isDownloadRequiresUserActionError(error: unknown) {
+  return error instanceof DownloadRequiresUserActionError
+}
+
+export function isLargeDownloadUnsupportedError(error: unknown) {
+  return error instanceof LargeDownloadUnsupportedError
 }
 
 export function formatBytes(bytes: number) {
@@ -185,6 +250,57 @@ function updateCrc32(seed: number, chunk: Uint8Array) {
   }
 
   return crc
+}
+
+function delay(ms: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms))
+}
+
+function isRetryableUploadError(error: unknown) {
+  if (error instanceof ApiError) {
+    return error.status === 408 || error.status === 429 || error.status >= 500
+  }
+
+  return true
+}
+
+async function uploadPartBlobWithRetry(
+  input: {
+    uploadSessionId: string
+    partNumber: number
+    blob: Blob
+    uploadedBytes: number
+    totalBytes: number
+    currentFileName: string
+    partCount: number
+    onProgress?: (progress: UploadProgress) => void
+  },
+) {
+  for (let attempt = 0; attempt <= uploadPartRetryCount; attempt += 1) {
+    try {
+      return await api.uploadPartBlob(input.uploadSessionId, input.partNumber, input.blob)
+    } catch (error) {
+      if (attempt >= uploadPartRetryCount || !isRetryableUploadError(error)) {
+        throw error
+      }
+
+      const retryAttempt = attempt + 1
+      const retryDelayMs = uploadPartRetryBaseDelayMs * 2 ** attempt
+      input.onProgress?.({
+        stage: 'uploading',
+        uploadedBytes: input.uploadedBytes,
+        totalBytes: input.totalBytes,
+        currentFileName: input.currentFileName,
+        partNumber: input.partNumber,
+        partCount: input.partCount,
+        retryAttempt,
+        retryDelayMs,
+      })
+      await delay(retryDelayMs)
+    }
+  }
+
+  throw new Error('Upload part failed after retries.')
 }
 
 async function crc32ForFile(file: File) {
@@ -548,6 +664,10 @@ export async function uploadFileSelection(
     totalBytes: selection.totalBytes,
   })
 
+  if (selection.contentKind === 'SINGLE_FILE' && selection.largestFileBytes > largeFileThresholdBytes) {
+    return uploadLargeSingleFileSelection(selection, options)
+  }
+
   const payload = await prepareTransferPayload(selection, options.onProgress)
 
   const prepared = await api.prepareUpload({
@@ -600,6 +720,113 @@ export async function uploadFileSelection(
   return finalized
 }
 
+async function uploadLargeSingleFileSelection(
+  selection: ClassifiedSelection,
+  options: UploadOptions,
+): Promise<FinalizeUploadResult> {
+  const entry = selection.entries[0]
+  if (!entry) {
+    throw new Error('Choose a file first.')
+  }
+
+  if (entry.file.size < 1) {
+    throw new Error('Empty files are not supported.')
+  }
+
+  const prepared = await api.prepareUpload({
+    contentKind: 'SINGLE_FILE',
+    confidentialityLevel: options.confidentialityLevel,
+    requestedValidityMinutes: options.requestedValidityMinutes,
+    burnAfterReadEnabled: options.burnAfterReadEnabled,
+    displayName: 'Encrypted file',
+    cryptoVersion: e2eeVersion,
+  })
+  const metadata: SourceMetadata = {
+    displayName: options.displayName ?? selection.displayName,
+    originalFileCount: 1,
+    originalBytes: selection.totalBytes,
+    contentType: entry.file.type || 'application/octet-stream',
+  }
+  const encrypted = await createEncryptedSourceContext({
+    sourceSubject: prepared.uploadSessionId,
+    metadata,
+  })
+  const chunks: EncryptedFileChunkMetadata[] = []
+  let uploadedPlaintextBytes = 0
+  const partCount = Math.ceil(entry.file.size / uploadChunkSizeBytes)
+
+  for (let offset = 0; offset < entry.file.size; offset += uploadChunkSizeBytes) {
+    const partNumber = Math.floor(offset / uploadChunkSizeBytes) + 1
+    const plaintextBlob = entry.file.slice(offset, Math.min(offset + uploadChunkSizeBytes, entry.file.size))
+
+    options.onProgress?.({
+      stage: 'uploading',
+      uploadedBytes: uploadedPlaintextBytes,
+      totalBytes: entry.file.size,
+      currentFileName: selection.displayName,
+      partNumber,
+      partCount,
+    })
+
+    const plaintext = new Uint8Array(await plaintextBlob.arrayBuffer())
+    const encryptedChunk = await encryptFilePayloadChunk({
+      sourceKey: encrypted.sourceKey,
+      sourceSubject: prepared.uploadSessionId,
+      partNumber,
+      plaintext,
+    })
+    await uploadPartBlobWithRetry({
+      uploadSessionId: prepared.uploadSessionId,
+      partNumber,
+      blob: new Blob([encryptedChunk.encryptedBytes], { type: 'application/octet-stream' }),
+      uploadedBytes: uploadedPlaintextBytes,
+      totalBytes: entry.file.size,
+      currentFileName: selection.displayName,
+      partCount,
+      onProgress: options.onProgress,
+    })
+    chunks.push(encryptedChunk.chunk)
+    uploadedPlaintextBytes += plaintext.byteLength
+
+    options.onProgress?.({
+      stage: 'uploading',
+      uploadedBytes: uploadedPlaintextBytes,
+      totalBytes: entry.file.size,
+      currentFileName: selection.displayName,
+      partNumber,
+      partCount,
+    })
+  }
+
+  options.onProgress?.({
+    stage: 'finalizing',
+    uploadedBytes: entry.file.size,
+    totalBytes: entry.file.size,
+  })
+
+  const finalized = await api.finalizeUpload(prepared.uploadSessionId, {
+    displayName: 'Encrypted file',
+    cryptoVersion: e2eeVersion,
+    encryptedMetadata: encrypted.encryptedMetadata,
+    contentCryptoMetadata: {
+      version: e2eeVersion,
+      contentAlgorithm: 'AES-GCM-256',
+      fileMode: 'chunked-v1',
+      chunkPlaintextSize: uploadChunkSizeBytes,
+      chunks,
+    },
+    ownerKeyEnvelope: encrypted.ownerKeyEnvelope,
+  })
+
+  options.onProgress?.({
+    stage: 'complete',
+    uploadedBytes: entry.file.size,
+    totalBytes: entry.file.size,
+  })
+
+  return finalized
+}
+
 export async function uploadBlobParts(
   uploadSessionId: string,
   blob: Blob,
@@ -626,7 +853,16 @@ export async function uploadBlobParts(
       partCount,
     })
 
-    await api.uploadPartBlob(uploadSessionId, partNumber, chunk)
+    await uploadPartBlobWithRetry({
+      uploadSessionId,
+      partNumber,
+      blob: chunk,
+      uploadedBytes,
+      totalBytes: blob.size,
+      currentFileName: displayName,
+      partCount,
+      onProgress,
+    })
     uploadedBytes += chunk.size
 
     onProgress?.({
@@ -665,7 +901,112 @@ export function saveBlobAsDownload(blob: Blob, fileName: string) {
   document.body.append(anchor)
   anchor.click()
   anchor.remove()
-  window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+  window.setTimeout(() => URL.revokeObjectURL(url), objectUrlRevokeDelayMs)
+}
+
+function suggestedDownloadName(fileName: string) {
+  const cleaned = fileName.replace(/[\\/\0]/gu, '_').trim()
+  return cleaned || 'liminalis-download.bin'
+}
+
+function responseContentLength(response: Response) {
+  const header = response.headers.get('content-length')
+  if (!header) {
+    return null
+  }
+
+  const value = Number(header)
+  return Number.isFinite(value) && value >= 0 ? value : null
+}
+
+export function encryptedDownloadNeedsNativeStreamSave(contentCryptoMetadata: unknown, response?: Response) {
+  if (!canStreamDecryptFilePayload(contentCryptoMetadata)) {
+    return false
+  }
+
+  const encryptedBytes = encryptedFileCiphertextBytes(contentCryptoMetadata) ?? (response ? responseContentLength(response) : null)
+  return encryptedBytes !== null && encryptedBytes >= nativeStreamSaveThresholdBytes
+}
+
+async function cancelResponseBody(response: Response) {
+  try {
+    await response.body?.cancel()
+  } catch {
+    // The stream may already be locked or closed; download completion handling will report the real failure.
+  }
+}
+
+function saveFilePicker() {
+  return (window as WindowWithSaveFilePicker).showSaveFilePicker
+}
+
+async function saveEncryptedResponseWithNativeStream(input: {
+  response: Response
+  fileName: string
+  contentCryptoMetadata: unknown
+  sourceKey: CryptoKey
+}) {
+  const picker = saveFilePicker()
+  if (!picker) {
+    await cancelResponseBody(input.response)
+    throw new LargeDownloadUnsupportedError('This browser cannot stream-save this large encrypted file. Use a Chromium-based desktop browser for this download.')
+  }
+
+  if (!navigator.userActivation?.isActive) {
+    await cancelResponseBody(input.response)
+    throw new DownloadRequiresUserActionError('Large encrypted downloads need you to press the save button first.')
+  }
+
+  const readable = input.response.body
+  if (!readable) {
+    throw new LargeDownloadUnsupportedError('This browser did not expose a readable download stream.')
+  }
+
+  const handle = await picker({
+    suggestedName: suggestedDownloadName(input.fileName),
+    types: [{ description: 'Encrypted Liminalis payload', accept: { 'application/octet-stream': ['.bin'] } }],
+  })
+  const writable = await handle.createWritable()
+  let closed = false
+
+  try {
+    await streamDecryptFilePayloadWithKey({
+      readable,
+      contentCryptoMetadata: input.contentCryptoMetadata,
+      key: input.sourceKey,
+      write: async (chunk) => writable.write(chunk),
+    })
+    await writable.close()
+    closed = true
+  } catch (error) {
+    await cancelResponseBody(input.response)
+    if (!closed) {
+      await writable.abort?.(error).catch(() => undefined)
+    }
+    throw error
+  }
+}
+
+export async function saveEncryptedResponseAsDownload(input: {
+  response: Response
+  fallbackName: string
+  contentCryptoMetadata: unknown
+  sourceKey: CryptoKey
+}) {
+  const fileName = input.fallbackName.trim() || contentDispositionFilename(input.response, 'liminalis-download.bin')
+
+  if (encryptedDownloadNeedsNativeStreamSave(input.contentCryptoMetadata, input.response)) {
+    await saveEncryptedResponseWithNativeStream({
+      response: input.response,
+      fileName,
+      contentCryptoMetadata: input.contentCryptoMetadata,
+      sourceKey: input.sourceKey,
+    })
+    return
+  }
+
+  const decrypted = await decryptFilePayloadWithKey(await input.response.blob(), input.contentCryptoMetadata, input.sourceKey)
+  saveBlobAsDownload(decrypted, fileName)
 }
 
 export async function downloadSourceItem(sourceItemId: string, fallbackName: string) {
@@ -676,19 +1017,17 @@ export async function downloadSourceItem(sourceItemId: string, fallbackName: str
       const text = await decryptTextPayload(attempt.textCiphertextBody, attempt.wrappedPayloadReference)
       saveBlobAsDownload(new Blob([text], { type: 'text/plain;charset=utf-8' }), `${fallbackName || 'liminalis-text'}.txt`)
     } else {
+      const sourceKey = await sourceKeyFromWrappedReference(attempt.wrappedPayloadReference)
       const metadata = attempt.encryptedMetadata
-        ? await decryptSourceMetadata({
-            encryptedMetadata: attempt.encryptedMetadata,
-            wrappedPayloadReference: attempt.wrappedPayloadReference,
-          }).catch(() => null)
+        ? await decryptSourceMetadataWithKey(attempt.encryptedMetadata, sourceKey).catch(() => null)
         : null
       const response = await api.downloadRetrieval(attempt.retrievalAttemptId)
-      const decrypted = await decryptFilePayload(await response.blob(), {
-        wrappedPayloadReference: attempt.wrappedPayloadReference,
+      await saveEncryptedResponseAsDownload({
+        response,
+        fallbackName: metadata?.displayName ?? fallbackName,
         contentCryptoMetadata: attempt.contentCryptoMetadata,
-        encryptedMetadata: attempt.encryptedMetadata,
+        sourceKey,
       })
-      saveBlobAsDownload(decrypted, metadata?.displayName ?? fallbackName)
     }
     await api.completeRetrieval(attempt.retrievalAttemptId, true)
     return attempt
@@ -702,19 +1041,17 @@ export async function downloadShareObject(shareObjectId: string, fallbackName: s
   const attempt = await api.issueShareRetrieval(shareObjectId, makeAttemptScope('share-download'))
 
   try {
+    const sourceKey = await sourceKeyFromWrappedReference(attempt.wrappedPayloadReference)
     const response = await api.downloadRetrieval(attempt.retrievalAttemptId)
     const metadata = attempt.encryptedMetadata
-      ? await decryptSourceMetadata({
-          encryptedMetadata: attempt.encryptedMetadata,
-          wrappedPayloadReference: attempt.wrappedPayloadReference,
-        }).catch(() => null)
+      ? await decryptSourceMetadataWithKey(attempt.encryptedMetadata, sourceKey).catch(() => null)
       : null
-    const decrypted = await decryptFilePayload(await response.blob(), {
-      wrappedPayloadReference: attempt.wrappedPayloadReference,
+    await saveEncryptedResponseAsDownload({
+      response,
+      fallbackName: metadata?.displayName ?? fallbackName,
       contentCryptoMetadata: attempt.contentCryptoMetadata,
-      encryptedMetadata: attempt.encryptedMetadata,
+      sourceKey,
     })
-    saveBlobAsDownload(decrypted, metadata?.displayName ?? fallbackName)
     await api.completeShareRetrieval(attempt.retrievalAttemptId, true)
     return attempt
   } catch (error) {

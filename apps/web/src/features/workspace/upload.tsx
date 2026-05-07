@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { useBlocker } from 'react-router-dom'
 import type { ConfidentialityLevel } from '../../shared/api/client.ts'
 import { Button, Field, SelectInput, TextInput, Toast } from '../../shared/ui/components.tsx'
 import {
@@ -38,6 +39,10 @@ function stageLabel(progress: UploadProgress | null) {
   }
 
   if (progress.stage === 'uploading') {
+    if (progress.retryAttempt) {
+      return progress.partNumber ? `Retrying part ${progress.partNumber}` : 'Retrying upload'
+    }
+
     return progress.currentFileName ? `Uploading ${progress.currentFileName}` : 'Uploading'
   }
 
@@ -68,7 +73,9 @@ export function AdvancedUploadPage() {
   const [burnAfterRead, setBurnAfterRead] = useState(false)
   const [dragActive, setDragActive] = useState(false)
   const [progress, setProgress] = useState<UploadProgress | null>(null)
-  const [toast, setToast] = useState<{ tone: 'success' | 'danger'; message: string } | null>(null)
+  const [toast, setToast] = useState<{ tone: 'success' | 'danger' | 'warning'; message: string } | null>(null)
+  const [wasBackgrounded, setWasBackgrounded] = useState(false)
+  const backgroundedRef = useRef(false)
   const selection = useMemo(() => classifySelection(entries), [entries])
   const hasLargeFile = (selection?.largestFileBytes ?? 0) > largeFileThresholdBytes
 
@@ -81,6 +88,10 @@ export function AdvancedUploadPage() {
       if (selection.contentKind === 'SINGLE_FILE' && selection.entries[0]?.file.size === 0) {
         throw new Error('Empty files are not supported for single-file upload.')
       }
+
+      backgroundedRef.current = false
+      setWasBackgrounded(false)
+      setToast(null)
 
       return uploadFileSelection(selection, {
         confidentialityLevel: level,
@@ -108,6 +119,21 @@ export function AdvancedUploadPage() {
       setToast({ tone: 'danger', message: error instanceof Error ? error.message : 'Upload failed.' })
     },
   })
+  const blocker = useBlocker(upload.isPending)
+
+  useEffect(() => {
+    if (blocker.state !== 'blocked') {
+      return
+    }
+
+    const shouldLeave = window.confirm('An upload is still running. Leaving this page can interrupt it. Leave anyway?')
+    if (shouldLeave) {
+      blocker.proceed()
+      return
+    }
+
+    blocker.reset()
+  }, [blocker])
 
   useEffect(() => {
     if (!upload.isPending) {
@@ -121,6 +147,30 @@ export function AdvancedUploadPage() {
 
     window.addEventListener('beforeunload', handleBeforeUnload)
     return () => window.removeEventListener('beforeunload', handleBeforeUnload)
+  }, [upload.isPending])
+
+  useEffect(() => {
+    if (!upload.isPending) {
+      return undefined
+    }
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        backgroundedRef.current = true
+        setWasBackgrounded(true)
+        return
+      }
+
+      if (backgroundedRef.current) {
+        setToast({
+          tone: 'warning',
+          message: 'The browser was backgrounded during upload. Liminalis will keep retrying transient chunk failures.',
+        })
+      }
+    }
+
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange)
   }, [upload.isPending])
 
   function setSelection(nextEntries: SelectedFileEntry[]) {
@@ -222,6 +272,8 @@ export function AdvancedUploadPage() {
             </div>
             <progress value={progressPercent(progress, selection)} max={100} />
             {progress?.partNumber ? <p className="muted">Part {progress.partNumber} of {progress.partCount}</p> : null}
+            {progress?.retryAttempt ? <p className="muted">Retry attempt {progress.retryAttempt} after {Math.round((progress.retryDelayMs ?? 0) / 1000)}s.</p> : null}
+            {wasBackgrounded && upload.isPending ? <p className="muted">Browser was backgrounded during this upload.</p> : null}
           </div>
           {upload.error instanceof Error ? <p className="field-error">{upload.error.message}</p> : null}
           <Button variant="primary" type="submit" disabled={!selection || upload.isPending}>

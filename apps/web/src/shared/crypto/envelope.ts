@@ -61,6 +61,8 @@ export type SourceCryptoPackage = {
   contentCryptoMetadata: {
     version: typeof e2eeVersion
     contentAlgorithm: 'AES-GCM-256'
+    fileMode?: 'single-blob-v1' | 'chunked-v1'
+    chunkPlaintextSize?: number
     chunks?: Array<{ partNumber: number; nonce: string; aad: string; plaintextBytes: number; ciphertextBytes: number }>
     text?: { nonce: string; aad: string; plaintextBytes: number; ciphertextBytes: number }
   }
@@ -108,6 +110,34 @@ async function decryptAesEnvelope(envelope: EncryptedBlobEnvelope, key: CryptoKe
   return decryptWithAesKey(key, envelope, envelope.aad)
 }
 
+async function encryptBytesWithAesKey(key: CryptoKey, plaintext: Uint8Array, aad: string) {
+  const nonce = randomBytes(12)
+  const ciphertext = await crypto.subtle.encrypt(
+    { name: 'AES-GCM', iv: browserBytes(nonce), additionalData: new TextEncoder().encode(aad) },
+    key,
+    browserBytes(plaintext),
+  )
+
+  return {
+    nonce: bytesToBase64Url(nonce),
+    ciphertextBytes: new Uint8Array(ciphertext),
+  }
+}
+
+async function decryptBytesWithAesKey(key: CryptoKey, nonce: string, ciphertext: Uint8Array, aad: string) {
+  const plaintext = await crypto.subtle.decrypt(
+    {
+      name: 'AES-GCM',
+      iv: browserBytes(base64UrlToBytes(nonce)),
+      additionalData: new TextEncoder().encode(aad),
+    },
+    key,
+    browserBytes(ciphertext),
+  )
+
+  return new Uint8Array(plaintext)
+}
+
 async function createEphemeralWrappingKeyPair() {
   return crypto.subtle.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, true, ['deriveBits']) as Promise<CryptoKeyPair>
 }
@@ -152,12 +182,10 @@ export async function createOwnerKeyEnvelope(rawKey: Uint8Array, sourceSubject: 
   return wrapRawKeyForPublicKey(rawKey, vault.userDomainPublicKeyPayload, `liminalis:${e2eeVersion}:source:${sourceSubject}:owner-key`)
 }
 
-export async function createEncryptedSourcePackage(input: {
+export async function createEncryptedSourceContext(input: {
   sourceSubject: string
-  text?: string
-  blob?: Blob
   metadata: SourceMetadata
-}): Promise<EncryptedUploadPackage> {
+}) {
   const sourceKey = await generateAesKey()
   const rawSourceKey = await exportRawAesKey(sourceKey)
   const metadataEncrypted = await encryptAesEnvelope(
@@ -167,13 +195,52 @@ export async function createEncryptedSourcePackage(input: {
   )
   const ownerKeyEnvelope = await createOwnerKeyEnvelope(rawSourceKey, input.sourceSubject)
 
+  return {
+    sourceKey,
+    ownerKeyEnvelope,
+    encryptedMetadata: metadataEncrypted.envelope,
+  }
+}
+
+export async function encryptFilePayloadChunk(input: {
+  sourceKey: CryptoKey
+  sourceSubject: string
+  partNumber: number
+  plaintext: Uint8Array
+}) {
+  const aad = `liminalis:${e2eeVersion}:source:${input.sourceSubject}:file:${input.partNumber}`
+  const encrypted = await encryptBytesWithAesKey(input.sourceKey, input.plaintext, aad)
+
+  return {
+    encryptedBytes: encrypted.ciphertextBytes,
+    chunk: {
+      partNumber: input.partNumber,
+      nonce: encrypted.nonce,
+      aad,
+      plaintextBytes: input.plaintext.byteLength,
+      ciphertextBytes: encrypted.ciphertextBytes.byteLength,
+    },
+  }
+}
+
+export async function createEncryptedSourcePackage(input: {
+  sourceSubject: string
+  text?: string
+  blob?: Blob
+  metadata: SourceMetadata
+}): Promise<EncryptedUploadPackage> {
+  const { sourceKey, ownerKeyEnvelope, encryptedMetadata } = await createEncryptedSourceContext({
+    sourceSubject: input.sourceSubject,
+    metadata: input.metadata,
+  })
+
   if (typeof input.text === 'string') {
     const aad = `liminalis:${e2eeVersion}:source:${input.sourceSubject}:text`
     const encryptedText = await encryptWithAesKey(sourceKey, utf8ToBytes(input.text), aad)
     return {
       version: e2eeVersion,
       ownerKeyEnvelope,
-      encryptedMetadata: metadataEncrypted.envelope,
+      encryptedMetadata,
       textCiphertextBody: JSON.stringify({
         version: e2eeVersion,
         algorithm: 'AES-GCM-256',
@@ -206,11 +273,12 @@ export async function createEncryptedSourcePackage(input: {
   return {
     version: e2eeVersion,
     ownerKeyEnvelope,
-    encryptedMetadata: metadataEncrypted.envelope,
+    encryptedMetadata,
     encryptedBlob: new Blob([encryptedBytes], { type: 'application/octet-stream' }),
     contentCryptoMetadata: {
       version: e2eeVersion,
       contentAlgorithm: 'AES-GCM-256',
+      fileMode: 'single-blob-v1',
       chunks: [{
         partNumber: 1,
         nonce: encryptedFile.nonce,
@@ -260,21 +328,122 @@ export async function decryptFilePayload(blob: Blob, input: { wrappedPayloadRefe
 
 export async function decryptFilePayloadWithKey(blob: Blob, contentCryptoMetadata: unknown, key: CryptoKey) {
   const metadata = contentCryptoMetadata as SourceCryptoPackage['contentCryptoMetadata'] | null
-  const chunk = metadata?.chunks?.[0]
-  if (!chunk) {
+  const chunks = metadata?.chunks
+  if (!chunks || chunks.length === 0) {
     return blob
   }
 
-  const plaintext = await decryptWithAesKey(
-    key,
-    {
-      nonce: chunk.nonce,
-      ciphertext: bytesToBase64Url(await blobToBytes(blob)),
-    },
-    chunk.aad,
-  )
+  const sortedChunks = [...chunks].sort((left, right) => left.partNumber - right.partNumber)
+  const plaintextParts: BlobPart[] = []
+  let offset = 0
 
-  return new Blob([plaintext], { type: 'application/octet-stream' })
+  for (const chunk of sortedChunks) {
+    const encryptedChunk = await blobToBytes(blob.slice(offset, offset + chunk.ciphertextBytes))
+    const plaintext = await decryptBytesWithAesKey(key, chunk.nonce, encryptedChunk, chunk.aad)
+    if (plaintext.byteLength !== chunk.plaintextBytes) {
+      throw new Error('Encrypted file chunk metadata does not match decrypted bytes.')
+    }
+    plaintextParts.push(plaintext)
+    offset += chunk.ciphertextBytes
+  }
+
+  if (offset !== blob.size) {
+    throw new Error('Encrypted file payload does not match chunk metadata.')
+  }
+
+  return new Blob(plaintextParts, { type: 'application/octet-stream' })
+}
+
+export function encryptedFileCiphertextBytes(contentCryptoMetadata: unknown) {
+  const metadata = contentCryptoMetadata as SourceCryptoPackage['contentCryptoMetadata'] | null
+  const chunks = metadata?.chunks
+  if (!chunks || chunks.length === 0) {
+    return null
+  }
+
+  return chunks.reduce((sum, chunk) => sum + chunk.ciphertextBytes, 0)
+}
+
+export function canStreamDecryptFilePayload(contentCryptoMetadata: unknown) {
+  const metadata = contentCryptoMetadata as SourceCryptoPackage['contentCryptoMetadata'] | null
+  return Boolean(metadata?.chunks?.length)
+}
+
+function concatBytes(parts: Array<Uint8Array<ArrayBufferLike>>, byteLength: number) {
+  const output = new Uint8Array(byteLength)
+  let offset = 0
+  for (const part of parts) {
+    output.set(part, offset)
+    offset += part.byteLength
+  }
+
+  return output
+}
+
+export async function streamDecryptFilePayloadWithKey(input: {
+  readable: ReadableStream<Uint8Array>
+  contentCryptoMetadata: unknown
+  key: CryptoKey
+  write: (chunk: Uint8Array) => Promise<void>
+}) {
+  const metadata = input.contentCryptoMetadata as SourceCryptoPackage['contentCryptoMetadata'] | null
+  const chunks = metadata?.chunks
+  if (!chunks || chunks.length === 0) {
+    throw new Error('Encrypted file metadata does not support stream decryption.')
+  }
+
+  const sortedChunks = [...chunks].sort((left, right) => left.partNumber - right.partNumber)
+  const reader = input.readable.getReader()
+  let carry: Uint8Array<ArrayBufferLike> = new Uint8Array()
+
+  async function readExact(byteLength: number) {
+    const parts: Array<Uint8Array<ArrayBufferLike>> = []
+    let collected = 0
+
+    if (carry.byteLength > 0) {
+      const used = carry.subarray(0, byteLength)
+      parts.push(used)
+      collected += used.byteLength
+      carry = carry.subarray(used.byteLength)
+    }
+
+    while (collected < byteLength) {
+      const read = await reader.read()
+      if (read.done) {
+        throw new Error('Encrypted file stream ended before all chunks were read.')
+      }
+
+      const needed = byteLength - collected
+      if (read.value.byteLength > needed) {
+        parts.push(read.value.subarray(0, needed))
+        carry = read.value.subarray(needed)
+        collected += needed
+      } else {
+        parts.push(read.value)
+        collected += read.value.byteLength
+      }
+    }
+
+    return concatBytes(parts, byteLength)
+  }
+
+  try {
+    for (const chunk of sortedChunks) {
+      const encryptedChunk = await readExact(chunk.ciphertextBytes)
+      const plaintext = await decryptBytesWithAesKey(input.key, chunk.nonce, encryptedChunk, chunk.aad)
+      if (plaintext.byteLength !== chunk.plaintextBytes) {
+        throw new Error('Encrypted file chunk metadata does not match decrypted bytes.')
+      }
+      await input.write(plaintext)
+    }
+
+    const finalRead = carry.byteLength > 0 ? { done: false } : await reader.read()
+    if (!finalRead.done) {
+      throw new Error('Encrypted file stream contains bytes beyond chunk metadata.')
+    }
+  } finally {
+    reader.releaseLock()
+  }
 }
 
 export async function createPairingApprovalPackage(requesterDeviceWrappingPublicKey: string): Promise<PairingApprovalPackage> {

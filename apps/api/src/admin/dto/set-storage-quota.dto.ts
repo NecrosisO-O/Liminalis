@@ -1,4 +1,4 @@
-import { IsInt, IsOptional, IsString, Min } from 'class-validator';
+import { IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
 
 export class SetStorageQuotaDto {
   @IsOptional()
@@ -8,5 +8,6 @@ export class SetStorageQuotaDto {
   @IsOptional()
   @IsInt()
   @Min(0)
+  @Max(Number.MAX_SAFE_INTEGER)
   quotaBytes?: number;
 }

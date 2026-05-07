@@ -755,6 +755,69 @@ p {
   align-items: start;
 }
 
+.share-page {
+  display: grid;
+  grid-template-rows: auto auto auto;
+}
+
+.share-page .page-heading h2 {
+  max-width: 720px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.share-methods {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  align-items: stretch;
+}
+
+.share-method {
+  min-width: 0;
+  min-height: 238px;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 16px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 18px;
+}
+
+.share-method-heading {
+  display: grid;
+  gap: 4px;
+}
+
+.share-method-heading h3 {
+  margin: 0;
+  font-size: 1.06rem;
+}
+
+.share-method-kicker {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.share-method-body {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+}
+
+.share-method .button {
+  width: 100%;
+}
+
+.share-page .toast {
+  margin-top: 16px;
+  overflow-wrap: anywhere;
+}
+
 .dropzone,
 .action-panel,
 .table-panel,
@@ -1030,6 +1093,10 @@ progress {
   justify-content: center;
 }
 
+.live-join-panel {
+  margin-top: 18px;
+}
+
 .recovery-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
@@ -1165,6 +1232,14 @@ progress {
   .upload-layout,
   .share-grid,
   .detail-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .share-page .page-heading h2 {
+    max-width: 100%;
+  }
+
+  .share-methods {
     grid-template-columns: 1fr;
   }
 

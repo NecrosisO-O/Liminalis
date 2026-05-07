@@ -45,6 +45,13 @@ export type AdminUser = {
   createdAt?: string
 }
 
+export type RemoveUserResult = {
+  removedUserId: string
+  username: string
+  removedStorageObjects: number
+  storageCleanupFailures: Array<{ storageKey: string; message: string }>
+}
+
 export type Invite = {
   id: string
   code: string
@@ -189,6 +196,13 @@ export const api = {
     return request<AdminUser>('/api/admin/users/enable', {
       method: 'POST',
       body: JSON.stringify({ userId }),
+    })
+  },
+
+  removeUser(userId: string, confirmUsername: string) {
+    return request<RemoveUserResult>('/api/admin/users/remove', {
+      method: 'POST',
+      body: JSON.stringify({ userId, confirmUsername }),
     })
   },
 

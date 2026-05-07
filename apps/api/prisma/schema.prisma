@@ -172,10 +172,11 @@ model User {
   enablementState  EnablementState  @default(ENABLED)
   approvedAt       DateTime?
   approvedById     String?
-  storageQuotaBytes Int?
+  storageQuotaBytes BigInt?
   createdAt        DateTime         @default(now())
   updatedAt        DateTime         @updatedAt
   sessions         Session[]
+  trustedDeviceResumeChallenges TrustedDeviceResumeChallenge[]
   invitesCreated   InviteCode[]     @relation("InvitesCreated")
   devices          TrustedDevice[]
   sentLiveTransferSignals LiveTransferSignalMessage[] @relation("LiveTransferSignalSenderUser")
@@ -216,6 +217,7 @@ model Session {
   idleExpiresAt DateTime
   lastActivityAt DateTime @default(now())
   createdAt    DateTime  @default(now())
+  trustedDeviceResumeChallenges TrustedDeviceResumeChallenge[]
 }
 
 model TrustedDevice {
@@ -241,6 +243,25 @@ model TrustedDevice {
   receivedLiveTransferSignals LiveTransferSignalMessage[] @relation("LiveTransferSignalRecipientDevice")
   uploadSessionsCreated UploadSession[] @relation("UploadSessionUploaderDevice")
   sourceItemsCreated SourceItem[] @relation("SourceItemCreatedByDevice")
+  resumeChallenges TrustedDeviceResumeChallenge[]
+}
+
+model TrustedDeviceResumeChallenge {
+  id              String        @id @default(cuid())
+  userId          String
+  user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sessionId       String
+  session         Session       @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  trustedDeviceId String
+  trustedDevice   TrustedDevice @relation(fields: [trustedDeviceId], references: [id], onDelete: Cascade)
+  challenge       String        @unique
+  expiresAt       DateTime
+  consumedAt      DateTime?
+  createdAt       DateTime      @default(now())
+
+  @@index([userId, sessionId])
+  @@index([trustedDeviceId])
+  @@index([expiresAt])
 }
 
 model PairingSession {
@@ -314,7 +335,7 @@ model InstanceSetting {
   id                          String               @id @default(cuid())
   singletonKey                String               @unique
   defaultConfidentialityLevel ConfidentialityLevel @default(SECRET)
-  defaultStorageQuotaBytes    Int                  @default(1073741824)
+  defaultStorageQuotaBytes    BigInt               @default(1073741824)
   publicOrigin                String?
   createdAt                   DateTime             @default(now())
   updatedAt                   DateTime             @updatedAt
@@ -430,7 +451,7 @@ model UploadPart {
   uploadSession   UploadSession @relation(fields: [uploadSessionId], references: [id])
   partNumber      Int
   storageKey      String
-  byteSize        Int
+  byteSize        BigInt
   checksum        String?
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
@@ -457,7 +478,7 @@ model SourceItem {
   encryptedMetadata      Json?
   contentCryptoMetadata  Json?
   storageBinding         Json?
-  storageBytes           Int                   @default(0)
+  storageBytes           BigInt                @default(0)
   validUntil             DateTime?
   burnAfterReadEnabled   Boolean               @default(false)
   uploadSession          UploadSession?        @relation("UploadSessionFinalizedSourceItem")
@@ -682,7 +703,7 @@ model ActiveTimelineItemProjection {
   shareObject        ShareObject?         @relation(fields: [shareObjectId], references: [id])
   displayTitle       String?
   visibleTypeLabel   String
-  visibleSizeBytes   Int?
+  visibleSizeBytes   BigInt?
   groupedItemCount   Int?
   sourceLabel        String
   activeStatusLabel  String

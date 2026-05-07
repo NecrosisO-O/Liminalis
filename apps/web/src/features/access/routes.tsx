@@ -3,7 +3,7 @@ import { Link, Navigate, Outlet, useNavigate } from 'react-router-dom'
 import { useState } from 'react'
 import { api, ApiError } from '../../shared/api/client.ts'
 import { Button, Field, StatusView, TextInput } from '../../shared/ui/components.tsx'
-import { isUnauthorized, resolveBootstrapPath, useBootstrap } from './bootstrap.ts'
+import { bootstrapWithTrustedDeviceResume, isUnauthorized, resolveBootstrapPath, useBootstrap } from './bootstrap.ts'
 
 function shouldCheckPendingRecovery(bootstrap: ReturnType<typeof useBootstrap>) {
   return Boolean(
@@ -94,7 +94,7 @@ export function LoginPage() {
     mutationFn: api.login,
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ['bootstrap'] })
-      const bootstrap = await api.bootstrap()
+      const bootstrap = await bootstrapWithTrustedDeviceResume()
       navigate(resolveBootstrapPath(bootstrap), { replace: true })
     },
   })
@@ -207,6 +207,28 @@ export function RegisterPage() {
 }
 
 export function WaitingPage() {
+  const bootstrap = useBootstrap()
+
+  if (bootstrap.isLoading) {
+    return (
+      <main className="entry-screen">
+        <StatusView eyebrow="Waiting" title="Checking approval" detail="Resolving the latest account state." />
+      </main>
+    )
+  }
+
+  if (bootstrap.isError) {
+    return isUnauthorized(bootstrap.error) ? <Navigate to="/login" replace /> : (
+      <main className="entry-screen">
+        <StatusView title="Unable to continue" detail="The account state could not be checked." tone="danger" />
+      </main>
+    )
+  }
+
+  if (bootstrap.data && bootstrap.data.accountState !== 'waiting_approval') {
+    return <Navigate to={resolveBootstrapPath(bootstrap.data)} replace />
+  }
+
   return (
     <main className="entry-screen">
       <StatusView

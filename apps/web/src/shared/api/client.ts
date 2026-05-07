@@ -42,6 +42,12 @@ export type PairingSessionState = {
   }
 }
 
+export type TrustedDeviceResumeChallenge = {
+  challengeId: string
+  challenge: string
+  expiresAt: string
+}
+
 export type TimelineItem = {
   id: string
   sourceObjectType: 'SOURCE_ITEM' | 'SHARE_OBJECT'
@@ -472,6 +478,20 @@ export const api = {
     return requestJson<PairingSessionState>('/api/trust/pairing/finalize', {
       method: 'POST',
       body: JSON.stringify({ pairingSessionId }),
+    })
+  },
+
+  createTrustedDeviceResumeChallenge(input: { devicePublicIdentity: string }) {
+    return requestJson<TrustedDeviceResumeChallenge>('/api/trust/resume-challenge', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    })
+  },
+
+  completeTrustedDeviceResume(input: { challengeId: string; signature: string }) {
+    return requestJson<{ trustedDeviceId: string }>('/api/trust/resume', {
+      method: 'POST',
+      body: JSON.stringify(input),
     })
   },
 

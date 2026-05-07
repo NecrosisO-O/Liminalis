@@ -62,28 +62,43 @@ export function SharePage() {
         </div>
         <Link className="button button-secondary" to={`/app/items/${sourceItemId}`}>Back to detail</Link>
       </header>
-      <section className="share-grid">
-        <article className="action-panel">
-          <h3>User share</h3>
-          <Field label="Recipient username">
-            <TextInput value={recipient} onChange={(event) => setRecipient(event.target.value)} />
-          </Field>
+      <section className="share-methods">
+        <article className="share-method">
+          <div className="share-method-heading">
+            <span className="share-method-kicker">Trusted user</span>
+            <h3>User share</h3>
+          </div>
+          <div className="share-method-body">
+            <Field label="Recipient username">
+              <TextInput value={recipient} onChange={(event) => setRecipient(event.target.value)} />
+            </Field>
+            {createUserShare.error instanceof Error ? <p className="field-error">{createUserShare.error.message}</p> : null}
+          </div>
           <Button variant="primary" onClick={() => createUserShare.mutate()} disabled={!recipient.trim() || createUserShare.isPending}>Create user share</Button>
-          {createUserShare.error instanceof Error ? <p className="field-error">{createUserShare.error.message}</p> : null}
         </article>
-        <article className="action-panel">
-          <h3>Password extraction</h3>
-          <Field label="Password" hint="Leave empty to let policy generate one">
-            <TextInput value={password} onChange={(event) => setPassword(event.target.value)} />
-          </Field>
+        <article className="share-method">
+          <div className="share-method-heading">
+            <span className="share-method-kicker">One-time access</span>
+            <h3>Password extraction</h3>
+          </div>
+          <div className="share-method-body">
+            <Field label="Password" hint="Leave empty to let policy generate one">
+              <TextInput value={password} onChange={(event) => setPassword(event.target.value)} />
+            </Field>
+            {createExtraction.error instanceof Error ? <p className="field-error">{createExtraction.error.message}</p> : null}
+          </div>
           <Button onClick={() => createExtraction.mutate()} disabled={createExtraction.isPending}>Create extraction</Button>
-          {createExtraction.error instanceof Error ? <p className="field-error">{createExtraction.error.message}</p> : null}
         </article>
-        <article className="action-panel">
-          <h3>Public link</h3>
-          <p className="muted">Recipients opening the link immediately download the file.</p>
+        <article className="share-method">
+          <div className="share-method-heading">
+            <span className="share-method-kicker">Direct link</span>
+            <h3>Public link</h3>
+          </div>
+          <div className="share-method-body">
+            <p className="muted">Recipients opening the link immediately download the file.</p>
+            {createPublicLink.error instanceof Error ? <p className="field-error">{createPublicLink.error.message}</p> : null}
+          </div>
           <Button onClick={() => createPublicLink.mutate()} disabled={createPublicLink.isPending}>Create public link</Button>
-          {createPublicLink.error instanceof Error ? <p className="field-error">{createPublicLink.error.message}</p> : null}
         </article>
       </section>
       {result ? <Toast tone="success">{result}</Toast> : null}

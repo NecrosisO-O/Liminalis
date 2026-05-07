@@ -1,4 +1,4 @@
-import { IsInt, IsOptional, IsString, Min } from 'class-validator';
+import { IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
 
 export class RegisterUploadPartDto {
   @IsInt()
@@ -10,6 +10,7 @@ export class RegisterUploadPartDto {
 
   @IsInt()
   @Min(1)
+  @Max(Number.MAX_SAFE_INTEGER)
   byteSize!: number;
 
   @IsOptional()

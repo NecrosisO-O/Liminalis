@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { ProjectionSourceType } from '../../generated/prisma/index.js';
+import { projectionBytesForJson } from '../common/utils/byte-values';
 import { PrismaService } from '../prisma/prisma.service';
 
 export type TimelineItemOrigin =
@@ -38,7 +39,7 @@ export class ProjectionsService {
             : 'OTHER_DEVICE';
 
       return {
-        ...projection,
+        ...projectionBytesForJson(projection),
         timelineOrigin: origin,
       };
     });
