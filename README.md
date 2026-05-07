@@ -18,6 +18,7 @@
   <img alt="Release candidate" src="https://img.shields.io/badge/status-v1.0.0--rc.1-0f766e">
   <img alt="Self-hosted" src="https://img.shields.io/badge/self--hosted-Docker%20Compose-1f2937">
   <img alt="End-to-end encrypted" src="https://img.shields.io/badge/browser%20E2EE-WebCrypto-d97706">
+  <img alt="License" src="https://img.shields.io/badge/license-GPL--3.0--only-374151">
 </p>
 
 ![Liminalis timeline](docs/assets/readme/timeline.png)
@@ -142,3 +143,7 @@ scripts/deploy.sh --source-build
 ```
 
 For production, prefer the clean deploy bundle or the one-line installer.
+
+## License
+
+Liminalis is released under the [GNU General Public License v3.0 only](LICENSE).
