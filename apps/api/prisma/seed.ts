@@ -11,10 +11,14 @@ import { POLICY_BUNDLE_DEFAULTS } from '../src/policy/policy-defaults';
 const prisma = createPrismaClient();
 
 async function main() {
-  const adminPasswordHash = await argon2.hash('admin123456');
+  const adminUsername = process.env.SEED_ADMIN_USERNAME ?? 'owner';
+  const adminEmail =
+    process.env.SEED_ADMIN_EMAIL ?? `${adminUsername}@liminalis.local`;
+  const adminPassword = process.env.SEED_ADMIN_PASSWORD ?? 'admin123456';
+  const adminPasswordHash = await argon2.hash(adminPassword);
 
   await prisma.user.upsert({
-    where: { username: 'owner' },
+    where: { username: adminUsername },
     update: {
       passwordHash: adminPasswordHash,
       role: UserRole.ADMIN,
@@ -22,8 +26,8 @@ async function main() {
       enablementState: EnablementState.ENABLED,
     },
     create: {
-      username: 'owner',
-      email: 'owner@liminalis.local',
+      username: adminUsername,
+      email: adminEmail,
       passwordHash: adminPasswordHash,
       role: UserRole.ADMIN,
       admissionState: AdmissionState.APPROVED,

@@ -12,10 +12,18 @@ This repository currently contains:
 ## Local Development
 
 1. Copy `.env.example` to `.env`
-2. Start PostgreSQL with `docker compose up -d`
+2. Start PostgreSQL with `docker compose up -d postgres`
 3. Install dependencies in each workspace
 4. Run Prisma generation and migrations
 5. Start the API and web app
+
+## Deployment
+
+Docker Compose is the recommended v1 self-hosted deployment path. See:
+
+- `docs/deployment/docker-compose.md`
+- `docs/deployment/backup-restore.md`
+- `docs/deployment/upgrade.md`
 
 ## Source Of Truth
 
