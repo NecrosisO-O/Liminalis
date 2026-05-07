@@ -14,8 +14,11 @@ POSTGRES_HOST_PORT=""
 YES=0
 RESET_DATA=0
 RECONFIGURE=0
+SOURCE_BUILD=0
+SKIP_PULL=0
 PRINT_PASSWORD=0
 INITIAL_ADMIN_PASSWORD=""
+COMPOSE_FILES=()
 
 usage() {
   cat <<'EOF'
@@ -34,18 +37,20 @@ Options:
   --yes                   Accept defaults for missing prompts.
   --reconfigure           Update URL and port settings in existing .env.
   --reset-data            Stop services and delete deployment volumes.
+  --source-build          Build api/web/admin images from this source checkout.
+  --skip-pull             Use already available production images without pull.
   -h, --help              Show this help.
 EOF
 }
 
 compose() {
   if docker compose version >/dev/null 2>&1; then
-    docker compose "$@"
+    docker compose "${COMPOSE_FILES[@]}" "$@"
     return
   fi
 
   if command -v docker-compose >/dev/null 2>&1; then
-    docker-compose "$@"
+    docker-compose "${COMPOSE_FILES[@]}" "$@"
     return
   fi
 
@@ -158,6 +163,12 @@ parse_args() {
       --reset-data)
         RESET_DATA=1
         ;;
+      --source-build)
+        SOURCE_BUILD=1
+        ;;
+      --skip-pull)
+        SKIP_PULL=1
+        ;;
       -h | --help)
         usage
         exit 0
@@ -170,6 +181,29 @@ parse_args() {
     esac
     shift
   done
+}
+
+configure_compose_files() {
+  local base_compose="${ROOT_DIR}/compose.yml"
+
+  if [ ! -f "${base_compose}" ]; then
+    base_compose="${ROOT_DIR}/docker-compose.yml"
+  fi
+
+  if [ ! -f "${base_compose}" ]; then
+    echo "Missing Compose file: expected compose.yml or docker-compose.yml in ${ROOT_DIR}." >&2
+    exit 1
+  fi
+
+  COMPOSE_FILES=("-f" "${base_compose}")
+
+  if [ "${SOURCE_BUILD}" -eq 1 ]; then
+    if [ ! -f "${ROOT_DIR}/docker-compose.source.yml" ]; then
+      echo "--source-build requires docker-compose.source.yml in ${ROOT_DIR}." >&2
+      exit 1
+    fi
+    COMPOSE_FILES+=("-f" "${ROOT_DIR}/docker-compose.source.yml")
+  fi
 }
 
 choose_mode() {
@@ -260,7 +294,7 @@ load_env_if_present() {
 }
 
 write_env_file() {
-  local postgres_user postgres_db postgres_password session_secret admin_username admin_email
+  local postgres_user postgres_db postgres_password session_secret admin_username admin_email deployment_version
 
   choose_mode
 
@@ -291,6 +325,10 @@ write_env_file() {
   admin_username="owner"
   admin_email="owner@liminalis.local"
   INITIAL_ADMIN_PASSWORD="$(random_password)"
+  deployment_version="${LIMINALIS_VERSION:-latest}"
+  if [ "${deployment_version}" = "latest" ] && [ -f "${ROOT_DIR}/VERSION" ]; then
+    deployment_version="$(tr -d '[:space:]' <"${ROOT_DIR}/VERSION")"
+  fi
   PRINT_PASSWORD=1
 
   cat >"${ENV_FILE}" <<EOF
@@ -298,6 +336,11 @@ POSTGRES_USER=${postgres_user}
 POSTGRES_PASSWORD=${postgres_password}
 POSTGRES_DB=${postgres_db}
 POSTGRES_HOST_PORT=${POSTGRES_HOST_PORT}
+
+LIMINALIS_VERSION=${deployment_version:-latest}
+LIMINALIS_API_IMAGE=ghcr.io/necrosiso-o/liminalis-api
+LIMINALIS_WEB_IMAGE=ghcr.io/necrosiso-o/liminalis-web
+LIMINALIS_ADMIN_IMAGE=ghcr.io/necrosiso-o/liminalis-admin
 
 DATABASE_URL=postgresql://${postgres_user}:${postgres_password}@${POSTGRES_HOST_PORT}/${postgres_db}?schema=public
 
@@ -471,8 +514,15 @@ wait_for_api() {
 
 run_deploy() {
   echo
-  echo "[1/7] Building containers"
-  compose build
+  if [ "${SOURCE_BUILD}" -eq 1 ]; then
+    echo "[1/7] Building containers from source"
+    compose build
+  elif [ "${SKIP_PULL}" -eq 1 ]; then
+    echo "[1/7] Using existing production images"
+  else
+    echo "[1/7] Pulling production images"
+    compose pull
+  fi
 
   echo
   echo "[2/7] Starting PostgreSQL"
@@ -493,7 +543,7 @@ run_deploy() {
       -e "SEED_ADMIN_USERNAME=${SEED_ADMIN_USERNAME:-owner}" \
       -e "SEED_ADMIN_EMAIL=${SEED_ADMIN_EMAIL:-owner@liminalis.local}" \
       -e "SEED_ADMIN_PASSWORD=${SEED_ADMIN_PASSWORD}" \
-      api npx tsx prisma/seed.ts
+      api node dist/maintenance/seed.js
   else
     echo
     echo "[5/7] Skipping seed; SEED_ADMIN_PASSWORD is not set"
@@ -524,6 +574,7 @@ print_summary() {
   echo
   echo "Useful commands:"
   echo "  scripts/deploy.sh                 # rebuild/reapply migrations/start"
+  echo "  scripts/deploy.sh --source-build  # rebuild from a source checkout"
   echo "  docker compose ps                 # or docker-compose ps"
   echo "  docker compose logs -f api        # or docker-compose logs -f api"
 }
@@ -531,6 +582,7 @@ print_summary() {
 main() {
   parse_args "$@"
   cd "${ROOT_DIR}"
+  configure_compose_files
 
   echo "Liminalis self-hosted deployment"
   echo

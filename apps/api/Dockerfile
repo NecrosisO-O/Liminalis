@@ -25,13 +25,15 @@ RUN apt-get update \
   && apt-get install -y --no-install-recommends openssl ca-certificates \
   && rm -rf /var/lib/apt/lists/*
 
-COPY --from=build /app/package.json /app/package-lock.json ./
-COPY --from=build /app/node_modules ./node_modules
-COPY --from=build /app/apps/api/package.json ./apps/api/package.json
-COPY --from=build /app/apps/api/node_modules ./apps/api/node_modules
+COPY package.json package-lock.json ./
+COPY apps/api/package.json apps/api/package.json
+COPY apps/web/package.json apps/web/package.json
+COPY apps/admin/package.json apps/admin/package.json
+RUN npm ci --omit=dev --workspace api --include-workspace-root=false \
+  && npm cache clean --force
+
 COPY --from=build /app/apps/api/dist ./apps/api/dist
 COPY --from=build /app/apps/api/prisma ./apps/api/prisma
-COPY --from=build /app/apps/api/src ./apps/api/src
 COPY --from=build /app/apps/api/generated ./apps/api/generated
 COPY --from=build /app/apps/api/prisma.config.ts ./apps/api/prisma.config.ts
 

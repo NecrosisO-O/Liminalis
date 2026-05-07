@@ -1,0 +1,18 @@
+services:
+  api:
+    image: liminalis-api:local
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+
+  web:
+    image: liminalis-web:local
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+
+  admin:
+    image: liminalis-admin:local
+    build:
+      context: .
+      dockerfile: apps/admin/Dockerfile

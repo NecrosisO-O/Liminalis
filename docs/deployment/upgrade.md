@@ -3,16 +3,29 @@
 Before upgrading, create a backup of PostgreSQL, the encrypted storage volume,
 and `.env`. See `docs/deployment/backup-restore.md`.
 
+## Production Bundle Deployment
+
+For production deployments installed from a deploy bundle:
+
+```bash
+./scripts/deploy.sh
+```
+
+This pulls the configured images, applies pending migrations, seeds default
+policy data, and restarts the services.
+
+To pin a release, update `LIMINALIS_VERSION` in `.env` before running the
+deploy script.
+
+If images are already preloaded on the host, use `./scripts/deploy.sh --skip-pull`.
+
 ## Source Checkout Deployment
 
 For deployments built from this repository:
 
 ```bash
 git pull
-docker compose build
-docker compose up -d postgres
-docker compose run --rm api npx prisma migrate deploy
-docker compose up -d
+scripts/deploy.sh --source-build
 ```
 
 Then check service status:

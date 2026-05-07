@@ -19,8 +19,9 @@ This repository currently contains:
 
 ## Deployment
 
-Docker Compose is the recommended v1 self-hosted deployment path. On a fresh
-Debian or Ubuntu host:
+Docker Compose is the recommended v1 self-hosted deployment path. Production
+deployment uses a clean deploy bundle and prebuilt images. On a fresh Debian or
+Ubuntu host:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/NecrosisO-O/Liminalis/main/scripts/install.sh | bash
@@ -31,6 +32,12 @@ For details, see:
 - `docs/deployment/docker-compose.md`
 - `docs/deployment/backup-restore.md`
 - `docs/deployment/upgrade.md`
+
+Source checkout deployments are still available for development and validation:
+
+```bash
+scripts/deploy.sh --source-build
+```
 
 ## Source Of Truth
 

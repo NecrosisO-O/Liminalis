@@ -11,8 +11,16 @@ apps/api/generated
 coverage
 playwright-report
 test-results
+audit
 audit/downloads
 audit/tmp
 audit/screenshots
+design
+docs
+memory.md
+now.md
 *.previous.md
+apps/*/test
+**/*.spec.ts
+**/*.test.ts
 .DS_Store

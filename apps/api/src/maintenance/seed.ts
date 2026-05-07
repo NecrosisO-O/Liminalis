@@ -1,12 +1,11 @@
 import * as argon2 from 'argon2';
 import {
   AdmissionState,
-  ConfidentialityLevel,
   EnablementState,
   UserRole,
-} from '../generated/prisma/index.js';
-import { createPrismaClient } from '../src/prisma/prisma-client';
-import { POLICY_BUNDLE_DEFAULTS } from '../src/policy/policy-defaults';
+} from '../../generated/prisma/index.js';
+import { POLICY_BUNDLE_DEFAULTS } from '../policy/policy-defaults';
+import { createPrismaClient } from '../prisma/prisma-client';
 
 const prisma = createPrismaClient();
 
@@ -67,9 +66,11 @@ async function main() {
   }
 }
 
-main().catch((error) => {
-  console.error(error);
-  process.exit(1);
-}).finally(async () => {
-  await prisma.$disconnect();
-});
+main()
+  .catch((error) => {
+    console.error(error);
+    process.exit(1);
+  })
+  .finally(async () => {
+    await prisma.$disconnect();
+  });

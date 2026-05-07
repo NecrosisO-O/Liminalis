@@ -4,8 +4,11 @@ set -euo pipefail
 REPO_URL="${LIMINALIS_REPO_URL:-https://github.com/NecrosisO-O/Liminalis.git}"
 REPO_REF="${LIMINALIS_REPO_REF:-main}"
 INSTALL_DIR="${LIMINALIS_INSTALL_DIR:-}"
+BUNDLE_VERSION="${LIMINALIS_VERSION:-latest}"
+BUNDLE_URL="${LIMINALIS_BUNDLE_URL:-}"
 
 ASSUME_YES=0
+SOURCE_MODE=0
 DEPLOY_MODE=""
 APP_URL=""
 ADMIN_URL=""
@@ -17,6 +20,7 @@ RECONFIGURE=0
 RESET_DATA=0
 EXTRA_DEPLOY_ARGS=()
 DEPLOY_ARGS=()
+NEEDS_SUDO=0
 
 usage() {
   cat <<'EOF'
@@ -24,8 +28,14 @@ Usage: install.sh [options]
 
 Options handled by install.sh:
   --install-dir DIR       Install or update Liminalis in DIR.
-  --repo-url URL          Git repository URL.
-  --ref REF               Git branch, tag, or commit to deploy.
+  --version VERSION       Deploy bundle/image version. Defaults to latest.
+  --bundle-url URL        Direct deploy bundle tarball URL.
+  --source                Clone/update the source repository instead of using
+                          the clean deploy bundle.
+  --source-build          Alias for --source; also builds images from source.
+  --skip-pull             Pass through to deploy.sh to use preloaded images.
+  --repo-url URL          Git repository URL for --source mode.
+  --ref REF               Git branch, tag, or commit for --source mode.
   --local                 Use local testing deployment defaults.
   --public                Use public-domain / reverse-proxy deployment defaults.
   --app-url URL           User-site public URL.
@@ -45,6 +55,7 @@ Unknown options are passed through to scripts/deploy.sh.
 Examples:
   curl -fsSL https://raw.githubusercontent.com/NecrosisO-O/Liminalis/main/scripts/install.sh | bash
   curl -fsSL https://raw.githubusercontent.com/NecrosisO-O/Liminalis/main/scripts/install.sh | bash -s -- --local --yes --web-port 5173 --admin-port 3001
+  curl -fsSL https://raw.githubusercontent.com/NecrosisO-O/Liminalis/main/scripts/install.sh | bash -s -- --source --local
 EOF
 }
 
@@ -61,6 +72,14 @@ sudo_cmd() {
     "$@"
   else
     sudo "$@"
+  fi
+}
+
+install_cmd() {
+  if [ "${NEEDS_SUDO}" -eq 1 ]; then
+    sudo_cmd "$@"
+  else
+    "$@"
   fi
 }
 
@@ -131,6 +150,20 @@ parse_args() {
         INSTALL_DIR="${2:-}"
         shift
         ;;
+      --version)
+        BUNDLE_VERSION="${2:-}"
+        shift
+        ;;
+      --bundle-url)
+        BUNDLE_URL="${2:-}"
+        shift
+        ;;
+      --source | --source-build)
+        SOURCE_MODE=1
+        ;;
+      --skip-pull)
+        EXTRA_DEPLOY_ARGS+=("$1")
+        ;;
       --repo-url)
         REPO_URL="${2:-}"
         shift
@@ -195,6 +228,14 @@ parse_args() {
   done
 }
 
+default_bundle_url() {
+  if [ "${BUNDLE_VERSION}" = "latest" ]; then
+    printf '%s' "https://github.com/NecrosisO-O/Liminalis/releases/latest/download/liminalis-deploy.tar.gz"
+  else
+    printf '%s' "https://github.com/NecrosisO-O/Liminalis/releases/download/${BUNDLE_VERSION}/liminalis-deploy-${BUNDLE_VERSION}.tar.gz"
+  fi
+}
+
 require_supported_os() {
   if [ ! -f /etc/os-release ]; then
     echo "This installer currently supports Debian/Ubuntu style systems." >&2
@@ -236,8 +277,16 @@ configure_install_source() {
   detect_install_dir
 
   INSTALL_DIR="$(prompt_default "Install directory" "${INSTALL_DIR}")"
-  REPO_URL="$(prompt_default "Repository URL" "${REPO_URL}")"
-  REPO_REF="$(prompt_default "Git branch, tag, or commit" "${REPO_REF}")"
+
+  if [ "${SOURCE_MODE}" -eq 1 ]; then
+    REPO_URL="$(prompt_default "Repository URL" "${REPO_URL}")"
+    REPO_REF="$(prompt_default "Git branch, tag, or commit" "${REPO_REF}")"
+    return
+  fi
+
+  BUNDLE_VERSION="$(prompt_default "Liminalis version" "${BUNDLE_VERSION}")"
+  BUNDLE_URL="${BUNDLE_URL:-$(default_bundle_url)}"
+  BUNDLE_URL="$(prompt_default "Deployment bundle URL" "${BUNDLE_URL}")"
 }
 
 install_packages() {
@@ -247,9 +296,13 @@ install_packages() {
 
   dpkg -s ca-certificates >/dev/null 2>&1 || packages+=("ca-certificates")
   command -v curl >/dev/null 2>&1 || packages+=("curl")
-  command -v git >/dev/null 2>&1 || packages+=("git")
   command -v openssl >/dev/null 2>&1 || packages+=("openssl")
   command -v ss >/dev/null 2>&1 || packages+=("iproute2")
+  command -v tar >/dev/null 2>&1 || packages+=("tar")
+
+  if [ "${SOURCE_MODE}" -eq 1 ]; then
+    command -v git >/dev/null 2>&1 || packages+=("git")
+  fi
 
   if ! command -v docker >/dev/null 2>&1; then
     packages+=("docker.io")
@@ -310,51 +363,126 @@ ensure_docker_usable() {
   fi
 }
 
-repo_cmd() {
-  if [ "${REPO_NEEDS_SUDO:-0}" -eq 1 ]; then
-    sudo_cmd "$@"
-  else
-    "$@"
-  fi
-}
-
-clone_or_update_repo() {
+configure_install_permissions() {
   local parent_dir
-  REPO_NEEDS_SUDO=0
-
+  NEEDS_SUDO=0
   parent_dir="$(dirname "${INSTALL_DIR}")"
 
   if ! is_root; then
     case "${INSTALL_DIR}" in
       "${HOME}" | "${HOME}"/*)
-        REPO_NEEDS_SUDO=0
+        NEEDS_SUDO=0
         ;;
       *)
-        REPO_NEEDS_SUDO=1
+        NEEDS_SUDO=1
         ;;
     esac
   fi
 
-  repo_cmd mkdir -p "${parent_dir}"
+  install_cmd mkdir -p "${parent_dir}"
+}
+
+clone_or_update_repo() {
+  configure_install_permissions
 
   if [ ! -d "${INSTALL_DIR}" ]; then
     log "Cloning ${REPO_URL} into ${INSTALL_DIR}."
-    repo_cmd git clone "${REPO_URL}" "${INSTALL_DIR}"
+    install_cmd git clone "${REPO_URL}" "${INSTALL_DIR}"
   elif [ ! -d "${INSTALL_DIR}/.git" ]; then
-    echo "${INSTALL_DIR} exists but is not a git repository." >&2
+    echo "${INSTALL_DIR} exists but is not a git repository. Use bundle mode or choose another directory." >&2
     exit 1
   else
     log "Existing repository found at ${INSTALL_DIR}; fetching updates."
   fi
 
-  repo_cmd git -C "${INSTALL_DIR}" fetch --tags origin
-  repo_cmd git -C "${INSTALL_DIR}" checkout "${REPO_REF}"
+  install_cmd git -C "${INSTALL_DIR}" fetch --tags origin
+  install_cmd git -C "${INSTALL_DIR}" checkout "${REPO_REF}"
 
-  if repo_cmd git -C "${INSTALL_DIR}" symbolic-ref -q HEAD >/dev/null 2>&1; then
-    repo_cmd git -C "${INSTALL_DIR}" pull --ff-only origin "${REPO_REF}" || true
+  if install_cmd git -C "${INSTALL_DIR}" symbolic-ref -q HEAD >/dev/null 2>&1; then
+    install_cmd git -C "${INSTALL_DIR}" pull --ff-only origin "${REPO_REF}" || true
   fi
 
-  repo_cmd chmod +x "${INSTALL_DIR}/scripts/deploy.sh"
+  install_cmd chmod +x "${INSTALL_DIR}/scripts/deploy.sh"
+}
+
+convert_source_checkout_if_needed() {
+  local confirmation backup_dir env_backup
+
+  if [ ! -d "${INSTALL_DIR}" ]; then
+    return
+  fi
+
+  if [ ! -d "${INSTALL_DIR}/.git" ] && [ ! -d "${INSTALL_DIR}/apps" ] && [ ! -f "${INSTALL_DIR}/package.json" ]; then
+    return
+  fi
+
+  if [ "${ASSUME_YES}" -eq 1 ]; then
+    echo "${INSTALL_DIR} looks like a source checkout. Re-run with --source or choose an empty deploy directory." >&2
+    exit 1
+  fi
+
+  echo
+  echo "${INSTALL_DIR} looks like a source checkout."
+  echo "Bundle mode creates a clean production deploy directory."
+  echo "This conversion keeps .env and Docker volumes, and moves the old checkout aside."
+  confirmation="$(read_prompt "Type CONVERT to move the old checkout aside: ")"
+  if [ "${confirmation}" != "CONVERT" ]; then
+    echo "Conversion cancelled."
+    exit 0
+  fi
+
+  backup_dir="${INSTALL_DIR}.source-backup-$(date +%Y%m%d%H%M%S)"
+  env_backup=""
+  if [ -f "${INSTALL_DIR}/.env" ]; then
+    env_backup="$(mktemp)"
+    install_cmd cp "${INSTALL_DIR}/.env" "${env_backup}"
+  fi
+
+  install_cmd mv "${INSTALL_DIR}" "${backup_dir}"
+  install_cmd mkdir -p "${INSTALL_DIR}"
+
+  if [ -n "${env_backup}" ]; then
+    install_cmd cp "${env_backup}" "${INSTALL_DIR}/.env"
+    rm -f "${env_backup}"
+  fi
+
+  log "Moved source checkout to ${backup_dir}."
+}
+
+download_deploy_bundle() {
+  local tmp_dir extract_dir bundle_root root_count
+
+  configure_install_permissions
+  convert_source_checkout_if_needed
+  install_cmd mkdir -p "${INSTALL_DIR}"
+
+  tmp_dir="$(mktemp -d)"
+  extract_dir="${tmp_dir}/extract"
+  mkdir -p "${extract_dir}"
+
+  log "Downloading deploy bundle from ${BUNDLE_URL}."
+  curl -fL "${BUNDLE_URL}" -o "${tmp_dir}/liminalis-deploy.tar.gz"
+  tar -xzf "${tmp_dir}/liminalis-deploy.tar.gz" -C "${extract_dir}"
+
+  root_count="$(find "${extract_dir}" -mindepth 1 -maxdepth 1 -type d | wc -l)"
+  if [ "${root_count}" -ne 1 ]; then
+    echo "Deploy bundle must contain exactly one root directory." >&2
+    rm -rf "${tmp_dir}"
+    exit 1
+  fi
+
+  bundle_root="$(find "${extract_dir}" -mindepth 1 -maxdepth 1 -type d | head -n 1)"
+  install_cmd cp -a "${bundle_root}/." "${INSTALL_DIR}/"
+  install_cmd chmod +x "${INSTALL_DIR}/scripts/deploy.sh"
+  rm -rf "${tmp_dir}"
+}
+
+prepare_deployment_files() {
+  if [ "${SOURCE_MODE}" -eq 1 ]; then
+    clone_or_update_repo
+  else
+    download_deploy_bundle
+  fi
 }
 
 choose_existing_action() {
@@ -481,6 +609,10 @@ build_deploy_args() {
     return
   fi
 
+  if [ "${SOURCE_MODE}" -eq 1 ]; then
+    DEPLOY_ARGS+=("--source-build")
+  fi
+
   if [ "${RECONFIGURE}" -eq 1 ]; then
     DEPLOY_ARGS+=("--reconfigure")
   fi
@@ -505,8 +637,13 @@ main() {
 
   echo "Liminalis one-line installer"
   echo
-  echo "This installer will install required packages, clone/update Liminalis,"
-  echo "collect deployment settings, and start the Docker Compose deployment."
+  if [ "${SOURCE_MODE}" -eq 1 ]; then
+    echo "This installer will install required packages, clone/update Liminalis,"
+    echo "build images from source, collect deployment settings, and start Compose."
+  else
+    echo "This installer will install required packages, download the clean deploy"
+    echo "bundle, collect deployment settings, pull images, and start Compose."
+  fi
   echo
 
   require_supported_os
@@ -514,7 +651,7 @@ main() {
   configure_install_source
   install_packages
   ensure_docker_usable
-  clone_or_update_repo
+  prepare_deployment_files
   choose_existing_action
   collect_deploy_config
   build_deploy_args
