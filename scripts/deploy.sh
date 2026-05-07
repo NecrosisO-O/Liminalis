@@ -61,6 +61,24 @@ random_password() {
   openssl rand -hex 24
 }
 
+read_prompt() {
+  local prompt="$1"
+  local value
+
+  if [ -r /dev/tty ] && [ -w /dev/tty ]; then
+    printf '%s' "${prompt}" >/dev/tty
+    IFS= read -r value </dev/tty
+  elif [ -t 0 ]; then
+    printf '%s' "${prompt}" >&2
+    IFS= read -r value
+  else
+    echo "Interactive input requires a TTY. Re-run with explicit options or --yes." >&2
+    exit 1
+  fi
+
+  printf '%s' "${value}"
+}
+
 prompt_default() {
   local label="$1"
   local default="$2"
@@ -71,7 +89,7 @@ prompt_default() {
     return
   fi
 
-  read -r -p "${label} [${default}]: " value
+  value="$(read_prompt "${label} [${default}]: ")"
   printf '%s' "${value:-$default}"
 }
 
@@ -85,7 +103,7 @@ prompt_required() {
   fi
 
   while [ -z "${value}" ]; do
-    read -r -p "${label}: " value
+    value="$(read_prompt "${label}: ")"
   done
 
   printf '%s' "${value}"
@@ -169,7 +187,7 @@ choose_mode() {
   echo "Deployment mode:"
   echo "  1. Public domain / reverse proxy"
   echo "  2. Local testing"
-  read -r -p "Choose [1]: " choice
+  choice="$(read_prompt "Choose [1]: ")"
 
   case "${choice:-1}" in
     1)
@@ -216,7 +234,7 @@ ensure_port_available() {
   echo "${label} port ${port} is already in use."
   echo "Choose another port, or press Enter to continue anyway."
   local replacement
-  read -r -p "New ${label} port: " replacement
+  replacement="$(read_prompt "New ${label} port: ")"
   if [ -n "${replacement}" ]; then
     case "${label}" in
       "User site")
@@ -380,7 +398,7 @@ confirm_reset_data() {
 
   echo
   echo "This will stop Liminalis and delete PostgreSQL/storage Docker volumes."
-  read -r -p "Type RESET to continue: " confirmation
+  confirmation="$(read_prompt "Type RESET to continue: ")"
   if [ "${confirmation}" != "RESET" ]; then
     echo "Reset cancelled."
     exit 0
@@ -406,7 +424,7 @@ existing_env_menu() {
   echo "  2. Reconfigure ports and public URLs"
   echo "  3. Reset deployment data"
   echo "  4. Exit"
-  read -r -p "Choose [1]: " choice
+  choice="$(read_prompt "Choose [1]: ")"
 
   case "${choice:-1}" in
     1)

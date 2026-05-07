@@ -28,15 +28,28 @@ The installer will:
 
 1. Install missing system dependencies.
 2. Install Docker and Docker Compose if needed.
-3. Clone or update Liminalis in `/opt/liminalis` when running as root, or
+3. Ask for the install directory, repository URL, and branch/tag.
+4. Clone or update Liminalis in `/opt/liminalis` when running as root, or
    `$HOME/liminalis` otherwise.
-4. Call `scripts/deploy.sh` to create `.env`, build images, run migrations, seed
+5. Ask for deployment mode, public URLs, local ports, and PostgreSQL bind.
+6. Call `scripts/deploy.sh` to create `.env`, build images, run migrations, seed
    the initial admin user, and start services.
 
-For local testing on fixed ports:
+The interactive prompts cover every common deployment option. For unattended
+local testing on fixed ports:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/NecrosisO-O/Liminalis/main/scripts/install.sh | bash -s -- --local --web-port 5173 --admin-port 3001
+curl -fsSL https://raw.githubusercontent.com/NecrosisO-O/Liminalis/main/scripts/install.sh | bash -s -- --local --yes --web-port 5173 --admin-port 3001
+```
+
+For unattended public-domain deployment:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/NecrosisO-O/Liminalis/main/scripts/install.sh | bash -s -- \
+  --public \
+  --yes \
+  --app-url https://app.example.com \
+  --admin-url https://admin.example.com
 ```
 
 For production, prefer a release tag after v1 is tagged:
