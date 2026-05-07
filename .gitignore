@@ -6,6 +6,12 @@ playwright-report/
 test-results/
 .env
 .env.local
+now.md
+memory.md
+now.previous.md
+memory.previous.md
+audit/
+design/
 apps/api/prisma/dev.db
 apps/api/prisma/dev.db-journal
 apps/api/generated/
