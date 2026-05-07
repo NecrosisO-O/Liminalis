@@ -484,12 +484,12 @@ run_deploy() {
 
   echo
   echo "[4/7] Applying database migrations"
-  compose run --rm api npx prisma migrate deploy
+  compose run --rm -T api npx prisma migrate deploy
 
   if [ -n "${SEED_ADMIN_PASSWORD:-}" ]; then
     echo
     echo "[5/7] Seeding initial admin and default policy"
-    compose run --rm \
+    compose run --rm -T \
       -e "SEED_ADMIN_USERNAME=${SEED_ADMIN_USERNAME:-owner}" \
       -e "SEED_ADMIN_EMAIL=${SEED_ADMIN_EMAIL:-owner@liminalis.local}" \
       -e "SEED_ADMIN_PASSWORD=${SEED_ADMIN_PASSWORD}" \
