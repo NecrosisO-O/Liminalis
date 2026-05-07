@@ -16,7 +16,44 @@ The `web` and `admin` containers proxy `/api/*` to the internal `api` service.
 This keeps the browser API URL relative to the current site and avoids frontend
 rebuilds when the external domain changes.
 
-## Quick Start
+## One-Line Install
+
+On a fresh Debian or Ubuntu host, run:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/NecrosisO-O/Liminalis/main/scripts/install.sh | bash
+```
+
+The installer will:
+
+1. Install missing system dependencies.
+2. Install Docker and Docker Compose if needed.
+3. Clone or update Liminalis in `/opt/liminalis` when running as root, or
+   `$HOME/liminalis` otherwise.
+4. Call `scripts/deploy.sh` to create `.env`, build images, run migrations, seed
+   the initial admin user, and start services.
+
+For local testing on fixed ports:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/NecrosisO-O/Liminalis/main/scripts/install.sh | bash -s -- --local --web-port 5173 --admin-port 3001
+```
+
+For production, prefer a release tag after v1 is tagged:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/NecrosisO-O/Liminalis/v1.0.0/scripts/install.sh | bash
+```
+
+If you prefer to review the script first:
+
+```bash
+curl -fsSLO https://raw.githubusercontent.com/NecrosisO-O/Liminalis/main/scripts/install.sh
+less install.sh
+bash install.sh
+```
+
+## Repository Quick Start
 
 From the repository root:
 

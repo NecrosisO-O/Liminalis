@@ -20,7 +20,6 @@ async function main() {
   await prisma.user.upsert({
     where: { username: adminUsername },
     update: {
-      passwordHash: adminPasswordHash,
       role: UserRole.ADMIN,
       admissionState: AdmissionState.APPROVED,
       enablementState: EnablementState.ENABLED,
