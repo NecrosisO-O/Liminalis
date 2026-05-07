@@ -1,13 +1,13 @@
 <h1 align="center">Liminalis</h1>
 
 <p align="center">
-  A self-hosted encrypted transfer workspace for files, text, public links, and browser-to-browser live transfer.
+  A self-hosted file transfer assistant with end-to-end encryption.
 </p>
 
 <p align="center">
   <a href="README.zh-CN.md">简体中文</a>
   ·
-  <a href="#quick-start">Quick Start</a>
+  <a href="#use-the-one-line-installer">One-Line Install</a>
   ·
   <a href="#security-model">Security Model</a>
   ·
@@ -25,9 +25,11 @@
 
 ## What Is Liminalis?
 
-Liminalis is a browser-first transfer workspace for people who want a small private station between their own devices, browsers, and trusted users. It is not a public cloud drive or a chat app. The main flow is simple: open the workspace, send text or a file to yourself, and retrieve it from another trusted browser.
+Liminalis is a browser-first file transfer assistant for self-hosted deployments. It helps move files and text between your own devices without relying on a chat app, cloud drive, or third-party transfer service.
 
-The server stores operational state and encrypted payloads. Content, filenames, folder paths, public-link secrets, and trusted-browser private key material are handled in the browser-side cryptographic layer.
+It uses end-to-end encryption, supports expiration policies and automatic invalidation, can create share links, and supports P2P or relay-based live transfer.
+
+The server stores operational state and encrypted payloads. Text bodies, filenames, folder paths, public-link secrets, and trusted-browser private key material are handled in the browser-side cryptographic layer.
 
 ## Core Capabilities
 
@@ -40,27 +42,21 @@ The server stores operational state and encrypted payloads. Content, filenames, 
 | Live transfer | Browser-to-browser file sessions with confirmation, WebRTC signaling, relay fallback, and stored fallback when policy allows it. |
 | Admin site | Independent management site for invitations, approvals, users, policies, storage, quota, and public origin settings. |
 
-## Quick Start
-
-The recommended v1 deployment path is Docker Compose with the clean release bundle. On a fresh Debian or Ubuntu host:
+## Use the One-Line Installer
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/NecrosisO-O/Liminalis/main/scripts/install.sh | bash -s -- --version v1.0.0-rc.1
 ```
 
+(For Ubuntu and Debian.)
+
 The installer asks for the install directory, deployment mode, public URLs, local ports, and PostgreSQL bind address. It installs missing system packages, downloads the deploy bundle, creates `.env`, pulls production images, runs migrations, seeds the initial admin user, and starts the services.
-
-For a local test deployment on the same ports used during acceptance testing:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/NecrosisO-O/Liminalis/main/scripts/install.sh | bash -s -- --version v1.0.0-rc.1 --local --yes --web-port 5173 --admin-port 3001
-```
 
 The generated initial admin password is printed only when `.env` is first created. Store it before closing the terminal.
 
 ## Docker Compose
 
-A production bundle contains only deployment files:
+The production bundle contains these deployment files:
 
 ```text
 compose.yml
@@ -93,13 +89,15 @@ Detailed deployment, upgrade, and backup notes live in [`docs/deployment/docker-
 
 ## First Run
 
-After deployment, open the admin site first. Set the instance public origin to the browser-visible user-site URL, create invitations, approve users, and then complete the first trusted-browser setup from the user site.
+After deployment, open the admin site first. Set the instance Public Origin to the browser-visible user-site URL, then complete the first trusted-browser setup from the user site.
 
-New browsers do not silently inherit access. They request pairing with a short code, and an existing trusted browser approves them. Save recovery codes when the product asks you to; recovery restores account and trusted-browser usability for future content, but it does not make old encrypted content readable if all local key material has been lost.
+Save recovery codes when the product asks you to. Recovery restores account and trusted-browser usability for future content, but it does not make old encrypted content readable if all local key material has been lost.
+
+New browsers request pairing with a short code and must be approved by an existing trusted browser.
 
 ## Security Model
 
-Liminalis is designed around browser-side end-to-end encryption for protected content. The server should not see plaintext text bodies, file bodies, filenames, folder paths, grouped manifests, public-link secrets, trusted-device private keys, or user-domain private keys.
+Under the current end-to-end encryption model, the server cannot see plaintext text bodies, file bodies, filenames, folder paths, grouped manifests, public-link secrets, trusted-device private keys, or user-domain private keys.
 
 Private key material is stored in the browser's IndexedDB vault. Public links use fragment-key URLs shaped like `/public/<token>#k=<secret>`, so the secret fragment is not sent to the server in normal browser navigation.
 
@@ -119,12 +117,6 @@ docker compose down
 
 Back up `.env`, the PostgreSQL volume, and the encrypted storage volume together. Do not use `docker compose down -v` unless you intentionally want to delete the database and stored encrypted payloads.
 
-## Current Status
-
-Liminalis is currently at `v1.0.0-rc.1`. The release candidate includes the production deploy bundle, GHCR images, one-line installer, Docker Compose deployment, user site, admin site, browser E2EE, sharing flows, live transfer, and large-file advanced upload.
-
-Known v1 limitation: advanced uploads are not resumable across refresh, page leave, or browser shutdown. Large uploads should stay on the upload page until completion.
-
 ## Development
 
 For source work, use the npm workspaces in this repository:
@@ -141,8 +133,6 @@ Source checkout deployment is available for development and validation:
 ```bash
 scripts/deploy.sh --source-build
 ```
-
-For production, prefer the clean deploy bundle or the one-line installer.
 
 ## License
 
