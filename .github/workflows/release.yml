@@ -24,10 +24,38 @@ jobs:
       - name: Set release version
         run: |
           if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
-            echo "LIMINALIS_VERSION=${GITHUB_REF_NAME}" >>"${GITHUB_ENV}"
+            version="${GITHUB_REF_NAME}"
           else
-            echo "LIMINALIS_VERSION=dev-${GITHUB_SHA::12}" >>"${GITHUB_ENV}"
+            version="dev-${GITHUB_SHA::12}"
           fi
+
+          is_prerelease=false
+          if [ "${GITHUB_REF_TYPE}" = "tag" ] && [[ "${version}" == *-* ]]; then
+            is_prerelease=true
+          fi
+
+          {
+            echo "LIMINALIS_VERSION=${version}"
+            echo "IS_PRERELEASE=${is_prerelease}"
+            echo "API_IMAGE_TAGS<<EOF"
+            echo "${REGISTRY}/${IMAGE_NAMESPACE}/liminalis-api:${version}"
+            if [ "${GITHUB_REF_TYPE}" = "tag" ] && [ "${is_prerelease}" = "false" ]; then
+              echo "${REGISTRY}/${IMAGE_NAMESPACE}/liminalis-api:latest"
+            fi
+            echo "EOF"
+            echo "WEB_IMAGE_TAGS<<EOF"
+            echo "${REGISTRY}/${IMAGE_NAMESPACE}/liminalis-web:${version}"
+            if [ "${GITHUB_REF_TYPE}" = "tag" ] && [ "${is_prerelease}" = "false" ]; then
+              echo "${REGISTRY}/${IMAGE_NAMESPACE}/liminalis-web:latest"
+            fi
+            echo "EOF"
+            echo "ADMIN_IMAGE_TAGS<<EOF"
+            echo "${REGISTRY}/${IMAGE_NAMESPACE}/liminalis-admin:${version}"
+            if [ "${GITHUB_REF_TYPE}" = "tag" ] && [ "${is_prerelease}" = "false" ]; then
+              echo "${REGISTRY}/${IMAGE_NAMESPACE}/liminalis-admin:latest"
+            fi
+            echo "EOF"
+          } >>"${GITHUB_ENV}"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -45,9 +73,7 @@ jobs:
           context: .
           file: apps/api/Dockerfile
           push: ${{ github.ref_type == 'tag' }}
-          tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/liminalis-api:${{ env.LIMINALIS_VERSION }}
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/liminalis-api:latest
+          tags: ${{ env.API_IMAGE_TAGS }}
           load: ${{ github.ref_type != 'tag' }}
 
       - name: Build and push web image
@@ -56,9 +82,7 @@ jobs:
           context: .
           file: apps/web/Dockerfile
           push: ${{ github.ref_type == 'tag' }}
-          tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/liminalis-web:${{ env.LIMINALIS_VERSION }}
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/liminalis-web:latest
+          tags: ${{ env.WEB_IMAGE_TAGS }}
           load: ${{ github.ref_type != 'tag' }}
 
       - name: Build and push admin image
@@ -67,9 +91,7 @@ jobs:
           context: .
           file: apps/admin/Dockerfile
           push: ${{ github.ref_type == 'tag' }}
-          tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/liminalis-admin:${{ env.LIMINALIS_VERSION }}
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/liminalis-admin:latest
+          tags: ${{ env.ADMIN_IMAGE_TAGS }}
           load: ${{ github.ref_type != 'tag' }}
 
       - name: Check API image contents
@@ -105,6 +127,8 @@ jobs:
         if: ${{ github.ref_type == 'tag' }}
         uses: softprops/action-gh-release@v2
         with:
+          prerelease: ${{ env.IS_PRERELEASE == 'true' }}
+          make_latest: ${{ env.IS_PRERELEASE == 'true' && 'false' || 'true' }}
           files: |
             ${{ env.BUNDLE_PATH }}
             dist/deploy/liminalis-deploy.tar.gz
