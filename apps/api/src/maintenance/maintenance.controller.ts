@@ -3,6 +3,10 @@ import type { Response } from 'express';
 import { SessionActor } from '../common/decorators/session.decorator';
 import { SessionGuard } from '../common/guards/session.guard';
 import { TrustedDeviceGuard } from '../common/guards/trusted-device.guard';
+import {
+  liminalisCookieClearOptions,
+  trustedDeviceCookieName,
+} from '../common/security/cookies';
 import type { AuthenticatedSession } from '../common/types/auth.types';
 import { RegrantAccessDto } from './dto/regrant-access.dto';
 import { MaintenanceService } from './maintenance.service';
@@ -22,7 +26,10 @@ export class MaintenanceController {
       sessionActor.trustedDeviceId,
     );
 
-    response.clearCookie('liminalis_trusted_device');
+    response.clearCookie(
+      trustedDeviceCookieName,
+      liminalisCookieClearOptions(),
+    );
     return result;
   }
 

@@ -339,6 +339,7 @@ POSTGRES_HOST_PORT=${POSTGRES_HOST_PORT}
 
 LIMINALIS_VERSION=${deployment_version:-latest}
 LIMINALIS_API_IMAGE=ghcr.io/necrosiso-o/liminalis-api
+LIMINALIS_MIGRATE_IMAGE=ghcr.io/necrosiso-o/liminalis-api-migrate
 LIMINALIS_WEB_IMAGE=ghcr.io/necrosiso-o/liminalis-web
 LIMINALIS_ADMIN_IMAGE=ghcr.io/necrosiso-o/liminalis-admin
 
@@ -354,6 +355,7 @@ PUBLIC_API_URL=${API_URL}
 
 SESSION_SECRET=${session_secret}
 PAIRING_CODE_LENGTH=6
+COOKIE_SECURE=
 
 SEED_ADMIN_USERNAME=${admin_username}
 SEED_ADMIN_EMAIL=${admin_email}
@@ -516,12 +518,12 @@ run_deploy() {
   echo
   if [ "${SOURCE_BUILD}" -eq 1 ]; then
     echo "[1/7] Building containers from source"
-    compose build
+    compose build api migrate web admin
   elif [ "${SKIP_PULL}" -eq 1 ]; then
     echo "[1/7] Using existing production images"
   else
     echo "[1/7] Pulling production images"
-    compose pull
+    compose pull postgres api migrate web admin
   fi
 
   echo
@@ -534,7 +536,7 @@ run_deploy() {
 
   echo
   echo "[4/7] Applying database migrations"
-  compose run --rm -T api npx prisma migrate deploy
+  compose run --rm -T migrate
 
   if [ -n "${SEED_ADMIN_PASSWORD:-}" ]; then
     echo

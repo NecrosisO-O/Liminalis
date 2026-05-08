@@ -31,6 +31,7 @@ services:
       PUBLIC_APP_URL: ${PUBLIC_APP_URL:?PUBLIC_APP_URL is required}
       PUBLIC_ADMIN_URL: ${PUBLIC_ADMIN_URL:?PUBLIC_ADMIN_URL is required}
       PUBLIC_API_URL: ${PUBLIC_API_URL:?PUBLIC_API_URL is required}
+      COOKIE_SECURE: ${COOKIE_SECURE:-}
       STORAGE_ROOT: /data/storage
     volumes:
       - liminalis-storage:/data/storage
@@ -46,6 +47,16 @@ services:
       timeout: 5s
       retries: 12
 
+  migrate:
+    image: ${LIMINALIS_MIGRATE_IMAGE:-ghcr.io/necrosiso-o/liminalis-api-migrate}:${LIMINALIS_VERSION:-latest}
+    profiles:
+      - tools
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-liminalis}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-liminalis}?schema=public
+
   web:
     image: ${LIMINALIS_WEB_IMAGE:-ghcr.io/necrosiso-o/liminalis-web}:${LIMINALIS_VERSION:-latest}
     restart: unless-stopped
@@ -53,7 +64,7 @@ services:
       api:
         condition: service_healthy
     ports:
-      - "${WEB_PORT:-8080}:80"
+      - "${WEB_PORT:-8080}:8080"
 
   admin:
     image: ${LIMINALIS_ADMIN_IMAGE:-ghcr.io/necrosiso-o/liminalis-admin}:${LIMINALIS_VERSION:-latest}
@@ -62,7 +73,7 @@ services:
       api:
         condition: service_healthy
     ports:
-      - "${ADMIN_PORT:-8081}:80"
+      - "${ADMIN_PORT:-8081}:8080"
 
 volumes:
   liminalis-postgres-data:

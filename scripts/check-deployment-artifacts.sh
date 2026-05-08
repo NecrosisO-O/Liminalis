@@ -8,12 +8,15 @@ Usage: scripts/check-deployment-artifacts.sh [options]
 Options:
   --bundle FILE       Check a deploy bundle tarball.
   --api-image IMAGE   Check an API runtime image.
+  --migrate-image IMAGE
+                      Check a one-off database migration image.
   -h, --help          Show this help.
 EOF
 }
 
 BUNDLE=""
 API_IMAGE=""
+MIGRATE_IMAGE=""
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
@@ -23,6 +26,10 @@ while [ "$#" -gt 0 ]; do
       ;;
     --api-image)
       API_IMAGE="${2:-}"
+      shift
+      ;;
+    --migrate-image)
+      MIGRATE_IMAGE="${2:-}"
       shift
       ;;
     -h | --help)
@@ -91,12 +98,43 @@ check_api_image() {
   echo "API image check passed: ${image}"
 }
 
-if [ -z "${BUNDLE}" ] && [ -z "${API_IMAGE}" ]; then
+check_migrate_image() {
+  local image="$1"
+
+  docker run --rm --entrypoint sh "${image}" -lc '
+    set -eu
+    blocked="
+      /app/apps/api/src
+      /app/apps/api/test
+      /app/audit
+      /app/design
+      /app/docs
+      /app/.git
+      /app/memory.md
+      /app/now.md
+    "
+    for path in ${blocked}; do
+      if [ -e "${path}" ]; then
+        echo "Unexpected migration image path: ${path}" >&2
+        exit 1
+      fi
+    done
+    test -d /app/apps/api/prisma/migrations
+    test -f /app/apps/api/prisma/schema.prisma
+    test -f /app/apps/api/prisma.config.ts
+    test -d /app/node_modules/prisma
+  '
+
+  echo "Migration image check passed: ${image}"
+}
+
+if [ -z "${BUNDLE}" ] && [ -z "${API_IMAGE}" ] && [ -z "${MIGRATE_IMAGE}" ]; then
   usage >&2
   exit 1
 fi
 
 [ -n "${BUNDLE}" ] && check_bundle "${BUNDLE}"
 [ -n "${API_IMAGE}" ] && check_api_image "${API_IMAGE}"
+[ -n "${MIGRATE_IMAGE}" ] && check_migrate_image "${MIGRATE_IMAGE}"
 
 exit 0

@@ -5,6 +5,16 @@ import { LocalDiskStorageDriver } from './local-disk-storage.driver';
 
 @Injectable()
 export class StorageService {
+  private readonly uploadPartMaxBytes = this.envNumber(
+    'UPLOAD_PART_MAX_BYTES',
+    16 * 1024 * 1024,
+  );
+
+  private readonly liveRelayChunkMaxBytes = this.envNumber(
+    'LIVE_RELAY_CHUNK_MAX_BYTES',
+    2 * 1024 * 1024,
+  );
+
   constructor(
     private readonly localDiskStorageDriver: LocalDiskStorageDriver,
   ) {}
@@ -15,7 +25,10 @@ export class StorageService {
     partNumber: number;
     body: Readable;
   }) {
-    const result = await this.localDiskStorageDriver.writeUploadPart(input);
+    const result = await this.localDiskStorageDriver.writeUploadPart({
+      ...input,
+      maxByteSize: this.uploadPartMaxBytes,
+    });
 
     if (result.byteSize <= 0) {
       await this.localDiskStorageDriver.remove(result.storageKey);
@@ -32,7 +45,10 @@ export class StorageService {
     body: Readable;
   }) {
     const result =
-      await this.localDiskStorageDriver.writeLiveTransferRelayChunk(input);
+      await this.localDiskStorageDriver.writeLiveTransferRelayChunk({
+        ...input,
+        maxByteSize: this.liveRelayChunkMaxBytes,
+      });
 
     if (result.byteSize <= 0) {
       await this.localDiskStorageDriver.remove(result.storageKey);
@@ -69,5 +85,10 @@ export class StorageService {
 
   async remove(storageKey: string) {
     await this.localDiskStorageDriver.remove(storageKey);
+  }
+
+  private envNumber(name: string, fallback: number) {
+    const value = Number(process.env[name]);
+    return Number.isFinite(value) && value > 0 ? value : fallback;
   }
 }

@@ -4,12 +4,18 @@ import {
   Get,
   Param,
   Post,
+  Req,
   Res,
   UseGuards,
 } from '@nestjs/common';
-import type { Response } from 'express';
+import type { Request, Response } from 'express';
 import { SessionActor } from '../common/decorators/session.decorator';
 import { SessionGuard } from '../common/guards/session.guard';
+import {
+  liminalisCookieOptions,
+  trustedDeviceCookieName,
+} from '../common/security/cookies';
+import { RateLimitService } from '../common/security/rate-limit.service';
 import type { AuthenticatedSession } from '../common/types/auth.types';
 import { ApprovePairingDto } from './dto/approve-pairing.dto';
 import { CompleteTrustedDeviceResumeDto } from './dto/complete-trusted-device-resume.dto';
@@ -23,14 +29,17 @@ import { TrustService } from './trust.service';
 
 @Controller('api')
 export class TrustController {
-  constructor(private readonly trustService: TrustService) {}
+  constructor(
+    private readonly trustService: TrustService,
+    private readonly rateLimitService: RateLimitService,
+  ) {}
 
   private setTrustedDeviceCookie(response: Response, trustedDeviceId: string) {
-    response.cookie('liminalis_trusted_device', trustedDeviceId, {
-      httpOnly: true,
-      sameSite: 'lax',
-      secure: false,
-    });
+    response.cookie(
+      trustedDeviceCookieName,
+      trustedDeviceId,
+      liminalisCookieOptions(),
+    );
   }
 
   @UseGuards(SessionGuard)
@@ -72,7 +81,16 @@ export class TrustController {
   async createTrustedDeviceResumeChallenge(
     @SessionActor() sessionActor: AuthenticatedSession,
     @Body() input: CreateTrustedDeviceResumeChallengeDto,
+    @Req() request: Request,
   ) {
+    this.rateLimitService.assertAllowed({
+      scope: 'trust-resume-challenge',
+      request,
+      keyParts: [sessionActor.userId, input.devicePublicIdentity],
+      limit: 10,
+      windowMs: 15 * 60_000,
+    });
+
     return this.trustService.createTrustedDeviceResumeChallenge(
       sessionActor.userId,
       sessionActor.sessionId,
@@ -85,8 +103,17 @@ export class TrustController {
   async completeTrustedDeviceResume(
     @SessionActor() sessionActor: AuthenticatedSession,
     @Body() input: CompleteTrustedDeviceResumeDto,
+    @Req() request: Request,
     @Res({ passthrough: true }) response: Response,
   ) {
+    this.rateLimitService.assertAllowed({
+      scope: 'trust-resume-complete',
+      request,
+      keyParts: [sessionActor.userId, input.challengeId],
+      limit: 10,
+      windowMs: 15 * 60_000,
+    });
+
     const result = await this.trustService.completeTrustedDeviceResume(
       sessionActor.userId,
       sessionActor.sessionId,
@@ -164,7 +191,16 @@ export class TrustController {
   async recoveryAttempt(
     @SessionActor() sessionActor: AuthenticatedSession,
     @Body() input: RecoveryAttemptDto,
+    @Req() request: Request,
   ) {
+    this.rateLimitService.assertAllowed({
+      scope: 'recovery-attempt',
+      request,
+      keyParts: [sessionActor.userId],
+      limit: 5,
+      windowMs: 30 * 60_000,
+    });
+
     return this.trustService.recoveryAttempt(sessionActor.userId, input);
   }
 

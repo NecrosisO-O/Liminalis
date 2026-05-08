@@ -43,6 +43,12 @@ jobs:
               echo "${REGISTRY}/${IMAGE_NAMESPACE}/liminalis-api:latest"
             fi
             echo "EOF"
+            echo "MIGRATE_IMAGE_TAGS<<EOF"
+            echo "${REGISTRY}/${IMAGE_NAMESPACE}/liminalis-api-migrate:${version}"
+            if [ "${GITHUB_REF_TYPE}" = "tag" ] && [ "${is_prerelease}" = "false" ]; then
+              echo "${REGISTRY}/${IMAGE_NAMESPACE}/liminalis-api-migrate:latest"
+            fi
+            echo "EOF"
             echo "WEB_IMAGE_TAGS<<EOF"
             echo "${REGISTRY}/${IMAGE_NAMESPACE}/liminalis-web:${version}"
             if [ "${GITHUB_REF_TYPE}" = "tag" ] && [ "${is_prerelease}" = "false" ]; then
@@ -76,6 +82,16 @@ jobs:
           tags: ${{ env.API_IMAGE_TAGS }}
           load: ${{ github.ref_type != 'tag' }}
 
+      - name: Build and push migration image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/api/Dockerfile
+          target: migrate
+          push: ${{ github.ref_type == 'tag' }}
+          tags: ${{ env.MIGRATE_IMAGE_TAGS }}
+          load: ${{ github.ref_type != 'tag' }}
+
       - name: Build and push web image
         uses: docker/build-push-action@v6
         with:
@@ -96,13 +112,19 @@ jobs:
 
       - name: Check API image contents
         if: ${{ github.ref_type != 'tag' }}
-        run: scripts/check-deployment-artifacts.sh --api-image "${REGISTRY}/${IMAGE_NAMESPACE}/liminalis-api:${LIMINALIS_VERSION}"
+        run: |
+          scripts/check-deployment-artifacts.sh \
+            --api-image "${REGISTRY}/${IMAGE_NAMESPACE}/liminalis-api:${LIMINALIS_VERSION}" \
+            --migrate-image "${REGISTRY}/${IMAGE_NAMESPACE}/liminalis-api-migrate:${LIMINALIS_VERSION}"
 
-      - name: Check pushed API image contents
+      - name: Check pushed API and migration image contents
         if: ${{ github.ref_type == 'tag' }}
         run: |
           docker pull "${REGISTRY}/${IMAGE_NAMESPACE}/liminalis-api:${LIMINALIS_VERSION}"
-          scripts/check-deployment-artifacts.sh --api-image "${REGISTRY}/${IMAGE_NAMESPACE}/liminalis-api:${LIMINALIS_VERSION}"
+          docker pull "${REGISTRY}/${IMAGE_NAMESPACE}/liminalis-api-migrate:${LIMINALIS_VERSION}"
+          scripts/check-deployment-artifacts.sh \
+            --api-image "${REGISTRY}/${IMAGE_NAMESPACE}/liminalis-api:${LIMINALIS_VERSION}" \
+            --migrate-image "${REGISTRY}/${IMAGE_NAMESPACE}/liminalis-api-migrate:${LIMINALIS_VERSION}"
 
       - name: Build deploy bundle
         run: |

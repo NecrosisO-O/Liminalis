@@ -16,6 +16,7 @@ import { SharesModule } from './shares/shares.module';
 import { SourceItemsModule } from './source-items/source-items.module';
 import { TrustModule } from './trust/trust.module';
 import { UploadsModule } from './uploads/uploads.module';
+import { SecurityModule } from './common/security/security.module';
 
 @Module({
   imports: [
@@ -23,6 +24,7 @@ import { UploadsModule } from './uploads/uploads.module';
       isGlobal: true,
       load: [appConfig],
     }),
+    SecurityModule,
     AdminModule,
     InstanceModule,
     LiveTransferModule,

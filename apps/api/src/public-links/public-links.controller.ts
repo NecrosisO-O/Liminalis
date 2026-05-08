@@ -12,6 +12,7 @@ import type { Response } from 'express';
 import { SessionActor } from '../common/decorators/session.decorator';
 import { SessionGuard } from '../common/guards/session.guard';
 import { TrustedDeviceGuard } from '../common/guards/trusted-device.guard';
+import { attachmentDisposition } from '../common/http/download-headers';
 import type { AuthenticatedSession } from '../common/types/auth.types';
 import { CreatePublicLinkDto } from './dto/create-public-link.dto';
 import { PublicLinksService } from './public-links.service';
@@ -62,7 +63,7 @@ export class PublicLinksController {
     );
     response.setHeader(
       'Content-Disposition',
-      `attachment; filename="${download.fileName.replace(/"/g, '')}"`,
+      attachmentDisposition(download.fileName),
     );
     response.on('finish', () => {
       void this.publicLinksService.finishPublicDownload(

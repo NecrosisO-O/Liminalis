@@ -4,14 +4,17 @@ import {
   Get,
   Param,
   Post,
+  Req,
   Res,
   StreamableFile,
   UseGuards,
 } from '@nestjs/common';
-import type { Response } from 'express';
+import type { Request, Response } from 'express';
 import { SessionActor } from '../common/decorators/session.decorator';
 import { SessionGuard } from '../common/guards/session.guard';
 import { TrustedDeviceGuard } from '../common/guards/trusted-device.guard';
+import { attachmentDisposition } from '../common/http/download-headers';
+import { RateLimitService } from '../common/security/rate-limit.service';
 import type { AuthenticatedSession } from '../common/types/auth.types';
 import { CompleteRetrievalDto } from '../retrieval/dto/complete-retrieval.dto';
 import { CreateExtractionDto } from './dto/create-extraction.dto';
@@ -20,7 +23,10 @@ import { ExtractionService } from './extraction.service';
 
 @Controller('api/extraction')
 export class ExtractionController {
-  constructor(private readonly extractionService: ExtractionService) {}
+  constructor(
+    private readonly extractionService: ExtractionService,
+    private readonly rateLimitService: RateLimitService,
+  ) {}
 
   @Post()
   @UseGuards(SessionGuard, TrustedDeviceGuard)
@@ -41,7 +47,16 @@ export class ExtractionController {
     @Param('entryToken') entryToken: string,
     @Param('attemptScopeKey') attemptScopeKey: string,
     @Body() input: SubmitExtractionPasswordDto,
+    @Req() request: Request,
   ) {
+    this.rateLimitService.assertAllowed({
+      scope: 'extraction-password',
+      request,
+      keyParts: [entryToken],
+      limit: 8,
+      windowMs: 15 * 60_000,
+    });
+
     return this.extractionService.submitPassword(
       entryToken,
       attemptScopeKey,
@@ -74,7 +89,7 @@ export class ExtractionController {
     response.setHeader('Content-Length', String(download.contentLength));
     response.setHeader(
       'Content-Disposition',
-      `attachment; filename="${download.fileName.replace(/"/g, '')}"`,
+      attachmentDisposition(download.fileName),
     );
 
     return new StreamableFile(download.stream);

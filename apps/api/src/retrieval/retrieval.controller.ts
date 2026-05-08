@@ -13,6 +13,7 @@ import { RetrievalFamily } from '../../generated/prisma/index.js';
 import { SessionActor } from '../common/decorators/session.decorator';
 import { SessionGuard } from '../common/guards/session.guard';
 import { TrustedDeviceGuard } from '../common/guards/trusted-device.guard';
+import { attachmentDisposition } from '../common/http/download-headers';
 import type { AuthenticatedSession } from '../common/types/auth.types';
 import { SharesService } from '../shares/shares.service';
 import { CompleteRetrievalDto } from './dto/complete-retrieval.dto';
@@ -85,7 +86,7 @@ export class RetrievalController {
     response.setHeader('Content-Length', String(download.contentLength));
     response.setHeader(
       'Content-Disposition',
-      `attachment; filename="${download.fileName.replace(/"/g, '')}"`,
+      attachmentDisposition(download.fileName),
     );
 
     return new StreamableFile(download.stream);

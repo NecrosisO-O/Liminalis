@@ -14,6 +14,7 @@ import type { Request, Response } from 'express';
 import { SessionActor } from '../common/decorators/session.decorator';
 import { SessionGuard } from '../common/guards/session.guard';
 import { TrustedDeviceGuard } from '../common/guards/trusted-device.guard';
+import { attachmentDisposition } from '../common/http/download-headers';
 import type { AuthenticatedSession } from '../common/types/auth.types';
 import { ConfirmLiveTransferDto } from './dto/confirm-live-transfer.dto';
 import { CreateLiveTransferDto } from './dto/create-live-transfer.dto';
@@ -151,7 +152,7 @@ export class LiveTransferController {
     response.setHeader('Content-Length', String(download.contentLength));
     response.setHeader(
       'Content-Disposition',
-      `attachment; filename="relay-${download.sequence}.bin"`,
+      attachmentDisposition(`relay-${download.sequence}.bin`),
     );
 
     return new StreamableFile(download.stream);

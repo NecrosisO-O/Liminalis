@@ -13,8 +13,17 @@ async function main() {
   const adminUsername = process.env.SEED_ADMIN_USERNAME ?? 'owner';
   const adminEmail =
     process.env.SEED_ADMIN_EMAIL ?? `${adminUsername}@liminalis.local`;
-  const adminPassword = process.env.SEED_ADMIN_PASSWORD ?? 'admin123456';
-  const adminPasswordHash = await argon2.hash(adminPassword);
+  const adminPassword = process.env.SEED_ADMIN_PASSWORD ?? null;
+  if (!adminPassword && process.env.NODE_ENV === 'production') {
+    throw new Error('SEED_ADMIN_PASSWORD is required in production');
+  }
+  if (!adminPassword) {
+    console.warn(
+      'SEED_ADMIN_PASSWORD is not set; using the development-only default admin password.',
+    );
+  }
+  const resolvedAdminPassword = adminPassword ?? 'admin123456';
+  const adminPasswordHash = await argon2.hash(resolvedAdminPassword);
 
   await prisma.user.upsert({
     where: { username: adminUsername },

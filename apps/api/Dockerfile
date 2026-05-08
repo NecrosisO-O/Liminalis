@@ -17,6 +17,15 @@ WORKDIR /app
 COPY apps/api ./apps/api
 RUN npm run build --workspace api
 
+FROM deps AS migrate
+WORKDIR /app
+
+COPY apps/api/prisma ./apps/api/prisma
+COPY apps/api/prisma.config.ts ./apps/api/prisma.config.ts
+
+WORKDIR /app/apps/api
+CMD ["npx", "--no-install", "prisma", "migrate", "deploy"]
+
 FROM node:22-bookworm-slim AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
@@ -29,7 +38,7 @@ COPY package.json package-lock.json ./
 COPY apps/api/package.json apps/api/package.json
 COPY apps/web/package.json apps/web/package.json
 COPY apps/admin/package.json apps/admin/package.json
-RUN npm ci --omit=dev --workspace api --include-workspace-root=false \
+RUN npm ci --omit=dev --omit=optional --workspace api --include-workspace-root=false \
   && npm cache clean --force
 
 COPY --from=build /app/apps/api/dist ./apps/api/dist
@@ -38,5 +47,8 @@ COPY --from=build /app/apps/api/generated ./apps/api/generated
 COPY --from=build /app/apps/api/prisma.config.ts ./apps/api/prisma.config.ts
 
 WORKDIR /app/apps/api
+RUN mkdir -p /data/storage \
+  && chown -R node:node /app /data/storage
+USER node
 EXPOSE 3000
 CMD ["npm", "run", "start:prod"]

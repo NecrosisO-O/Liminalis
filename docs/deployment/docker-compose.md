@@ -15,6 +15,7 @@ The production `compose.yml` or repository `docker-compose.yml` defines:
 - `postgres`: PostgreSQL 16 with a persistent Docker volume.
 - `api`: the NestJS API, Prisma client, migrations, and local disk storage
   driver.
+- `migrate`: a one-off Prisma migration runner used by the deploy script.
 - `web`: the user-facing React app served by Nginx.
 - `admin`: the independent admin React app served by Nginx.
 
@@ -98,7 +99,7 @@ The script will:
 
 1. Create `.env` if it does not exist.
 2. Generate a database password, session secret, and initial admin password.
-3. Pull the configured API, web, and admin images.
+3. Pull the configured API, migration, web, and admin images.
 4. Start PostgreSQL.
 5. Apply Prisma migrations.
 6. Seed the initial admin user and default policy bundles.
@@ -158,7 +159,7 @@ Then pull, migrate, seed, and start:
 ```bash
 docker compose -f compose.yml pull
 docker compose -f compose.yml up -d postgres
-docker compose -f compose.yml run --rm -T api npx prisma migrate deploy
+docker compose -f compose.yml run --rm -T migrate
 set -a; source .env; set +a
 docker compose -f compose.yml run --rm -T \
   -e "SEED_ADMIN_USERNAME=${SEED_ADMIN_USERNAME:-owner}" \
@@ -200,6 +201,7 @@ By default, production Compose uses:
 ```env
 LIMINALIS_VERSION=latest
 LIMINALIS_API_IMAGE=ghcr.io/necrosiso-o/liminalis-api
+LIMINALIS_MIGRATE_IMAGE=ghcr.io/necrosiso-o/liminalis-api-migrate
 LIMINALIS_WEB_IMAGE=ghcr.io/necrosiso-o/liminalis-web
 LIMINALIS_ADMIN_IMAGE=ghcr.io/necrosiso-o/liminalis-admin
 ```
@@ -236,6 +238,14 @@ admin.example.com  -> http://127.0.0.1:8081
 Keep `PUBLIC_APP_URL` and the admin `Public origin` setting aligned with the
 real browser-visible user-site URL.
 
+Liminalis automatically marks session cookies as `Secure` when any configured
+public URL uses HTTPS. For tunnel or reverse-proxy test setups where the local
+Compose URLs remain HTTP but the browser-visible URL is HTTPS, set:
+
+```env
+COOKIE_SECURE=true
+```
+
 Large uploads still depend on the limits and timeouts of the external tunnel or
 reverse proxy. Liminalis uses advanced chunked upload for large files, but the
 outer proxy must allow long-lived upload and download requests.
@@ -247,7 +257,7 @@ docker compose ps
 docker compose logs -f api
 docker compose up -d
 docker compose down
-docker compose run --rm -T api npx prisma migrate deploy
+docker compose run --rm -T migrate
 ```
 
 Use `docker compose down` to stop containers while preserving volumes. Do not

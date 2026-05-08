@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, PayloadTooLargeException } from '@nestjs/common';
 import { createReadStream, createWriteStream } from 'fs';
 import { mkdir, rm, stat } from 'fs/promises';
 import { dirname, resolve } from 'path';
@@ -17,6 +17,7 @@ export class LocalDiskStorageDriver {
     uploadSessionId: string;
     partNumber: number;
     body: Readable;
+    maxByteSize?: number;
   }) {
     const storageKey = [
       'uploads',
@@ -30,15 +31,22 @@ export class LocalDiskStorageDriver {
 
     let byteSize = 0;
     const hash = createHash('sha256');
-    const counter = new Transform({
-      transform(chunk: Buffer, _encoding, callback) {
-        byteSize += chunk.length;
-        hash.update(chunk);
-        callback(null, chunk);
-      },
-    });
 
-    await pipeline(input.body, counter, createWriteStream(targetPath));
+    try {
+      await pipeline(
+        input.body,
+        this.countingTransform(hash, (count) => {
+          byteSize = count;
+          if (input.maxByteSize && count > input.maxByteSize) {
+            throw new PayloadTooLargeException('Upload part is too large');
+          }
+        }),
+        createWriteStream(targetPath),
+      );
+    } catch (error) {
+      await rm(targetPath, { force: true });
+      throw error;
+    }
 
     return {
       storageKey,
@@ -52,6 +60,7 @@ export class LocalDiskStorageDriver {
     senderDeviceId: string;
     sequence: number;
     body: Readable;
+    maxByteSize?: number;
   }) {
     const storageKey = [
       'live-transfer-relay',
@@ -65,15 +74,22 @@ export class LocalDiskStorageDriver {
 
     let byteSize = 0;
     const hash = createHash('sha256');
-    const counter = new Transform({
-      transform(chunk: Buffer, _encoding, callback) {
-        byteSize += chunk.length;
-        hash.update(chunk);
-        callback(null, chunk);
-      },
-    });
 
-    await pipeline(input.body, counter, createWriteStream(targetPath));
+    try {
+      await pipeline(
+        input.body,
+        this.countingTransform(hash, (count) => {
+          byteSize = count;
+          if (input.maxByteSize && count > input.maxByteSize) {
+            throw new PayloadTooLargeException('Relay chunk is too large');
+          }
+        }),
+        createWriteStream(targetPath),
+      );
+    } catch (error) {
+      await rm(targetPath, { force: true });
+      throw error;
+    }
 
     return {
       storageKey,
@@ -101,6 +117,25 @@ export class LocalDiskStorageDriver {
 
   async remove(storageKey: string) {
     await rm(this.pathForKey(storageKey), { force: true });
+  }
+
+  private countingTransform(
+    hash: ReturnType<typeof createHash>,
+    onCount: (byteSize: number) => void,
+  ) {
+    let byteSize = 0;
+    return new Transform({
+      transform(chunk: Buffer, _encoding, callback) {
+        try {
+          byteSize += chunk.length;
+          hash.update(chunk);
+          onCount(byteSize);
+          callback(null, chunk);
+        } catch (error) {
+          callback(error instanceof Error ? error : new Error(String(error)));
+        }
+      },
+    });
   }
 
   private pathForKey(storageKey: string) {

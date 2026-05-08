@@ -4,13 +4,20 @@ import {
   Get,
   HttpCode,
   Post,
+  Req,
   Res,
   UseGuards,
 } from '@nestjs/common';
-import type { Response } from 'express';
+import type { Request, Response } from 'express';
 import { SessionActor } from '../common/decorators/session.decorator';
 import { AdminGuard } from '../common/guards/admin.guard';
 import { SessionGuard } from '../common/guards/session.guard';
+import {
+  liminalisCookieClearOptions,
+  liminalisCookieOptions,
+  sessionCookieName,
+} from '../common/security/cookies';
+import { RateLimitService } from '../common/security/rate-limit.service';
 import type { AuthenticatedSession } from '../common/types/auth.types';
 import { BootstrapService } from './bootstrap.service';
 import { CreateInviteDto } from './dto/create-invite.dto';
@@ -26,10 +33,18 @@ export class IdentityController {
     private readonly identityService: IdentityService,
     private readonly sessionsService: SessionsService,
     private readonly bootstrapService: BootstrapService,
+    private readonly rateLimitService: RateLimitService,
   ) {}
 
   @Post('api/registration/register')
-  async register(@Body() input: RegisterDto) {
+  async register(@Body() input: RegisterDto, @Req() request: Request) {
+    this.rateLimitService.assertAllowed({
+      scope: 'registration',
+      request,
+      keyParts: [input.username, input.inviteCode],
+      limit: 10,
+      windowMs: 15 * 60_000,
+    });
     return this.identityService.register(input);
   }
 
@@ -37,16 +52,21 @@ export class IdentityController {
   @Post('api/auth/login')
   async login(
     @Body() input: LoginDto,
+    @Req() request: Request,
     @Res({ passthrough: true }) response: Response,
   ) {
+    this.rateLimitService.assertAllowed({
+      scope: 'auth-login',
+      request,
+      keyParts: [input.username],
+      limit: 8,
+      windowMs: 15 * 60_000,
+    });
+
     const user = await this.identityService.validateCredentials(input);
     const session = await this.sessionsService.createSession(user.id);
 
-    response.cookie('liminalis_session', session.token, {
-      httpOnly: true,
-      sameSite: 'lax',
-      secure: false,
-    });
+    response.cookie(sessionCookieName, session.token, liminalisCookieOptions());
 
     return {
       userId: user.id,
@@ -65,7 +85,7 @@ export class IdentityController {
       await this.sessionsService.destroySession(token);
     }
 
-    response.clearCookie('liminalis_session');
+    response.clearCookie(sessionCookieName, liminalisCookieClearOptions());
 
     return {
       ok: true,
@@ -80,7 +100,7 @@ export class IdentityController {
       }
     ).cookies;
 
-    return cookies?.liminalis_session;
+    return cookies?.[sessionCookieName];
   }
 
   @UseGuards(SessionGuard)

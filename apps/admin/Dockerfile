@@ -10,7 +10,7 @@ RUN npm ci
 COPY apps/admin ./apps/admin
 RUN npm run build --workspace admin
 
-FROM nginx:1.27-alpine AS runtime
+FROM nginxinc/nginx-unprivileged:1.27-alpine AS runtime
 COPY apps/admin/docker/nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=build /app/apps/admin/dist /usr/share/nginx/html
-EXPOSE 80
+EXPOSE 8080
