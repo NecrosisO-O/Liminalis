@@ -15,7 +15,7 @@
 </p>
 
 <p align="center">
-  <img alt="Release candidate" src="https://img.shields.io/badge/status-v1.0.0--rc.1-0f766e">
+  <img alt="Release" src="https://img.shields.io/badge/release-v1.0.0-0f766e">
   <img alt="Self-hosted" src="https://img.shields.io/badge/self--hosted-Docker%20Compose-1f2937">
   <img alt="End-to-end encrypted" src="https://img.shields.io/badge/browser%20E2EE-WebCrypto-d97706">
   <img alt="License" src="https://img.shields.io/badge/license-GPL--3.0--only-374151">
@@ -45,7 +45,7 @@ The server stores operational state and encrypted payloads. Text bodies, filenam
 ## Use the One-Line Installer
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/NecrosisO-O/Liminalis/main/scripts/install.sh | bash -s -- --version v1.0.0-rc.1
+curl -fsSL https://raw.githubusercontent.com/NecrosisO-O/Liminalis/main/scripts/install.sh | bash -s -- --version v1.0.0
 ```
 
 (For Ubuntu and Debian.)
@@ -70,8 +70,8 @@ scripts/install.sh
 If you already have the bundle:
 
 ```bash
-tar -xzf liminalis-deploy-v1.0.0-rc.1.tar.gz
-cd liminalis-deploy-v1.0.0-rc.1
+tar -xzf liminalis-deploy-v1.0.0.tar.gz
+cd liminalis-deploy-v1.0.0
 chmod +x scripts/deploy.sh
 scripts/deploy.sh
 ```
